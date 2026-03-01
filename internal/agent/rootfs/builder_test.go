@@ -206,6 +206,60 @@ func TestBuildExt4(t *testing.T) {
 	}
 }
 
+func TestBuild_FullPipeline(t *testing.T) {
+	if !hasMke2fs() {
+		t.Skip("mke2fs/mkfs.ext4 not in PATH — skipping full pipeline test")
+	}
+
+	_, addr := startRegistry(t)
+	img := makeImage(t, []string{"/bin/app"}, map[string]string{
+		"/bin/app": "#!/bin/sh\necho hello from vm",
+	})
+	ref := pushImage(t, addr, img)
+
+	b := newBuilder(t)
+	path, err := b.Build(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	// Verify the .ext4 file exists in the cache dir.
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("output file not found: %v", err)
+	}
+	if filepath.Dir(path) != b.CacheDir {
+		t.Errorf("output path %q is not inside CacheDir %q", path, b.CacheDir)
+	}
+	if filepath.Ext(path) != ".ext4" {
+		t.Errorf("output path %q should end in .ext4", path)
+	}
+}
+
+func TestBuild_CacheHitSkipsNetwork(t *testing.T) {
+	if !hasMke2fs() {
+		t.Skip("mke2fs/mkfs.ext4 not in PATH")
+	}
+
+	_, addr := startRegistry(t)
+	img := makeImage(t, []string{"/bin/app"}, map[string]string{"/bin/app": "#!/bin/sh"})
+	ref := pushImage(t, addr, img)
+
+	b := newBuilder(t)
+	path1, err := b.Build(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("first Build: %v", err)
+	}
+
+	// Second call should return the same path (cache hit).
+	path2, err := b.Build(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("second Build: %v", err)
+	}
+	if path1 != path2 {
+		t.Errorf("cache hit returned different path: %q vs %q", path1, path2)
+	}
+}
+
 func TestWriteInit(t *testing.T) {
 	tests := []struct {
 		name       string
