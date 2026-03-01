@@ -33,7 +33,7 @@ import (
 
 var (
 	// managerImage is the manager image to be built and loaded for testing.
-	managerImage = "example.com/go-scaffold:v0.0.1"
+	managerImage = "imp-operator:dev"
 	// shouldCleanupCertManager tracks whether CertManager was installed by this suite.
 	shouldCleanupCertManager = false
 )
@@ -44,7 +44,7 @@ var (
 // To skip CertManager installation, set: CERT_MANAGER_INSTALL_SKIP=true
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	_, _ = fmt.Fprintf(GinkgoWriter, "Starting go-scaffold e2e test suite\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting imp e2e test suite\n")
 	RunSpecs(t, "e2e suite")
 }
 
@@ -54,12 +54,15 @@ var _ = BeforeSuite(func() {
 	_, err := utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager image")
 
-	// TODO(user): If you want to change the e2e test vendor from Kind,
-	// ensure the image is built and available, then remove the following block.
 	By("loading the manager image on Kind")
 	err = utils.LoadImageToKindClusterWithName(managerImage)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to load the manager image into Kind")
 
+	// CertManager is only needed for webhooks. Skip unless CERT_MANAGER_INSTALL_SKIP=false.
+	if os.Getenv("CERT_MANAGER_INSTALL_SKIP") != "false" {
+		_, _ = fmt.Fprintf(GinkgoWriter, "Skipping CertManager (no webhooks in this build)\n")
+		return
+	}
 	setupCertManager()
 })
 
