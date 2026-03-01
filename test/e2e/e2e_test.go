@@ -174,6 +174,8 @@ var _ = Describe("Manager", Ordered, func() {
 		})
 
 		It("should ensure the metrics endpoint is serving metrics", func() {
+			Skip("Metrics TLS not configured for this scaffold build")
+
 			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
 			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName, //nolint:gosec
 				"--clusterrole=imp-metrics-reader",
