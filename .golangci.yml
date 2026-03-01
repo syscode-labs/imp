@@ -1,31 +1,38 @@
+version: "2"
+
 run:
   timeout: 5m
 
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
     - ineffassign
     - staticcheck
     - unused
     - gosec
-    - goimports
     - misspell
     - revive
+  settings:
+    gosec:
+      severity: medium
+      confidence: medium
+    revive:
+      rules:
+        - name: exported
+          disabled: true # doc comments not required yet
 
-linters-settings:
-  goimports:
-    local-prefixes: github.com/syscode-labs/imp
-  gosec:
-    severity: medium
-    confidence: medium
-  revive:
-    rules:
-      - name: exported
-        disabled: true # doc comments not required yet
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/syscode-labs/imp
 
 issues:
+  exclude-dirs:
+    - test
   exclude-rules:
     - path: _test\.go
       linters:
