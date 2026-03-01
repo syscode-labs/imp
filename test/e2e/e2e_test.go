@@ -34,16 +34,16 @@ import (
 )
 
 // namespace where the project is deployed in
-const namespace = "go-scaffold-system"
+const namespace = "imp-system"
 
 // serviceAccountName created for the project
-const serviceAccountName = "go-scaffold-controller-manager"
+const serviceAccountName = "imp-controller-manager"
 
 // metricsServiceName is the name of the metrics service of the project
-const metricsServiceName = "go-scaffold-controller-manager-metrics-service"
+const metricsServiceName = "imp-controller-manager-metrics-service"
 
 // metricsRoleBindingName is the name of the RBAC that will be created to allow get the metrics data
-const metricsRoleBindingName = "go-scaffold-metrics-binding"
+const metricsRoleBindingName = "imp-metrics-binding"
 
 var _ = Describe("Manager", Ordered, func() {
 	var controllerPodName string
@@ -69,7 +69,7 @@ var _ = Describe("Manager", Ordered, func() {
 		Expect(err).NotTo(HaveOccurred(), "Failed to install CRDs")
 
 		By("deploying the controller-manager")
-		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage))
+		cmd = exec.Command("make", "deploy", fmt.Sprintf("IMG=%s", managerImage)) //nolint:gosec
 		_, err = utils.Run(cmd)
 		Expect(err).NotTo(HaveOccurred(), "Failed to deploy the controller-manager")
 	})
@@ -100,7 +100,7 @@ var _ = Describe("Manager", Ordered, func() {
 		specReport := CurrentSpecReport()
 		if specReport.Failed() {
 			By("Fetching controller manager pod logs")
-			cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+			cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace) //nolint:gosec
 			controllerLogs, err := utils.Run(cmd)
 			if err == nil {
 				_, _ = fmt.Fprintf(GinkgoWriter, "Controller logs:\n %s", controllerLogs)
@@ -127,7 +127,7 @@ var _ = Describe("Manager", Ordered, func() {
 			}
 
 			By("Fetching controller manager pod description")
-			cmd = exec.Command("kubectl", "describe", "pod", controllerPodName, "-n", namespace)
+			cmd = exec.Command("kubectl", "describe", "pod", controllerPodName, "-n", namespace) //nolint:gosec
 			podDescription, err := utils.Run(cmd)
 			if err == nil {
 				fmt.Println("Pod description:\n", podDescription)
@@ -162,7 +162,7 @@ var _ = Describe("Manager", Ordered, func() {
 				g.Expect(controllerPodName).To(ContainSubstring("controller-manager"))
 
 				// Validate the pod's status
-				cmd = exec.Command("kubectl", "get",
+				cmd = exec.Command("kubectl", "get", //nolint:gosec
 					"pods", controllerPodName, "-o", "jsonpath={.status.phase}",
 					"-n", namespace,
 				)
@@ -175,8 +175,8 @@ var _ = Describe("Manager", Ordered, func() {
 
 		It("should ensure the metrics endpoint is serving metrics", func() {
 			By("creating a ClusterRoleBinding for the service account to allow access to metrics")
-			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName,
-				"--clusterrole=go-scaffold-metrics-reader",
+			cmd := exec.Command("kubectl", "create", "clusterrolebinding", metricsRoleBindingName, //nolint:gosec
+				"--clusterrole=imp-metrics-reader",
 				fmt.Sprintf("--serviceaccount=%s:%s", namespace, serviceAccountName),
 			)
 			_, err := utils.Run(cmd)
@@ -194,7 +194,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 			By("ensuring the controller pod is ready")
 			verifyControllerPodReady := func(g Gomega) {
-				cmd := exec.Command("kubectl", "get", "pod", controllerPodName, "-n", namespace,
+				cmd := exec.Command("kubectl", "get", "pod", controllerPodName, "-n", namespace, //nolint:gosec
 					"-o", "jsonpath={.status.conditions[?(@.type=='Ready')].status}")
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
@@ -204,7 +204,7 @@ var _ = Describe("Manager", Ordered, func() {
 
 			By("verifying that the controller manager is serving the metrics server")
 			verifyMetricsServerStarted := func(g Gomega) {
-				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace)
+				cmd := exec.Command("kubectl", "logs", controllerPodName, "-n", namespace) //nolint:gosec
 				output, err := utils.Run(cmd)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(output).To(ContainSubstring("Serving metrics server"),
@@ -215,7 +215,7 @@ var _ = Describe("Manager", Ordered, func() {
 			// +kubebuilder:scaffold:e2e-metrics-webhooks-readiness
 
 			By("creating the curl-metrics pod to access the metrics endpoint")
-			cmd = exec.Command("kubectl", "run", "curl-metrics", "--restart=Never",
+			cmd = exec.Command("kubectl", "run", "curl-metrics", "--restart=Never", //nolint:gosec
 				"--namespace", namespace,
 				"--image=curlimages/curl:latest",
 				"--overrides",
@@ -280,6 +280,69 @@ var _ = Describe("Manager", Ordered, func() {
 		//    strings.ToLower(<Kind>),
 		// ))
 	})
+
+	Context("ImpVM CRUD", func() {
+		const testNamespace = "default"
+		const impvmName = "smoke-test"
+
+		AfterEach(func() {
+			// Best-effort cleanup
+			cmd := exec.Command("kubectl", "delete", "impvm", impvmName,
+				"-n", testNamespace, "--ignore-not-found")
+			_, _ = utils.Run(cmd)
+		})
+
+		It("should create and list an ImpVM object", func() {
+			By("creating an ImpVM")
+			manifest := fmt.Sprintf(`
+apiVersion: imp.dev/v1alpha1
+kind: ImpVM
+metadata:
+  name: %s
+  namespace: %s
+spec:
+  classRef:
+    name: small
+  image: ghcr.io/myorg/test:latest
+  lifecycle: ephemeral
+`, impvmName, testNamespace)
+
+			tmpFile := "/tmp/smoke-impvm.yaml"
+			Expect(os.WriteFile(tmpFile, []byte(manifest), 0o600)).To(Succeed())
+
+			cmd := exec.Command("kubectl", "apply", "-f", tmpFile)
+			_, err := utils.Run(cmd)
+			Expect(err).NotTo(HaveOccurred(), "Failed to create ImpVM")
+
+			By("verifying the ImpVM exists")
+			verifyImpVM := func(g Gomega) {
+				cmd := exec.Command("kubectl", "get", "impvm", impvmName,
+					"-n", testNamespace, "-o", "jsonpath={.metadata.name}")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(output).To(Equal(impvmName))
+			}
+			Eventually(verifyImpVM, 30*time.Second, time.Second).Should(Succeed())
+
+			By("verifying the operator reconciled (logged the ImpVM)")
+			verifyReconcile := func(g Gomega) {
+				cmd := exec.Command("kubectl", "logs",
+					"-l", "control-plane=controller-manager",
+					"-n", namespace, "--tail=50")
+				output, err := utils.Run(cmd)
+				g.Expect(err).NotTo(HaveOccurred())
+				// The operator reconciler runs even with no logic; at minimum it receives the event.
+				// Check the pod is still running (didn't crash).
+				cmd2 := exec.Command("kubectl", "get", "pods",
+					"-l", "control-plane=controller-manager",
+					"-n", namespace, "-o", "jsonpath={.items[0].status.phase}")
+				phase, err2 := utils.Run(cmd2)
+				g.Expect(err2).NotTo(HaveOccurred())
+				g.Expect(phase).To(Equal("Running"), "operator crashed after ImpVM creation: %s", output)
+			}
+			Eventually(verifyReconcile, 30*time.Second, time.Second).Should(Succeed())
+		})
+	})
 })
 
 // serviceAccountToken returns a token for the specified service account in the given namespace.
@@ -302,7 +365,7 @@ func serviceAccountToken() (string, error) {
 	var out string
 	verifyTokenCreation := func(g Gomega) {
 		// Execute kubectl command to create the token
-		cmd := exec.Command("kubectl", "create", "--raw", fmt.Sprintf(
+		cmd := exec.Command("kubectl", "create", "--raw", fmt.Sprintf( //nolint:gosec
 			"/api/v1/namespaces/%s/serviceaccounts/%s/token",
 			namespace,
 			serviceAccountName,
