@@ -180,3 +180,62 @@ func TestExtractLayers(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteInit(t *testing.T) {
+	tests := []struct {
+		name       string
+		entrypoint []string
+		cmd        []string
+		wantInit   bool
+		wantScript string
+	}{
+		{
+			name:       "cmd only",
+			cmd:        []string{"/bin/app", "--port", "8080"},
+			wantInit:   true,
+			wantScript: "exec \"/bin/app\" \"--port\" \"8080\"",
+		},
+		{
+			name:       "entrypoint + cmd",
+			entrypoint: []string{"/tini", "--"},
+			cmd:        []string{"/bin/app"},
+			wantInit:   true,
+			wantScript: "exec \"/tini\" \"--\" \"/bin/app\"",
+		},
+		{
+			name:     "no cmd or entrypoint",
+			wantInit: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			img := makeImage(t, tc.cmd, nil)
+			if len(tc.entrypoint) > 0 {
+				cf, _ := img.ConfigFile()
+				cf = cf.DeepCopy()
+				cf.Config.Entrypoint = tc.entrypoint
+				img, _ = mutate.ConfigFile(img, cf)
+			}
+
+			dir := t.TempDir()
+			if err := writeInit(img, dir); err != nil {
+				t.Fatalf("writeInit: %v", err)
+			}
+
+			initPath := filepath.Join(dir, "sbin", "init")
+			_, err := os.Stat(initPath)
+			exists := err == nil
+
+			if exists != tc.wantInit {
+				t.Errorf("init exists = %v, want %v", exists, tc.wantInit)
+			}
+			if tc.wantInit {
+				content, _ := os.ReadFile(initPath)
+				if !strings.Contains(string(content), tc.wantScript) {
+					t.Errorf("init script = %q, want to contain %q", content, tc.wantScript)
+				}
+			}
+		})
+	}
+}
