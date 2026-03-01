@@ -109,28 +109,38 @@ func TestCachePath(t *testing.T) {
 }
 
 func TestBuild_CacheHit(t *testing.T) {
+	_, addr := startRegistry(t)
+	img := makeImage(t, []string{"/bin/app"}, map[string]string{"/bin/app": "#!/bin/sh"})
+	ref := pushImage(t, addr, img)
+
 	b := newBuilder(t)
 
-	// Pre-populate the cache with a fake .ext4 file.
-	fakeDigest := "deadbeef1234"
-	cachedPath := b.cachePath(fakeDigest)
+	// Resolve the image digest to compute the expected cache path.
+	pulled, err := b.pullImage(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("pullImage: %v", err)
+	}
+	digest, err := pulled.Digest()
+	if err != nil {
+		t.Fatalf("Digest: %v", err)
+	}
+
+	// Pre-populate the cache file so Build() sees a cache hit.
+	cachedPath := b.cachePath(digest.Hex)
 	if err := os.MkdirAll(b.CacheDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(cachedPath, []byte("fake ext4"), 0o644); err != nil {
+	if err := os.WriteFile(cachedPath, []byte("fake ext4 content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Build should return the cached path without pulling anything.
-	// We use a non-existent registry to confirm no network call is made.
-	// (This will only work once cache-hit detection is implemented before any fetch.)
-	// For now, just test cachePath returns the right value.
-	got := b.cachePath(fakeDigest)
-	if got != cachedPath {
-		t.Errorf("cachePath = %q, want %q", got, cachedPath)
+	// Build should return the cached path without running mke2fs.
+	got, err := b.Build(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("Build with cache hit: %v", err)
 	}
-	if _, err := os.Stat(got); err != nil {
-		t.Errorf("cache file not found: %v", err)
+	if got != cachedPath {
+		t.Errorf("Build returned %q, want cached path %q", got, cachedPath)
 	}
 }
 

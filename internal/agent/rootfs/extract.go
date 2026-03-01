@@ -66,7 +66,15 @@ func untar(dir string, r io.Reader) error {
 				return err
 			}
 		case tar.TypeSymlink:
-			// Only create symlink if it points inside the dir (basic safety).
+			// Validate the symlink target does not escape dir.
+			// Resolve relative targets against the symlink's own directory.
+			linkTarget := hdr.Linkname
+			if !filepath.IsAbs(linkTarget) {
+				linkTarget = filepath.Join(filepath.Dir(target), linkTarget) //nolint:gosec // G305: linkTarget is used only for validation, not for file creation
+			}
+			if !strings.HasPrefix(filepath.Clean(linkTarget), dir+string(os.PathSeparator)) {
+				continue // symlink target escapes rootfs directory — skip
+			}
 			_ = os.Symlink(hdr.Linkname, target) // best effort
 		}
 	}
