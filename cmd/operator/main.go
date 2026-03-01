@@ -61,7 +61,7 @@ func main() {
 	if err = (&controller.ImpVMReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("impvm-controller"),
+		Recorder: mgr.GetEventRecorderFor("impvm-controller"), //nolint:staticcheck
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ImpVM")
 		os.Exit(1)

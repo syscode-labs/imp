@@ -1,0 +1,31 @@
+package agent
+
+import (
+	"context"
+
+	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+)
+
+// VMState is the runtime state of a VM as reported by a VMDriver.
+type VMState struct {
+	// Running is true if the VM process is alive.
+	Running bool
+	// IP is the IP address assigned to the VM. Empty until the VM is running.
+	IP string
+	// PID is the process ID of the VM runtime on this node.
+	PID int64
+}
+
+// VMDriver abstracts the VM runtime backend.
+// Implementations: StubDriver (testing/CI), FirecrackerDriver (production, Phase 2).
+type VMDriver interface {
+	// Start boots the VM and returns its runtime PID.
+	Start(ctx context.Context, vm *impdevv1alpha1.ImpVM) (pid int64, err error)
+
+	// Stop halts the VM. Blocks until stopped or ctx is cancelled.
+	Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) error
+
+	// Inspect returns the current runtime state of the VM.
+	// Called every reconcile to detect unexpected exits.
+	Inspect(ctx context.Context, vm *impdevv1alpha1.ImpVM) (VMState, error)
+}
