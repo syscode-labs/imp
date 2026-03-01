@@ -21,9 +21,21 @@ type stubVM struct {
 // It simulates VM start/stop/inspect without any real processes.
 // Safe for concurrent use.
 type StubDriver struct {
-	mu     sync.Mutex
-	states map[string]*stubVM // keyed by "namespace/name"
+	mu         sync.Mutex
+	states     map[string]*stubVM // keyed by "namespace/name"
+	startErr   error
+	stopErr    error
+	inspectErr error
 }
+
+// InjectStartError causes the next Start call to return err (one-shot).
+func (d *StubDriver) InjectStartError(err error) { d.mu.Lock(); d.startErr = err; d.mu.Unlock() }
+
+// InjectStopError causes the next Stop call to return err (one-shot).
+func (d *StubDriver) InjectStopError(err error) { d.mu.Lock(); d.stopErr = err; d.mu.Unlock() }
+
+// InjectInspectError causes the next Inspect call to return err (one-shot).
+func (d *StubDriver) InjectInspectError(err error) { d.mu.Lock(); d.inspectErr = err; d.mu.Unlock() }
 
 // NewStubDriver creates a new StubDriver with empty state.
 func NewStubDriver() *StubDriver {
@@ -36,10 +48,15 @@ func vmKey(vm *impdevv1alpha1.ImpVM) string {
 
 // Start allocates a fake PID and IP and marks the VM as running immediately.
 func (d *StubDriver) Start(_ context.Context, vm *impdevv1alpha1.ImpVM) (int64, error) {
-	pid := atomic.AddInt64(&pidCounter, 1) + 10000
-	ip := fmt.Sprintf("192.168.100.%d", pid%254+1)
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.startErr != nil {
+		err := d.startErr
+		d.startErr = nil
+		return 0, err
+	}
+	pid := atomic.AddInt64(&pidCounter, 1) + 10000
+	ip := fmt.Sprintf("192.168.100.%d", pid%254+1)
 	d.states[vmKey(vm)] = &stubVM{pid: pid, ip: ip}
 	return pid, nil
 }
@@ -48,6 +65,11 @@ func (d *StubDriver) Start(_ context.Context, vm *impdevv1alpha1.ImpVM) (int64, 
 func (d *StubDriver) Stop(_ context.Context, vm *impdevv1alpha1.ImpVM) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.stopErr != nil {
+		err := d.stopErr
+		d.stopErr = nil
+		return err
+	}
 	delete(d.states, vmKey(vm))
 	return nil
 }
@@ -56,6 +78,11 @@ func (d *StubDriver) Stop(_ context.Context, vm *impdevv1alpha1.ImpVM) error {
 func (d *StubDriver) Inspect(_ context.Context, vm *impdevv1alpha1.ImpVM) (VMState, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if d.inspectErr != nil {
+		err := d.inspectErr
+		d.inspectErr = nil
+		return VMState{}, err
+	}
 	s, ok := d.states[vmKey(vm)]
 	if !ok {
 		return VMState{Running: false}, nil

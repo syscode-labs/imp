@@ -36,7 +36,8 @@ import (
 )
 
 const finalizerImp = "imp/finalizer"
-const terminationTimeout = 2 * time.Minute
+
+var terminationTimeout = 2 * time.Minute
 
 // ImpVMReconciler reconciles ImpVM objects.
 type ImpVMReconciler struct {
