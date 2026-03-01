@@ -43,7 +43,7 @@ func (b *Builder) ensureCacheDir() error { //nolint:unused
 // pullImage fetches the image manifest from the registry.
 // Layer data is not downloaded here — go-containerregistry fetches layers lazily.
 func (b *Builder) pullImage(ctx context.Context, imageRef string) (v1.Image, error) {
-	opts := []name.Option{}
+	var opts []name.Option
 	if b.Insecure {
 		opts = append(opts, name.Insecure)
 	}
