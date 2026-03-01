@@ -4,6 +4,7 @@ package rootfs
 import (
 	"archive/tar"
 	"bytes"
+	"context"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -129,5 +130,24 @@ func TestBuild_CacheHit(t *testing.T) {
 	}
 	if _, err := os.Stat(got); err != nil {
 		t.Errorf("cache file not found: %v", err)
+	}
+}
+
+func TestPullImage(t *testing.T) {
+	_, addr := startRegistry(t)
+	img := makeImage(t, []string{"/bin/app"}, map[string]string{"/bin/app": "#!/bin/sh\necho hello"})
+	ref := pushImage(t, addr, img)
+
+	b := newBuilder(t)
+	pulled, err := b.pullImage(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("pullImage: %v", err)
+	}
+	digest, err := pulled.Digest()
+	if err != nil {
+		t.Fatalf("Digest: %v", err)
+	}
+	if digest.Hex == "" {
+		t.Error("expected non-empty digest hex")
 	}
 }
