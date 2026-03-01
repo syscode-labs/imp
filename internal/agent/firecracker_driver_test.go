@@ -105,6 +105,19 @@ func TestFirecrackerDriver_Inspect_DeadProcess(t *testing.T) {
 	}
 }
 
+func TestFirecrackerDriver_Stop_NotTracked(t *testing.T) {
+	d := &FirecrackerDriver{procs: make(map[string]*fcProc)}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "ghost"
+
+	// Stop on an untracked VM should be a no-op.
+	if err := d.Stop(context.Background(), vm); err != nil {
+		t.Errorf("expected nil, got %v", err)
+	}
+}
+
 func TestFirecrackerDriver_BuildConfig(t *testing.T) {
 	d := &FirecrackerDriver{
 		KernelPath: "/boot/vmlinux",

@@ -106,8 +106,35 @@ func (d *FirecrackerDriver) Start(_ context.Context, _ *impdevv1alpha1.ImpVM) (i
 	return 0, fmt.Errorf("not implemented")
 }
 
-// Stop halts the VM. Not yet implemented (no-op).
-func (d *FirecrackerDriver) Stop(_ context.Context, _ *impdevv1alpha1.ImpVM) error {
+// Stop implements VMDriver. Sends a graceful ACPI shutdown signal, waits up to
+// shuttingDownTimeout, then force-terminates the Firecracker process and cleans up
+// the Unix socket. Safe to call on a VM that was never started or already stopped.
+func (d *FirecrackerDriver) Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) error {
+	key := vmKey(vm)
+
+	d.mu.Lock()
+	proc, ok := d.procs[key]
+	d.mu.Unlock()
+
+	if !ok {
+		return nil // already stopped or never started
+	}
+
+	// Attempt graceful ACPI shutdown with a timeout.
+	shutdownCtx, cancel := context.WithTimeout(ctx, shuttingDownTimeout)
+	defer cancel()
+	_ = proc.machine.Shutdown(shutdownCtx) //nolint:errcheck // best-effort graceful stop
+
+	// Force-kill the VMM process regardless of shutdown result.
+	_ = proc.machine.StopVMM() //nolint:errcheck // best-effort force stop
+
+	// Remove the API socket file.
+	_ = os.Remove(proc.socket) //nolint:errcheck // best-effort cleanup
+
+	d.mu.Lock()
+	delete(d.procs, key)
+	d.mu.Unlock()
+
 	return nil
 }
 
