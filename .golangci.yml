@@ -1,0 +1,33 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - goimports
+    - misspell
+    - revive
+
+linters-settings:
+  goimports:
+    local-prefixes: github.com/syscode-labs/imp
+  gosec:
+    severity: medium
+    confidence: medium
+  revive:
+    rules:
+      - name: exported
+        disabled: true # doc comments not required yet
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
