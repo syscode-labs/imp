@@ -26,7 +26,7 @@ func untar(dir string, r io.Reader) error {
 	tr := tar.NewReader(r)
 	for {
 		hdr, err := tr.Next()
-		if err == io.EOF { //nolint:errorlint
+		if err == io.EOF { //nolint:errorlint // tar.Reader returns io.EOF directly, never wrapped
 			break
 		}
 		if err != nil {
@@ -47,22 +47,24 @@ func untar(dir string, r io.Reader) error {
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, os.FileMode(hdr.Mode)); err != nil { //nolint:gosec
+			if err := os.MkdirAll(target, os.FileMode(hdr.Mode)); err != nil { //nolint:gosec // G115: tar header mode is a standard uint32→FileMode cast
 				return err
 			}
 		case tar.TypeReg:
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil { //nolint:gosec // G301: intermediate dirs in a VM rootfs must be world-traversable
 				return err
 			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode)) //nolint:gosec
+			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(hdr.Mode)) //nolint:gosec // G115: tar header mode is a standard uint32→FileMode cast
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(f, tr); err != nil { //nolint:gosec
+			if _, err := io.Copy(f, tr); err != nil { //nolint:gosec // G110: decompression bomb risk accepted; caller controls the OCI image source
 				f.Close() //nolint:errcheck
 				return err
 			}
-			f.Close() //nolint:errcheck
+			if err := f.Close(); err != nil {
+				return err
+			}
 		case tar.TypeSymlink:
 			// Only create symlink if it points inside the dir (basic safety).
 			_ = os.Symlink(hdr.Linkname, target) // best effort
