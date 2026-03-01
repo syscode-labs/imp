@@ -3,6 +3,7 @@
 package agent
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"testing"
@@ -37,6 +38,70 @@ func TestFirecrackerDriver_SocketPath(t *testing.T) {
 	want := "/run/imp/sockets/default-my-vm.sock"
 	if got != want {
 		t.Errorf("socketPath = %q, want %q", got, want)
+	}
+}
+
+func TestFirecrackerDriver_Inspect_NotTracked(t *testing.T) {
+	d := &FirecrackerDriver{procs: make(map[string]*fcProc)}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "ghost"
+
+	state, err := d.Inspect(context.Background(), vm)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if state.Running {
+		t.Error("expected Running=false for untracked VM")
+	}
+}
+
+func TestFirecrackerDriver_Inspect_LiveProcess(t *testing.T) {
+	d := &FirecrackerDriver{procs: make(map[string]*fcProc)}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "live"
+
+	// Inject the current process PID — guaranteed to be alive.
+	d.procs[vmKey(vm)] = &fcProc{pid: int64(os.Getpid())}
+
+	state, err := d.Inspect(context.Background(), vm)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !state.Running {
+		t.Error("expected Running=true for live process")
+	}
+	if state.PID != int64(os.Getpid()) {
+		t.Errorf("PID = %d, want %d", state.PID, os.Getpid())
+	}
+}
+
+func TestFirecrackerDriver_Inspect_DeadProcess(t *testing.T) {
+	d := &FirecrackerDriver{procs: make(map[string]*fcProc)}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "dead"
+
+	// Use a PID that almost certainly does not exist.
+	d.procs[vmKey(vm)] = &fcProc{pid: 2147483647}
+
+	state, err := d.Inspect(context.Background(), vm)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if state.Running {
+		t.Error("expected Running=false for dead process")
+	}
+	// After detecting the dead process, it should be cleaned up from the map.
+	d.mu.Lock()
+	_, stillTracked := d.procs[vmKey(vm)]
+	d.mu.Unlock()
+	if stillTracked {
+		t.Error("expected dead process to be removed from procs map")
 	}
 }
 

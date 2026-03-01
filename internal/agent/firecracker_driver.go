@@ -5,11 +5,13 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	firecracker "github.com/firecracker-microvm/firecracker-go-sdk"
@@ -109,9 +111,40 @@ func (d *FirecrackerDriver) Stop(_ context.Context, _ *impdevv1alpha1.ImpVM) err
 	return nil
 }
 
-// Inspect returns the current runtime state of the VM. Not yet implemented.
-func (d *FirecrackerDriver) Inspect(_ context.Context, _ *impdevv1alpha1.ImpVM) (VMState, error) {
-	return VMState{Running: false}, nil
+// Inspect implements VMDriver. Uses kill(pid,0) to check if the Firecracker
+// process is still alive. Returns Running=false for VMs not launched by this driver.
+// Phase 1: IP is always empty (loopback only, no TAP).
+func (d *FirecrackerDriver) Inspect(_ context.Context, vm *impdevv1alpha1.ImpVM) (VMState, error) {
+	d.mu.Lock()
+	proc, ok := d.procs[vmKey(vm)]
+	d.mu.Unlock()
+
+	if !ok {
+		return VMState{Running: false}, nil
+	}
+
+	// kill(pid, 0) — succeeds if process exists; returns ESRCH if not found.
+	p, err := os.FindProcess(int(proc.pid))
+	if err != nil {
+		// Process not found (Unix: never happens; Windows: possible).
+		d.mu.Lock()
+		delete(d.procs, vmKey(vm))
+		d.mu.Unlock()
+		return VMState{Running: false}, nil
+	}
+	if err := p.Signal(syscall.Signal(0)); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			// Process no longer exists — clean up.
+			d.mu.Lock()
+			delete(d.procs, vmKey(vm))
+			d.mu.Unlock()
+			return VMState{Running: false}, nil
+		}
+		return VMState{}, fmt.Errorf("inspect %s: %w", vmKey(vm), err)
+	}
+
+	// Phase 1: IP is empty (no TAP networking).
+	return VMState{Running: true, PID: proc.pid}, nil
 }
 
 // socketPath returns the Unix socket path for the given VM.
