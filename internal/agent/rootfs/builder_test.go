@@ -181,6 +181,31 @@ func TestExtractLayers(t *testing.T) {
 	}
 }
 
+func TestBuildExt4(t *testing.T) {
+	if !hasMke2fs() {
+		t.Skip("mke2fs/mkfs.ext4 not in PATH — skipping ext4 assembly test")
+	}
+
+	// Create a temp dir with a few files to pack into ext4.
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "hello.txt"), []byte("hello from ext4"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	dest := filepath.Join(t.TempDir(), "test.ext4")
+	if err := buildExt4(context.Background(), src, dest, 64); err != nil {
+		t.Fatalf("buildExt4: %v", err)
+	}
+
+	info, err := os.Stat(dest)
+	if err != nil {
+		t.Fatalf("stat ext4: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Error("ext4 file is empty")
+	}
+}
+
 func TestWriteInit(t *testing.T) {
 	tests := []struct {
 		name       string
