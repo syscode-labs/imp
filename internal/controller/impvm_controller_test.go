@@ -22,63 +22,101 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
 
-var _ = Describe("ImpVM Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+func newReconciler() *ImpVMReconciler {
+	return &ImpVMReconciler{
+		Client:   k8sClient,
+		Scheme:   k8sClient.Scheme(),
+		Recorder: record.NewFakeRecorder(32),
+	}
+}
 
-		ctx := context.Background()
+var _ = Describe("ImpVM Scheduler", func() {
+	ctx := context.Background()
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+	It("sets phase=Pending and emits Unschedulable when no imp/enabled nodes exist", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "sched-no-nodes", Namespace: "default"},
 		}
-		impvm := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, vm)).To(Or(Succeed(), MatchError(ContainSubstring("not found")))) })
 
-		BeforeEach(func() {
-			By("creating the custom resource for the Kind ImpVM")
-			err := k8sClient.Get(ctx, typeNamespacedName, impvm)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &impdevv1alpha1.ImpVM{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
+		// First reconcile: adds finalizer and returns
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "sched-no-nodes", Namespace: "default"},
 		})
+		Expect(err).NotTo(HaveOccurred())
 
-		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &impdevv1alpha1.ImpVM{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
-
-			By("Cleanup the specific resource instance ImpVM")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+		// Second reconcile: tries to schedule, finds no nodes
+		_, err = newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "sched-no-nodes", Namespace: "default"},
 		})
-		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &ImpVMReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
-			}
+		Expect(err).NotTo(HaveOccurred())
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
-			})
-			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "sched-no-nodes", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhasePending))
+	})
+})
+
+var _ = Describe("ImpVM SyncStatus", func() {
+	ctx := context.Background()
+
+	It("clears nodeName and sets Pending for ephemeral VM when assigned node not found", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "sync-no-node",
+				Namespace:  "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				NodeName:  "ghost-node",
+				Lifecycle: impdevv1alpha1.VMLifecycleEphemeral,
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, vm)).To(Or(Succeed(), MatchError(ContainSubstring("not found")))) })
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "sync-no-node", Namespace: "default"},
 		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "sync-no-node", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Spec.NodeName).To(BeEmpty())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhasePending))
+	})
+})
+
+var _ = Describe("ImpVM Deletion", func() {
+	ctx := context.Background()
+
+	It("removes finalizer immediately when spec.nodeName is empty on deletion", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "del-unscheduled",
+				Namespace:  "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, vm)).To(Succeed())
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "del-unscheduled", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "del-unscheduled", Namespace: "default"}, updated)
+		Expect(errors.IsNotFound(err)).To(BeTrue())
 	})
 })

@@ -18,40 +18,208 @@ package controller
 
 import (
 	"context"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
 
-// ImpVMReconciler reconciles a ImpVM object
+const finalizerImp = "imp/finalizer"
+const terminationTimeout = 2 * time.Minute
+
+// ImpVMReconciler reconciles ImpVM objects.
 type ImpVMReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms/finalizers,verbs=update
+// +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=imp.dev,resources=clusterimpnodeprofiles,verbs=get;list;watch
+// +kubebuilder:rbac:groups=imp.dev,resources=clusterimpconfigs,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the ImpVM object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.1/pkg/reconcile
 func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	vm := &impdevv1alpha1.ImpVM{}
+	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
-	return ctrl.Result{}, nil
+	// 1. Handle deletion
+	if !vm.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, vm)
+	}
+
+	// 2. Ensure finalizer
+	if !controllerutil.ContainsFinalizer(vm, finalizerImp) {
+		controllerutil.AddFinalizer(vm, finalizerImp)
+		return ctrl.Result{}, r.Update(ctx, vm)
+	}
+
+	// 3. Schedule if not yet assigned
+	if vm.Spec.NodeName == "" {
+		nodeName, err := r.schedule(ctx, vm)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if nodeName == "" {
+			log.Info("no node available", "vm", vm.Name)
+			vmCopy := vm.DeepCopy()
+			vm.Status.Phase = impdevv1alpha1.VMPhasePending
+			setUnscheduled(vm)
+			if err := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err != nil {
+				return ctrl.Result{}, err
+			}
+			r.Recorder.Event(vm, corev1.EventTypeWarning, EventReasonUnschedulable,
+				"No eligible node with available capacity")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+		// Assign to node
+		specPatch := client.MergeFrom(vm.DeepCopy())
+		vm.Spec.NodeName = nodeName
+		if err := r.Patch(ctx, vm, specPatch); err != nil {
+			return ctrl.Result{}, err
+		}
+		vmCopy := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseScheduled
+		setScheduled(vm, nodeName)
+		if err := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.Recorder.Event(vm, corev1.EventTypeNormal, EventReasonScheduled, "VM scheduled to node "+nodeName)
+		return ctrl.Result{}, nil
+	}
+
+	// 4. SyncStatus
+	return r.syncStatus(ctx, vm)
+}
+
+func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
+	node := &corev1.Node{}
+	err := r.Get(ctx, client.ObjectKey{Name: vm.Spec.NodeName}, node)
+	nodeHealthy := err == nil && isNodeReady(node)
+
+	if !nodeHealthy {
+		reason := "node not found"
+		if err == nil {
+			reason = "node is not Ready"
+		}
+		vmCopy := vm.DeepCopy()
+		setNodeUnhealthy(vm, reason)
+
+		if vm.Spec.Lifecycle == impdevv1alpha1.VMLifecycleEphemeral {
+			specPatch := client.MergeFrom(vm.DeepCopy())
+			vm.Spec.NodeName = ""
+			if err2 := r.Patch(ctx, vm, specPatch); err2 != nil {
+				return ctrl.Result{}, err2
+			}
+			vm.Status.Phase = impdevv1alpha1.VMPhasePending
+			setUnscheduled(vm)
+			if err2 := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err2 != nil {
+				return ctrl.Result{}, err2
+			}
+			r.Recorder.Event(vm, corev1.EventTypeNormal, EventReasonRescheduling,
+				"Ephemeral VM rescheduled after node loss")
+			return ctrl.Result{}, nil
+		}
+		// Persistent → fail
+		vm.Status.Phase = impdevv1alpha1.VMPhaseFailed
+		if err2 := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err2 != nil {
+			return ctrl.Result{}, err2
+		}
+		r.Recorder.Event(vm, corev1.EventTypeWarning, EventReasonNodeLost,
+			"Assigned node lost; persistent VM marked Failed")
+		return ctrl.Result{}, nil
+	}
+
+	// Node healthy — derive conditions
+	vmCopy := vm.DeepCopy()
+	setNodeHealthy(vm)
+	setScheduled(vm, vm.Spec.NodeName)
+
+	// Apply HTTP check before setReadyFromPhase so it can override Ready condition
+	if vm.Status.Phase == impdevv1alpha1.VMPhaseRunning {
+		httpSpec := resolveHTTPCheck(vm, r.globalHTTPCheck(ctx))
+		if httpSpec != nil {
+			r.applyHTTPCheck(ctx, vm, httpSpec)
+		} else {
+			setReadyFromPhase(vm)
+		}
+	} else {
+		setReadyFromPhase(vm)
+	}
+
+	if err2 := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err2 != nil {
+		return ctrl.Result{}, err2
+	}
+
+	if vm.Status.Phase == impdevv1alpha1.VMPhaseRunning {
+		return ctrl.Result{}, nil // watch-driven in steady state
+	}
+	return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+}
+
+func (r *ImpVMReconciler) handleDeletion(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
+	if !controllerutil.ContainsFinalizer(vm, finalizerImp) {
+		return ctrl.Result{}, nil
+	}
+
+	// Agent already cleaned up (cleared spec.nodeName + set Succeeded)
+	if vm.Spec.NodeName == "" {
+		controllerutil.RemoveFinalizer(vm, finalizerImp)
+		return ctrl.Result{}, r.Update(ctx, vm)
+	}
+
+	// Check for termination timeout
+	deadline := vm.DeletionTimestamp.Add(terminationTimeout)
+	if time.Now().After(deadline) {
+		r.Recorder.Event(vm, corev1.EventTypeWarning, EventReasonTerminationTimeout,
+			"Finalizer force-removed after 2min termination timeout")
+		controllerutil.RemoveFinalizer(vm, finalizerImp)
+		return ctrl.Result{}, r.Update(ctx, vm)
+	}
+
+	// Signal agent by setting phase=Terminating
+	if vm.Status.Phase != impdevv1alpha1.VMPhaseTerminating {
+		vmCopy := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseTerminating
+		if err := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err != nil {
+			return ctrl.Result{}, err
+		}
+		r.Recorder.Event(vm, corev1.EventTypeNormal, EventReasonTerminating,
+			"Waiting for agent to stop VM")
+	}
+
+	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+}
+
+func (r *ImpVMReconciler) globalHTTPCheck(ctx context.Context) *impdevv1alpha1.HTTPCheckSpec {
+	cfg := &impdevv1alpha1.ClusterImpConfig{}
+	if err := r.Get(ctx, client.ObjectKey{Name: "cluster"}, cfg); err != nil {
+		return nil
+	}
+	return cfg.Spec.DefaultHttpCheck
+}
+
+func isNodeReady(node *corev1.Node) bool {
+	for _, c := range node.Status.Conditions {
+		if c.Type == corev1.NodeReady {
+			return c.Status == corev1.ConditionTrue
+		}
+	}
+	return false
 }
 
 // SetupWithManager sets up the controller with the Manager.
