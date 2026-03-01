@@ -1,0 +1,233 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.3
+  name: impvmclasses.imp.dev
+spec:
+  group: imp.dev
+  names:
+    categories:
+    - imp
+    kind: ImpVMClass
+    listKind: ImpVMClassList
+    plural: impvmclasses
+    shortNames:
+    - impcls
+    singular: impvmclass
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.vcpu
+      name: VCPU
+      type: integer
+    - jsonPath: .spec.memoryMiB
+      name: Memory
+      type: integer
+    - jsonPath: .spec.diskGiB
+      name: Disk
+      type: integer
+    - jsonPath: .spec.arch
+      name: Arch
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ImpVMClass is the Schema for the impvmclasses API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ImpVMClassSpec defines compute resources for a class of VMs.
+              All ImpVMs and ImpVMTemplates referencing this class inherit these values.
+            properties:
+              arch:
+                default: multi
+                description: |-
+                  Arch is the CPU architecture this class targets.
+                  Use "multi" to allow scheduling on either amd64 or arm64 nodes.
+                enum:
+                - amd64
+                - arm64
+                - multi
+                type: string
+              diskGiB:
+                description: DiskGiB is the root disk size in gibibytes.
+                format: int32
+                minimum: 1
+                type: integer
+              memoryMiB:
+                description: MemoryMiB is the amount of RAM in mebibytes.
+                format: int32
+                minimum: 128
+                type: integer
+              probes:
+                description: |-
+                  Probes defines default probes for VMs using this class.
+                  Can be overridden by ImpVMTemplate or ImpVM.
+                properties:
+                  livenessProbe:
+                    description: Probe defines a single probe. Only one of Exec or
+                      HTTP may be set.
+                    properties:
+                      exec:
+                        description: ExecAction runs a command inside the VM via VSOCK
+                          guest agent.
+                        properties:
+                          command:
+                            items:
+                              type: string
+                            minItems: 1
+                            type: array
+                        required:
+                        - command
+                        type: object
+                      failureThreshold:
+                        default: 3
+                        format: int32
+                        type: integer
+                      http:
+                        description: HTTPGetAction performs an HTTP GET against the
+                          VM's guest agent.
+                        properties:
+                          path:
+                            type: string
+                          port:
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
+                        required:
+                        - path
+                        - port
+                        type: object
+                      initialDelaySeconds:
+                        default: 0
+                        format: int32
+                        type: integer
+                      periodSeconds:
+                        default: 10
+                        format: int32
+                        type: integer
+                    type: object
+                  readinessProbe:
+                    description: Probe defines a single probe. Only one of Exec or
+                      HTTP may be set.
+                    properties:
+                      exec:
+                        description: ExecAction runs a command inside the VM via VSOCK
+                          guest agent.
+                        properties:
+                          command:
+                            items:
+                              type: string
+                            minItems: 1
+                            type: array
+                        required:
+                        - command
+                        type: object
+                      failureThreshold:
+                        default: 3
+                        format: int32
+                        type: integer
+                      http:
+                        description: HTTPGetAction performs an HTTP GET against the
+                          VM's guest agent.
+                        properties:
+                          path:
+                            type: string
+                          port:
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
+                        required:
+                        - path
+                        - port
+                        type: object
+                      initialDelaySeconds:
+                        default: 0
+                        format: int32
+                        type: integer
+                      periodSeconds:
+                        default: 10
+                        format: int32
+                        type: integer
+                    type: object
+                  startupProbe:
+                    description: Probe defines a single probe. Only one of Exec or
+                      HTTP may be set.
+                    properties:
+                      exec:
+                        description: ExecAction runs a command inside the VM via VSOCK
+                          guest agent.
+                        properties:
+                          command:
+                            items:
+                              type: string
+                            minItems: 1
+                            type: array
+                        required:
+                        - command
+                        type: object
+                      failureThreshold:
+                        default: 3
+                        format: int32
+                        type: integer
+                      http:
+                        description: HTTPGetAction performs an HTTP GET against the
+                          VM's guest agent.
+                        properties:
+                          path:
+                            type: string
+                          port:
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
+                        required:
+                        - path
+                        - port
+                        type: object
+                      initialDelaySeconds:
+                        default: 0
+                        format: int32
+                        type: integer
+                      periodSeconds:
+                        default: 10
+                        format: int32
+                        type: integer
+                    type: object
+                type: object
+              vcpu:
+                description: VCPU is the number of virtual CPUs allocated to each
+                  VM.
+                format: int32
+                minimum: 1
+                type: integer
+            required:
+            - diskGiB
+            - memoryMiB
+            - vcpu
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}
