@@ -57,7 +57,3 @@ func dirSize(dir string) (int64, error) {
 	})
 	return total, err
 }
-
-// Ensure dirSize is referenced to suppress unused lint errors until it is
-// wired into Build() in a subsequent task.
-var _ = dirSize
