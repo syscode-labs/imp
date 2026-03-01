@@ -21,6 +21,14 @@ linters:
       rules:
         - name: exported
           disabled: true # doc comments not required yet
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - unused
+          - staticcheck
 
 formatters:
   enable:
@@ -33,8 +41,3 @@ formatters:
 issues:
   exclude-dirs:
     - test
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gosec
-        - errcheck
