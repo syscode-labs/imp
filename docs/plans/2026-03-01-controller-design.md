@@ -15,8 +15,11 @@ at the operator layer (Layer 2) and never calls Firecracker directly. The node a
 
 | Field owner | Fields |
 |---|---|
-| Operator | `status.conditions` |
-| Agent | `status.phase`, `status.ip`, `status.runtimePID`, `status.nodeName` |
+| Operator | `status.conditions`; `status.phase` for scheduling transitions (Pending, Scheduled, Terminating, Failed on node loss) |
+| Agent | `status.phase` for runtime transitions (Starting, Running, Succeeded); `status.ip`; `status.runtimePID`; `status.nodeName` |
+
+Note: `status.phase` has split ownership. The operator drives scheduling and lifecycle-termination phases;
+the agent drives runtime phases. Both sets are non-overlapping.
 
 ---
 
