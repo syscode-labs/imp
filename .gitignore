@@ -1,0 +1,33 @@
+# Binaries
+bin/
+*.exe
+*.out
+
+# Go
+vendor/
+*.test
+*.cover
+coverage.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude working files
+/tmp/
+*.tmp
+.claude/
+
+# Local config overrides
+*.local.yaml
+*.local.json
+
+# Build artifacts
+dist/
+release/
