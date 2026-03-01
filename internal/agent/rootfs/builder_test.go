@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -149,5 +150,33 @@ func TestPullImage(t *testing.T) {
 	}
 	if digest.Hex == "" {
 		t.Error("expected non-empty digest hex")
+	}
+}
+
+func TestExtractLayers(t *testing.T) {
+	_, addr := startRegistry(t)
+	img := makeImage(t, nil, map[string]string{
+		"/etc/hostname": "my-vm\n",
+		"/bin/hello":    "#!/bin/sh\necho hello",
+	})
+	ref := pushImage(t, addr, img)
+
+	b := newBuilder(t)
+	pulled, err := b.pullImage(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("pullImage: %v", err)
+	}
+
+	dir := t.TempDir()
+	if err := extractLayers(pulled, dir); err != nil {
+		t.Fatalf("extractLayers: %v", err)
+	}
+
+	// Verify files exist in the extracted directory.
+	for _, want := range []string{"etc/hostname", "bin/hello"} {
+		path := filepath.Join(dir, want)
+		if _, err := os.Stat(path); err != nil {
+			t.Errorf("expected %s to exist: %v", want, err)
+		}
 	}
 }
