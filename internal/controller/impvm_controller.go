@@ -22,11 +22,14 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
@@ -226,6 +229,27 @@ func isNodeReady(node *corev1.Node) bool {
 func (r *ImpVMReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&impdevv1alpha1.ImpVM{}).
+		Watches(
+			&corev1.Node{},
+			handler.EnqueueRequestsFromMapFunc(r.nodeToImpVMs),
+		).
 		Named("impvm").
 		Complete(r)
+}
+
+// nodeToImpVMs maps a Node event to all ImpVMs assigned to that node.
+func (r *ImpVMReconciler) nodeToImpVMs(ctx context.Context, obj client.Object) []reconcile.Request {
+	allVMs := &impdevv1alpha1.ImpVMList{}
+	if err := r.List(ctx, allVMs); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for _, vm := range allVMs.Items {
+		if vm.Spec.NodeName == obj.GetName() {
+			reqs = append(reqs, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace},
+			})
+		}
+	}
+	return reqs
 }
