@@ -31,3 +31,5 @@ Thumbs.db
 # Build artifacts
 dist/
 release/
+/agent
+/operator
