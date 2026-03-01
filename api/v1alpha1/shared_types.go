@@ -17,6 +17,9 @@ type ProbeSpec struct {
 	StartupProbe   *Probe `json:"startupProbe,omitempty"`
 	ReadinessProbe *Probe `json:"readinessProbe,omitempty"`
 	LivenessProbe  *Probe `json:"livenessProbe,omitempty"`
+	// HTTPCheck configures an optional operator-driven HTTP health check (opt-in).
+	// +optional
+	HTTPCheck *HTTPCheckSpec `json:"httpCheck,omitempty"`
 }
 
 // Probe defines a single probe. Only one of Exec or HTTP may be set.
@@ -63,17 +66,17 @@ const (
 )
 
 // VMPhase is the current lifecycle phase of an ImpVM.
-// +kubebuilder:validation:Enum=Pending;Scheduling;Starting;Running;Stopping;Stopped;Failed
+// +kubebuilder:validation:Enum=Pending;Scheduled;Starting;Running;Terminating;Succeeded;Failed
 type VMPhase string
 
 const (
-	VMPhasePending    VMPhase = "Pending"
-	VMPhaseScheduling VMPhase = "Scheduling"
-	VMPhaseStarting   VMPhase = "Starting"
-	VMPhaseRunning    VMPhase = "Running"
-	VMPhaseStopping   VMPhase = "Stopping"
-	VMPhaseStopped    VMPhase = "Stopped"
-	VMPhaseFailed     VMPhase = "Failed"
+	VMPhasePending     VMPhase = "Pending"
+	VMPhaseScheduled   VMPhase = "Scheduled"
+	VMPhaseStarting    VMPhase = "Starting"
+	VMPhaseRunning     VMPhase = "Running"
+	VMPhaseTerminating VMPhase = "Terminating"
+	VMPhaseSucceeded   VMPhase = "Succeeded"
+	VMPhaseFailed      VMPhase = "Failed"
 )
 
 // Arch is the CPU architecture for a VM class.
@@ -85,3 +88,28 @@ const (
 	ArchARM64 Arch = "arm64"
 	ArchMulti Arch = "multi"
 )
+
+// HTTPCheckSpec configures the operator-side HTTP health check (opt-in).
+// Enabled per-VM via spec.probes.httpCheck or cluster-wide via ClusterImpConfig.spec.defaultHttpCheck.
+type HTTPCheckSpec struct {
+	// Enabled turns on the operator HTTP health check.
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+	// Path is the HTTP path to GET. Defaults to /healthz.
+	// +optional
+	// +kubebuilder:default=/healthz
+	Path string `json:"path,omitempty"`
+	// Port is the TCP port to check.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port,omitempty"`
+	// IntervalSeconds is how often the operator checks the endpoint.
+	// +optional
+	// +kubebuilder:default=10
+	IntervalSeconds int32 `json:"intervalSeconds,omitempty"`
+	// FailureThreshold is the number of consecutive failures before marking Ready=False.
+	// +optional
+	// +kubebuilder:default=3
+	FailureThreshold int32 `json:"failureThreshold,omitempty"`
+}

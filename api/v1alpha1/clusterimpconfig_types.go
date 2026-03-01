@@ -16,6 +16,12 @@ type ClusterImpConfigSpec struct {
 	// Observability configures metrics and tracing.
 	// +optional
 	Observability ObservabilityConfig `json:"observability,omitempty"`
+
+	// DefaultHttpCheck sets the cluster-wide default for the operator HTTP health check.
+	// Individual ImpVMs can override this per-VM via spec.probes.httpCheck.
+	// Disabled by default.
+	// +optional
+	DefaultHttpCheck *HTTPCheckSpec `json:"defaultHttpCheck,omitempty"`
 }
 
 // NetworkingConfig holds cluster-wide networking settings.

@@ -93,9 +93,9 @@ type ImpVMStatus struct {
 	// +optional
 	IP string `json:"ip,omitempty"`
 
-	// FirecrackerPID is the PID of the Firecracker process on the node (informational).
+	// RuntimePID is the PID of the VM runtime process on the node (informational).
 	// +optional
-	FirecrackerPID int64 `json:"firecrackerPID,omitempty"`
+	RuntimePID int64 `json:"runtimePID,omitempty"`
 
 	// Conditions follow the standard k8s condition convention.
 	// +optional

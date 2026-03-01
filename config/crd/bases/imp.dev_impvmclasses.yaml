@@ -83,6 +83,36 @@ spec:
                   Probes defines default probes for VMs using this class.
                   Can be overridden by ImpVMTemplate or ImpVM.
                 properties:
+                  httpCheck:
+                    description: HTTPCheck configures an optional operator-driven
+                      HTTP health check (opt-in).
+                    properties:
+                      enabled:
+                        description: Enabled turns on the operator HTTP health check.
+                        type: boolean
+                      failureThreshold:
+                        default: 3
+                        description: FailureThreshold is the number of consecutive
+                          failures before marking Ready=False.
+                        format: int32
+                        type: integer
+                      intervalSeconds:
+                        default: 10
+                        description: IntervalSeconds is how often the operator checks
+                          the endpoint.
+                        format: int32
+                        type: integer
+                      path:
+                        default: /healthz
+                        description: Path is the HTTP path to GET. Defaults to /healthz.
+                        type: string
+                      port:
+                        description: Port is the TCP port to check.
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                    type: object
                   livenessProbe:
                     description: Probe defines a single probe. Only one of Exec or
                       HTTP may be set.
