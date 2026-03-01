@@ -8,7 +8,11 @@ import (
 	"os/exec"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/agent/rootfs"
 )
 
 // hasFirecrackerBin returns true if the firecracker binary is available.
@@ -156,4 +160,82 @@ func TestFirecrackerDriver_BuildConfig(t *testing.T) {
 	if *cfg.MachineCfg.MemSizeMib != 512 {
 		t.Errorf("MachineCfg.MemSizeMib = %d, want 512", *cfg.MachineCfg.MemSizeMib)
 	}
+}
+
+func TestFirecrackerDriver_Start_NoClassRef(t *testing.T) {
+	d := &FirecrackerDriver{procs: make(map[string]*fcProc)}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "test"
+	// vm.Spec.ClassRef is nil
+
+	_, err := d.Start(context.Background(), vm)
+	if err == nil {
+		t.Fatal("expected error for missing ClassRef")
+	}
+}
+
+func TestFirecrackerDriver_Start_ClassNotFound(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	d := &FirecrackerDriver{
+		Client: fakeClient,
+		procs:  make(map[string]*fcProc),
+	}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "test"
+	vm.Spec.ClassRef = &impdevv1alpha1.ClusterObjectRef{Name: "nonexistent"}
+
+	_, err := d.Start(context.Background(), vm)
+	if err == nil {
+		t.Fatal("expected error when class not found")
+	}
+}
+
+func TestFirecrackerDriver_Start_RootfsBuildFails(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+
+	class := &impdevv1alpha1.ImpVMClass{}
+	class.Name = "small"
+	class.Spec.VCPU = 1
+	class.Spec.MemoryMiB = 256
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(class).Build()
+
+	d := &FirecrackerDriver{
+		Client: fakeClient,
+		Cache:  &rootfs.Builder{CacheDir: t.TempDir(), Insecure: true},
+		procs:  make(map[string]*fcProc),
+	}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "test"
+	vm.Spec.ClassRef = &impdevv1alpha1.ClusterObjectRef{Name: "small"}
+	vm.Spec.Image = "localhost:9999/nonexistent:latest" // unreachable registry
+
+	_, err := d.Start(context.Background(), vm)
+	if err == nil {
+		t.Fatal("expected error when rootfs build fails")
+	}
+}
+
+func TestFirecrackerDriver_Start_Integration(t *testing.T) {
+	if !hasFirecrackerBin() {
+		t.Skip("firecracker binary not available")
+	}
+	if !hasKVM() {
+		t.Skip("/dev/kvm not accessible")
+	}
+	t.Skip("integration test — run manually on KVM-capable node")
 }

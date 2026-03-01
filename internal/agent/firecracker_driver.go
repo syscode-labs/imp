@@ -101,9 +101,59 @@ func NewFirecrackerDriver(client ctrlclient.Client) (*FirecrackerDriver, error) 
 	}, nil
 }
 
-// Start boots the VM and returns its runtime PID. Not yet implemented.
-func (d *FirecrackerDriver) Start(_ context.Context, _ *impdevv1alpha1.ImpVM) (int64, error) {
-	return 0, fmt.Errorf("not implemented")
+// Start implements VMDriver. Fetches the ImpVMClass for compute specs, builds
+// an ext4 rootfs from the OCI image, then boots a Firecracker microVM.
+// Phase 1: loopback networking only. Returns the VMM process PID.
+func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM) (int64, error) {
+	if vm.Spec.ClassRef == nil {
+		return 0, fmt.Errorf("vm %s/%s has no classRef", vm.Namespace, vm.Name)
+	}
+
+	// 1. Fetch compute class.
+	var class impdevv1alpha1.ImpVMClass
+	if err := d.Client.Get(ctx, ctrlclient.ObjectKey{Name: vm.Spec.ClassRef.Name}, &class); err != nil {
+		return 0, fmt.Errorf("get class %q: %w", vm.Spec.ClassRef.Name, err)
+	}
+
+	// 2. Build ext4 rootfs from OCI image (cached by digest).
+	rootfsPath, err := d.Cache.Build(ctx, vm.Spec.Image)
+	if err != nil {
+		return 0, fmt.Errorf("build rootfs for %s: %w", vm.Spec.Image, err)
+	}
+
+	// 3. Ensure socket directory exists.
+	if err := os.MkdirAll(d.SocketDir, 0o750); err != nil {
+		return 0, fmt.Errorf("socket dir: %w", err)
+	}
+	sockPath := d.socketPath(vm)
+
+	// 4. Build Firecracker config.
+	cfg := d.buildConfig(&class, rootfsPath, sockPath)
+
+	// 5. Build the VMM command.
+	cmd := exec.CommandContext(ctx, d.BinPath, "--api-sock", sockPath) //nolint:gosec // G204: BinPath validated in NewFirecrackerDriver
+
+	// 6. Create and start the machine.
+	m, err := firecracker.NewMachine(ctx, cfg, firecracker.WithProcessRunner(cmd))
+	if err != nil {
+		return 0, fmt.Errorf("create machine: %w", err)
+	}
+	if err := m.Start(ctx); err != nil {
+		_ = m.StopVMM() //nolint:errcheck
+		return 0, fmt.Errorf("start machine: %w", err)
+	}
+
+	pid, err := m.PID()
+	if err != nil {
+		_ = m.StopVMM() //nolint:errcheck
+		return 0, fmt.Errorf("get pid: %w", err)
+	}
+
+	d.mu.Lock()
+	d.procs[vmKey(vm)] = &fcProc{machine: m, pid: int64(pid), socket: sockPath}
+	d.mu.Unlock()
+
+	return int64(pid), nil
 }
 
 // Stop implements VMDriver. Sends a graceful ACPI shutdown signal, waits up to
