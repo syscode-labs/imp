@@ -47,8 +47,9 @@ type FirecrackerDriver struct {
 	// Client is the controller-runtime Kubernetes client.
 	Client ctrlclient.Client
 
+	// mu guards procs. Must be held for any read or write of the procs map.
 	mu    sync.Mutex
-	procs map[string]*fcProc
+	procs map[string]*fcProc // keyed by vmKey(vm)
 }
 
 // NewFirecrackerDriver constructs a FirecrackerDriver from environment variables:
@@ -123,9 +124,6 @@ func (d *FirecrackerDriver) buildConfig(
 	class *impdevv1alpha1.ImpVMClass,
 	rootfsPath, socketPath string,
 ) firecracker.Config {
-	vcpu := int64(class.Spec.VCPU)
-	mem := int64(class.Spec.MemoryMiB)
-
 	return firecracker.Config{
 		SocketPath:      socketPath,
 		KernelImagePath: d.KernelPath,
@@ -139,8 +137,8 @@ func (d *FirecrackerDriver) buildConfig(
 			},
 		},
 		MachineCfg: models.MachineConfiguration{
-			VcpuCount:  firecracker.Int64(vcpu),
-			MemSizeMib: firecracker.Int64(mem),
+			VcpuCount:  firecracker.Int64(int64(class.Spec.VCPU)),
+			MemSizeMib: firecracker.Int64(int64(class.Spec.MemoryMiB)),
 		},
 	}
 }
