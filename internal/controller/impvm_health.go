@@ -29,10 +29,11 @@ func resolveHTTPCheck(vm *impdevv1alpha1.ImpVM, globalDefault *impdevv1alpha1.HT
 
 // applyHTTPCheck runs the HTTP probe and updates the Ready condition + emits events.
 // Failure count is tracked in the annotation "imp/httpcheck-failures".
-func (r *ImpVMReconciler) applyHTTPCheck(ctx context.Context, vm *impdevv1alpha1.ImpVM, spec *impdevv1alpha1.HTTPCheckSpec) {
+// Returns true if vm.Annotations were mutated (so the caller knows to issue a separate spec patch).
+func (r *ImpVMReconciler) applyHTTPCheck(ctx context.Context, vm *impdevv1alpha1.ImpVM, spec *impdevv1alpha1.HTTPCheckSpec) bool {
 	if vm.Status.IP == "" {
 		setReadyFromPhase(vm) // no IP yet, fall back to phase-derived Ready
-		return
+		return false
 	}
 
 	healthy, msg := doHTTPCheck(ctx, vm.Status.IP, spec)
@@ -46,20 +47,21 @@ func (r *ImpVMReconciler) applyHTTPCheck(ctx context.Context, vm *impdevv1alpha1
 		vm.Annotations = make(map[string]string)
 	}
 
+	prev := vm.Annotations["imp/httpcheck-failures"]
+
 	if healthy {
-		wasFailure := vm.Annotations["imp/httpcheck-failures"] != "" &&
-			vm.Annotations["imp/httpcheck-failures"] != "0"
+		wasFailure := prev != "" && prev != "0"
 		if wasFailure {
 			r.Recorder.Event(vm, corev1.EventTypeNormal, EventReasonHealthCheckRecovered,
 				"HTTP probe passing again")
 		}
 		vm.Annotations["imp/httpcheck-failures"] = "0"
 		setCondition(vm, ConditionReady, metav1.ConditionTrue, "Running", "VM is running and HTTP probe passing")
-		return
+		return prev != "0" // annotation changed if it wasn't already "0"
 	}
 
 	var failures int32
-	fmt.Sscan(vm.Annotations["imp/httpcheck-failures"], &failures) //nolint:errcheck
+	fmt.Sscan(prev, &failures) //nolint:errcheck
 	failures++
 	vm.Annotations["imp/httpcheck-failures"] = fmt.Sprintf("%d", failures)
 
@@ -70,6 +72,7 @@ func (r *ImpVMReconciler) applyHTTPCheck(ctx context.Context, vm *impdevv1alpha1
 	} else {
 		setReadyFromPhase(vm) // not yet at threshold
 	}
+	return true // failure counter incremented
 }
 
 // doHTTPCheck performs a single HTTP GET. Returns (healthy, message).
@@ -80,12 +83,9 @@ func doHTTPCheck(ctx context.Context, ip string, spec *impdevv1alpha1.HTTPCheckS
 	}
 	url := fmt.Sprintf("http://%s:%d%s", ip, spec.Port, path)
 
-	timeout := time.Duration(spec.IntervalSeconds) * time.Second
-	if timeout == 0 {
-		timeout = 10 * time.Second
-	}
-
-	hc := &http.Client{Timeout: timeout}
+	// Request timeout is fixed at 5s regardless of IntervalSeconds.
+	// IntervalSeconds is the *polling* frequency, not a request deadline.
+	hc := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return false, err.Error()

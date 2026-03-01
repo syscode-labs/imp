@@ -21,6 +21,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -110,8 +111,14 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 }
 
 func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
 	node := &corev1.Node{}
 	err := r.Get(ctx, client.ObjectKey{Name: vm.Spec.NodeName}, node)
+	if err != nil && !apierrors.IsNotFound(err) {
+		// Transient API error — let controller-runtime retry with backoff.
+		return ctrl.Result{}, err
+	}
 	nodeHealthy := err == nil && isNodeReady(node)
 
 	if !nodeHealthy {
@@ -119,15 +126,18 @@ func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.Imp
 		if err == nil {
 			reason = "node is not Ready"
 		}
-		vmCopy := vm.DeepCopy()
-		setNodeUnhealthy(vm, reason)
+		log.Info("assigned node unhealthy", "node", vm.Spec.NodeName, "reason", reason)
 
 		if vm.Spec.Lifecycle == impdevv1alpha1.VMLifecycleEphemeral {
+			// Clear assignment — spec patch first.
 			specPatch := client.MergeFrom(vm.DeepCopy())
 			vm.Spec.NodeName = ""
 			if err2 := r.Patch(ctx, vm, specPatch); err2 != nil {
 				return ctrl.Result{}, err2
 			}
+			// Status patch — take vmCopy after spec patch so resourceVersion is current.
+			vmCopy := vm.DeepCopy()
+			setNodeUnhealthy(vm, reason)
 			vm.Status.Phase = impdevv1alpha1.VMPhasePending
 			setUnscheduled(vm)
 			if err2 := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err2 != nil {
@@ -137,7 +147,9 @@ func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.Imp
 				"Ephemeral VM rescheduled after node loss")
 			return ctrl.Result{}, nil
 		}
-		// Persistent → fail
+		// Persistent → fail.
+		vmCopy := vm.DeepCopy()
+		setNodeUnhealthy(vm, reason)
 		vm.Status.Phase = impdevv1alpha1.VMPhaseFailed
 		if err2 := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err2 != nil {
 			return ctrl.Result{}, err2
@@ -147,16 +159,16 @@ func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.Imp
 		return ctrl.Result{}, nil
 	}
 
-	// Node healthy — derive conditions
-	vmCopy := vm.DeepCopy()
+	// Node healthy — take base before ALL mutations so diffs are non-empty.
+	base := vm.DeepCopy()
 	setNodeHealthy(vm)
 	setScheduled(vm, vm.Spec.NodeName)
 
-	// Apply HTTP check before setReadyFromPhase so it can override Ready condition
+	var annotationChanged bool
 	if vm.Status.Phase == impdevv1alpha1.VMPhaseRunning {
 		httpSpec := resolveHTTPCheck(vm, r.globalHTTPCheck(ctx))
 		if httpSpec != nil {
-			r.applyHTTPCheck(ctx, vm, httpSpec)
+			annotationChanged = r.applyHTTPCheck(ctx, vm, httpSpec)
 		} else {
 			setReadyFromPhase(vm)
 		}
@@ -164,8 +176,16 @@ func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.Imp
 		setReadyFromPhase(vm)
 	}
 
-	if err2 := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err2 != nil {
+	// Status patch first (status subresource; base.rv == vm.rv so no rv in body → no conflict).
+	if err2 := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err2 != nil {
 		return ctrl.Result{}, err2
+	}
+	// Annotation patch second — vm.rv now updated by the status patch response,
+	// so diff(base, vm) includes the new rv which satisfies the server's optimistic check.
+	if annotationChanged {
+		if err2 := r.Patch(ctx, vm, client.MergeFrom(base)); err2 != nil {
+			return ctrl.Result{}, err2
+		}
 	}
 
 	if vm.Status.Phase == impdevv1alpha1.VMPhaseRunning {

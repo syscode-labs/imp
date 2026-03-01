@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
@@ -43,6 +44,10 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 		profile := &impdevv1alpha1.ClusterImpNodeProfile{}
 		err := r.Get(ctx, client.ObjectKey{Name: node.Name}, profile)
 		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				// Transient API error — propagate so controller-runtime retries.
+				return "", err
+			}
 			// No profile → no hard cap
 			candidates = append(candidates, candidate{name: node.Name, running: runningPerNode[node.Name]})
 			continue
@@ -87,11 +92,18 @@ func filterByNodeSelector(nodes []corev1.Node, selector map[string]string) []cor
 	return result
 }
 
-// countRunningVMs counts VMs per node where spec.nodeName != "" and phase != Failed.
+// countRunningVMs counts VMs per node that are actively occupying capacity.
+// Excludes Failed, Succeeded, and Terminating — all of which are vacating or already gone.
 func countRunningVMs(vms []impdevv1alpha1.ImpVM) map[string]int {
 	counts := make(map[string]int)
 	for _, vm := range vms {
-		if vm.Spec.NodeName != "" && vm.Status.Phase != impdevv1alpha1.VMPhaseFailed {
+		switch vm.Status.Phase {
+		case impdevv1alpha1.VMPhaseFailed,
+			impdevv1alpha1.VMPhaseSucceeded,
+			impdevv1alpha1.VMPhaseTerminating:
+			continue
+		}
+		if vm.Spec.NodeName != "" {
 			counts[vm.Spec.NodeName]++
 		}
 	}
