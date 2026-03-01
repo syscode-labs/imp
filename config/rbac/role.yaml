@@ -5,6 +5,30 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - imp.dev
+  resources:
+  - clusterimpconfigs
+  - clusterimpnodeprofiles
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - imp.dev
   resources:
   - impvms

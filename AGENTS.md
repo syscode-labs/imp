@@ -1,4 +1,4 @@
-# go-scaffold - AI Agent Guide
+# imp - AI Agent Guide
 
 ## Project Structure
 
