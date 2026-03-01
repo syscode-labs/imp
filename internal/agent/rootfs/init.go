@@ -19,7 +19,9 @@ func writeInit(img v1.Image, dir string) error {
 		return fmt.Errorf("config file: %w", err)
 	}
 
-	args := append(cfg.Config.Entrypoint, cfg.Config.Cmd...)
+	args := make([]string, 0, len(cfg.Config.Entrypoint)+len(cfg.Config.Cmd))
+	args = append(args, cfg.Config.Entrypoint...)
+	args = append(args, cfg.Config.Cmd...)
 	if len(args) == 0 {
 		return nil // no init to write
 	}
@@ -34,7 +36,10 @@ func writeInit(img v1.Image, dir string) error {
 
 	initPath := filepath.Join(dir, "sbin", "init")
 	if err := os.MkdirAll(filepath.Dir(initPath), 0o755); err != nil { //nolint:gosec // G301: sbin directory must be world-traversable in the VM rootfs
-		return err
+		return fmt.Errorf("mkdir sbin: %w", err)
 	}
-	return os.WriteFile(initPath, []byte(script), 0o755) //nolint:gosec
+	if err := os.WriteFile(initPath, []byte(script), 0o755); err != nil { //nolint:gosec // G306: init script must be executable
+		return fmt.Errorf("write init: %w", err)
+	}
+	return nil
 }
