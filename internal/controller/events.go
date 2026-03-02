@@ -12,11 +12,20 @@ const (
 	EventReasonHealthCheckRecovered = "HealthCheckRecovered"
 	EventReasonCNIDetected          = "CNIDetected"
 	EventReasonCNIAmbiguous         = "CNIAmbiguous"
+	EventReasonBridgeReady          = "BridgeReady"
+	EventReasonIPAllocated          = "IPAllocated"
+	EventReasonNATRulesApplied      = "NATRulesApplied"
+	EventReasonCiliumConfigMissing  = "CiliumConfigMissing"
 )
 
-// Condition type constants.
+// ImpVM condition type constants.
 const (
 	ConditionScheduled   = "Scheduled"
 	ConditionReady       = "Ready"
 	ConditionNodeHealthy = "NodeHealthy"
+)
+
+// ImpNetwork condition type constants.
+const (
+	ConditionNetworkReady = "Ready"
 )
