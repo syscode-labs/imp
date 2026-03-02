@@ -17,7 +17,13 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"testing"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
 
 func TestParseFraction(t *testing.T) {
@@ -101,5 +107,102 @@ func TestEffectiveMaxVMs(t *testing.T) {
 				t.Errorf("effectiveMaxVMs = %d, want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestResolveClassSpec_DirectClassRef(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+
+	class := &impdevv1alpha1.ImpVMClass{}
+	class.Name = "small"
+	class.Spec.VCPU = 2
+	class.Spec.MemoryMiB = 512
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(class).Build()
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "test-vm"
+	vm.Spec.ClassRef = &impdevv1alpha1.ClusterObjectRef{Name: "small"}
+
+	spec, err := resolveClassSpec(context.Background(), c, vm)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.VCPU != 2 {
+		t.Errorf("VCPU = %d, want 2", spec.VCPU)
+	}
+	if spec.MemoryMiB != 512 {
+		t.Errorf("MemoryMiB = %d, want 512", spec.MemoryMiB)
+	}
+}
+
+func TestResolveClassSpec_ViaTemplateRef(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+
+	class := &impdevv1alpha1.ImpVMClass{}
+	class.Name = "large"
+	class.Spec.VCPU = 4
+	class.Spec.MemoryMiB = 2048
+
+	tmpl := &impdevv1alpha1.ImpVMTemplate{}
+	tmpl.Namespace = "default"
+	tmpl.Name = "ubuntu-tmpl"
+	tmpl.Spec.ClassRef = impdevv1alpha1.ClusterObjectRef{Name: "large"}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(class, tmpl).Build()
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "tmpl-vm"
+	vm.Spec.TemplateRef = &impdevv1alpha1.LocalObjectRef{Name: "ubuntu-tmpl"}
+
+	spec, err := resolveClassSpec(context.Background(), c, vm)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if spec.VCPU != 4 {
+		t.Errorf("VCPU = %d, want 4", spec.VCPU)
+	}
+}
+
+func TestResolveClassSpec_NoRef(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "no-ref"
+
+	_, err := resolveClassSpec(context.Background(), c, vm)
+	if err == nil {
+		t.Fatal("expected error for VM with no classRef or templateRef")
+	}
+}
+
+func TestResolveClassSpec_ClassNotFound(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "missing-class"
+	vm.Spec.ClassRef = &impdevv1alpha1.ClusterObjectRef{Name: "nonexistent"}
+
+	_, err := resolveClassSpec(context.Background(), c, vm)
+	if err == nil {
+		t.Fatal("expected error when class does not exist")
 	}
 }
