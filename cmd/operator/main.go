@@ -1,22 +1,27 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. OIDC).
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/cnidetect"
 	"github.com/syscode-labs/imp/internal/controller"
 	webhookv1alpha1 "github.com/syscode-labs/imp/internal/webhook/v1alpha1"
 )
@@ -29,6 +34,44 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(impv1alpha1.AddToScheme(scheme))
+}
+
+// cniDetectRunnable runs CNI detection once after the manager cache is synced,
+// stores the result, and emits an event on the ClusterImpConfig singleton.
+type cniDetectRunnable struct {
+	client   client.Client
+	recorder record.EventRecorder
+	store    *cnidetect.Store
+}
+
+func (r *cniDetectRunnable) Start(ctx context.Context) error {
+	log := ctrl.Log.WithName("cni-detect")
+
+	result, err := cnidetect.Detect(ctx, r.client)
+	if err != nil {
+		return err
+	}
+	r.store.Set(result)
+
+	// Emit event on the ClusterImpConfig singleton (best-effort; skip if absent).
+	cfg := &impv1alpha1.ClusterImpConfig{}
+	if getErr := r.client.Get(ctx, client.ObjectKey{Name: "cluster"}, cfg); getErr == nil {
+		if result.Ambiguous {
+			r.recorder.Event(cfg, corev1.EventTypeWarning,
+				controller.EventReasonCNIAmbiguous,
+				"Multiple CNIs detected; using iptables fallback. Set spec.networking.cni.provider explicitly.")
+		} else {
+			r.recorder.Eventf(cfg, corev1.EventTypeNormal,
+				controller.EventReasonCNIDetected,
+				"CNI detected: provider=%s natBackend=%s", result.Provider, result.NATBackend)
+		}
+	}
+
+	log.Info("CNI detection complete",
+		"provider", result.Provider,
+		"natBackend", result.NATBackend,
+		"ambiguous", result.Ambiguous)
+	return nil
 }
 
 func main() {
@@ -97,6 +140,16 @@ func main() {
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
+
+	cniStore := &cnidetect.Store{}
+	if err := mgr.Add(&cniDetectRunnable{
+		client:   mgr.GetClient(),
+		recorder: mgr.GetEventRecorderFor("cni-detector"),
+		store:    cniStore,
+	}); err != nil {
+		setupLog.Error(err, "unable to register cni-detect runnable")
 		os.Exit(1)
 	}
 
