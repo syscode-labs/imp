@@ -30,18 +30,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// IMP_STUB_DRIVER=true: StubDriver (CI, test clusters, no KVM needed).
-	// Otherwise: FirecrackerDriver (Phase 2 — falls back to StubDriver until implemented).
-	var driver agent.VMDriver
-	if os.Getenv("IMP_STUB_DRIVER") == "true" {
-		log.Info("Using StubDriver (IMP_STUB_DRIVER=true)")
-		driver = agent.NewStubDriver()
-	} else {
-		// Phase 2 will replace this with FirecrackerDriver.
-		log.Info("FirecrackerDriver not yet implemented — using StubDriver (set IMP_STUB_DRIVER=true to suppress this warning)")
-		driver = agent.NewStubDriver()
-	}
-
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		log.Error(err, "Unable to add client-go scheme")
@@ -60,6 +48,22 @@ func main() {
 	if err != nil {
 		log.Error(err, "Unable to start manager")
 		os.Exit(1)
+	}
+
+	// IMP_STUB_DRIVER=true: StubDriver (CI, test clusters, no KVM needed).
+	// Otherwise: FirecrackerDriver (reads FC_BIN, FC_SOCK_DIR, FC_KERNEL env vars).
+	var driver agent.VMDriver
+	if os.Getenv("IMP_STUB_DRIVER") == "true" {
+		log.Info("Using StubDriver (IMP_STUB_DRIVER=true)")
+		driver = agent.NewStubDriver()
+	} else {
+		fc, err := newProductionDriver(mgr.GetClient())
+		if err != nil {
+			log.Error(err, "Unable to create FirecrackerDriver — set FC_KERNEL and ensure FC_BIN is in PATH")
+			os.Exit(1)
+		}
+		log.Info("Using FirecrackerDriver")
+		driver = fc
 	}
 
 	if err := (&agent.ImpVMReconciler{
