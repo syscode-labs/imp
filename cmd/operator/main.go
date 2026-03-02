@@ -117,7 +117,7 @@ func main() {
 	if err = (&controller.ImpNetworkReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("impnetwork-controller"),
+		Recorder: mgr.GetEventRecorderFor("impnetwork-controller"), //nolint:staticcheck
 		CNIStore: cniStore,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ImpNetwork")
@@ -157,7 +157,7 @@ func main() {
 
 	if err := mgr.Add(&cniDetectRunnable{
 		client:   mgr.GetClient(),
-		recorder: mgr.GetEventRecorderFor("cni-detector"),
+		recorder: mgr.GetEventRecorderFor("cni-detector"), //nolint:staticcheck
 		store:    cniStore,
 	}); err != nil {
 		setupLog.Error(err, "unable to register cni-detect runnable")
