@@ -103,12 +103,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	cniStore := &cnidetect.Store{}
+
 	if err = (&controller.ImpVMReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		Recorder: mgr.GetEventRecorderFor("impvm-controller"), //nolint:staticcheck
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ImpVM")
+		os.Exit(1)
+	}
+
+	if err = (&controller.ImpNetworkReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("impnetwork-controller"),
+		CNIStore: cniStore,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ImpNetwork")
 		os.Exit(1)
 	}
 
@@ -143,7 +155,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	cniStore := &cnidetect.Store{}
 	if err := mgr.Add(&cniDetectRunnable{
 		client:   mgr.GetClient(),
 		recorder: mgr.GetEventRecorderFor("cni-detector"),
