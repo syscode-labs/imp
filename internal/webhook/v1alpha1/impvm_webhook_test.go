@@ -165,6 +165,20 @@ func TestImpVMWebhook_ValidateUpdate_NodeNameUnchanged(t *testing.T) {
 	}
 }
 
+func TestImpVMWebhook_ValidateUpdate_NodeNameCannotBeCleared(t *testing.T) {
+	wh := &ImpVMWebhook{}
+	old := newVM("my-template", "", "")
+	old.Spec.NodeName = "node-1"
+
+	updated := newVM("my-template", "", "")
+	updated.Spec.NodeName = "" // attempt to clear — should be rejected
+
+	_, err := wh.ValidateUpdate(context.Background(), old, updated)
+	if err == nil {
+		t.Fatal("expected error when clearing a set nodeName")
+	}
+}
+
 // --- ValidateDelete tests --------------------------------------------------
 
 func TestImpVMWebhook_ValidateDelete(t *testing.T) {
