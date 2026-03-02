@@ -4,9 +4,12 @@ package network
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/vishvananda/netlink"
 )
@@ -33,7 +36,16 @@ func NewLinuxNetManager() *LinuxNetManager {
 func (m *LinuxNetManager) EnsureNetwork(_ context.Context, bridgeName, gatewayIP string, prefixLen int) error {
 	link, err := netlink.LinkByName(bridgeName)
 	if err == nil {
-		// Bridge already exists — ensure it is up.
+		// Bridge already exists — ensure gateway IP is assigned and link is up.
+		addr := &netlink.Addr{
+			IPNet: &net.IPNet{
+				IP:   net.ParseIP(gatewayIP).To4(),
+				Mask: net.CIDRMask(prefixLen, 32),
+			},
+		}
+		if addErr := netlink.AddrAdd(link, addr); addErr != nil && !errors.Is(addErr, os.ErrExist) {
+			return fmt.Errorf("assign %s/%d to existing bridge %s: %w", gatewayIP, prefixLen, bridgeName, addErr)
+		}
 		return netlink.LinkSetUp(link)
 	}
 
@@ -62,22 +74,25 @@ func (m *LinuxNetManager) EnsureNetwork(_ context.Context, bridgeName, gatewayIP
 
 // SetupVM creates TAP device tapName, attaches it to bridgeName, and sets it up.
 func (m *LinuxNetManager) SetupVM(_ context.Context, tapName, bridgeName, _ string) error {
-	tap := &netlink.Tuntap{
-		LinkAttrs: netlink.LinkAttrs{Name: tapName},
-		Mode:      netlink.TUNTAP_MODE_TAP,
-	}
-	if err := netlink.LinkAdd(tap); err != nil {
-		return fmt.Errorf("create tap %s: %w", tapName, err)
+	// Check if TAP already exists; create it if not.
+	tapLink, err := netlink.LinkByName(tapName)
+	if err != nil {
+		tap := &netlink.Tuntap{
+			LinkAttrs: netlink.LinkAttrs{Name: tapName},
+			Mode:      netlink.TUNTAP_MODE_TAP,
+		}
+		if err := netlink.LinkAdd(tap); err != nil {
+			return fmt.Errorf("create tap %s: %w", tapName, err)
+		}
+		tapLink, err = netlink.LinkByName(tapName)
+		if err != nil {
+			return fmt.Errorf("get tap %s after create: %w", tapName, err)
+		}
 	}
 
 	br, err := netlink.LinkByName(bridgeName)
 	if err != nil {
 		return fmt.Errorf("get bridge %s: %w", bridgeName, err)
-	}
-
-	tapLink, err := netlink.LinkByName(tapName)
-	if err != nil {
-		return fmt.Errorf("get tap %s after create: %w", tapName, err)
 	}
 	if err := netlink.LinkSetMaster(tapLink, br); err != nil {
 		return fmt.Errorf("attach %s to bridge %s: %w", tapName, bridgeName, err)
@@ -135,10 +150,17 @@ func defaultRouteIface() (string, error) {
 
 // ensureNATNftables adds a MASQUERADE rule via nft.
 func ensureNATNftables(subnet, egressIface string) error {
-	// Ensure table and chain exist (errors are suppressed — they already exist on repeat calls).
 	_ = exec.Command("nft", "add", "table", "ip", "imp_nat").Run()                                                               //nolint:errcheck,gosec
 	_ = exec.Command("nft", "add", "chain", "ip", "imp_nat", "postrouting", "{ type nat hook postrouting priority 100; }").Run() //nolint:errcheck,gosec
-	// Add MASQUERADE rule.
+
+	// Check whether a rule for this subnet is already present.
+	//nolint:gosec
+	if out, err := exec.Command("nft", "list", "chain", "ip", "imp_nat", "postrouting").Output(); err == nil {
+		if strings.Contains(string(out), subnet) {
+			return nil // rule already installed
+		}
+	}
+
 	rule := fmt.Sprintf("ip saddr %s oifname %q masquerade", subnet, egressIface)
 	//nolint:gosec // G204: subnet and egressIface are controlled values
 	if out, err := exec.Command("nft", "add", "rule", "ip", "imp_nat", "postrouting", rule).CombinedOutput(); err != nil {
