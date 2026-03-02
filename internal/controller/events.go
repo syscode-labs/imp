@@ -10,6 +10,8 @@ const (
 	EventReasonTerminationTimeout   = "TerminationTimeout"
 	EventReasonHealthCheckFailed    = "HealthCheckFailed"
 	EventReasonHealthCheckRecovered = "HealthCheckRecovered"
+	EventReasonCNIDetected          = "CNIDetected"
+	EventReasonCNIAmbiguous         = "CNIAmbiguous"
 )
 
 // Condition type constants.
