@@ -11,12 +11,14 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/controller"
+	webhookv1alpha1 "github.com/syscode-labs/imp/internal/webhook/v1alpha1"
 )
 
 var (
@@ -64,6 +66,28 @@ func main() {
 		Recorder: mgr.GetEventRecorderFor("impvm-controller"), //nolint:staticcheck
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ImpVM")
+		os.Exit(1)
+	}
+
+	if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpVM{}).
+		WithDefaulter(&webhookv1alpha1.ImpVMWebhook{}).
+		WithValidator(&webhookv1alpha1.ImpVMWebhook{}).
+		Complete(); err != nil {
+		setupLog.Error(err, "unable to register webhook", "webhook", "ImpVM")
+		os.Exit(1)
+	}
+
+	if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpVMClass{}).
+		WithValidator(&webhookv1alpha1.ImpVMClassWebhook{}).
+		Complete(); err != nil {
+		setupLog.Error(err, "unable to register webhook", "webhook", "ImpVMClass")
+		os.Exit(1)
+	}
+
+	if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpVMTemplate{}).
+		WithValidator(&webhookv1alpha1.ImpVMTemplateWebhook{}).
+		Complete(); err != nil {
+		setupLog.Error(err, "unable to register webhook", "webhook", "ImpVMTemplate")
 		os.Exit(1)
 	}
 
