@@ -12,6 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/agent/network"
 	"github.com/syscode-labs/imp/internal/agent/rootfs"
 )
 
@@ -132,7 +133,7 @@ func TestFirecrackerDriver_BuildConfig(t *testing.T) {
 	class.Spec.VCPU = 2
 	class.Spec.MemoryMiB = 512
 
-	cfg := d.buildConfig(class, "/cache/abc.ext4", "/run/imp/sockets/default-vm.sock")
+	cfg := d.buildConfig(class, "/cache/abc.ext4", "/run/imp/sockets/default-vm.sock", nil)
 
 	if cfg.SocketPath != "/run/imp/sockets/default-vm.sock" {
 		t.Errorf("SocketPath = %q, want %q", cfg.SocketPath, "/run/imp/sockets/default-vm.sock")
@@ -238,4 +239,112 @@ func TestFirecrackerDriver_Start_Integration(t *testing.T) {
 		t.Skip("/dev/kvm not accessible")
 	}
 	t.Skip("integration test — run manually on KVM-capable node")
+}
+
+func TestFirecrackerDriver_BuildConfig_WithNetInfo(t *testing.T) {
+	d := &FirecrackerDriver{
+		KernelPath: "/boot/vmlinux",
+		KernelArgs: "console=ttyS0 reboot=k panic=1 pci=off",
+	}
+
+	class := &impdevv1alpha1.ImpVMClass{}
+	class.Spec.VCPU = 1
+	class.Spec.MemoryMiB = 256
+
+	ni := &network.NetworkInfo{
+		TAPName:   "imptap-aabbccdd",
+		MACAddr:   "02:aa:bb:cc:dd:ee",
+		IP:        "192.168.100.2",
+		PrefixLen: 24,
+		Gateway:   "192.168.100.1",
+		DNS:       []string{"8.8.8.8"},
+	}
+
+	cfg := d.buildConfig(class, "/cache/root.ext4", "/run/imp/s/vm.sock", ni)
+
+	if len(cfg.NetworkInterfaces) != 1 {
+		t.Fatalf("len(NetworkInterfaces) = %d, want 1", len(cfg.NetworkInterfaces))
+	}
+	iface := cfg.NetworkInterfaces[0]
+	if iface.StaticConfiguration == nil {
+		t.Fatal("StaticConfiguration is nil")
+	}
+	if iface.StaticConfiguration.HostDevName != "imptap-aabbccdd" {
+		t.Errorf("HostDevName = %q, want %q", iface.StaticConfiguration.HostDevName, "imptap-aabbccdd")
+	}
+	if iface.StaticConfiguration.MacAddress != "02:aa:bb:cc:dd:ee" {
+		t.Errorf("MacAddress = %q, want %q", iface.StaticConfiguration.MacAddress, "02:aa:bb:cc:dd:ee")
+	}
+	if iface.StaticConfiguration.IPConfiguration == nil {
+		t.Fatal("IPConfiguration is nil")
+	}
+	if iface.StaticConfiguration.IPConfiguration.IPAddr.IP.String() != "192.168.100.2" {
+		t.Errorf("IP = %q, want 192.168.100.2", iface.StaticConfiguration.IPConfiguration.IPAddr.IP)
+	}
+}
+
+func TestFirecrackerDriver_BuildConfig_WithoutNetInfo(t *testing.T) {
+	d := &FirecrackerDriver{KernelPath: "/boot/vmlinux", KernelArgs: "console=ttyS0"}
+	class := &impdevv1alpha1.ImpVMClass{}
+	class.Spec.VCPU = 1
+	class.Spec.MemoryMiB = 256
+
+	cfg := d.buildConfig(class, "/cache/root.ext4", "/run/imp/s/vm.sock", nil)
+
+	if len(cfg.NetworkInterfaces) != 0 {
+		t.Errorf("expected no NetworkInterfaces when netInfo is nil, got %d", len(cfg.NetworkInterfaces))
+	}
+}
+
+func TestFirecrackerDriver_Inspect_ReturnsNetworkIP(t *testing.T) {
+	d := &FirecrackerDriver{procs: make(map[string]*fcProc)}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "net-vm"
+
+	d.procs[vmKey(vm)] = &fcProc{
+		pid:     int64(os.Getpid()),
+		netInfo: &network.NetworkInfo{IP: "192.168.1.5"},
+	}
+
+	state, err := d.Inspect(context.Background(), vm)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !state.Running {
+		t.Error("expected Running=true")
+	}
+	if state.IP != "192.168.1.5" {
+		t.Errorf("IP = %q, want %q", state.IP, "192.168.1.5")
+	}
+}
+
+func TestFirecrackerDriver_Stop_TeardownVMCalled(t *testing.T) {
+	stub := &network.StubNetManager{}
+	d := &FirecrackerDriver{
+		Net:   stub,
+		Alloc: network.NewAllocator(),
+		procs: make(map[string]*fcProc),
+	}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "net-vm-stop"
+
+	d.procs[vmKey(vm)] = &fcProc{
+		pid: 99999, // not running, but we are only testing teardown logic
+		netInfo: &network.NetworkInfo{
+			TAPName:    "imptap-deadbeef",
+			NetworkKey: "default/mynet",
+			IP:         "10.0.0.2",
+		},
+	}
+
+	if err := d.Stop(context.Background(), vm); err != nil {
+		t.Fatalf("unexpected Stop error: %v", err)
+	}
+	if len(stub.TeardownVMCalls) != 1 || stub.TeardownVMCalls[0] != "imptap-deadbeef" {
+		t.Errorf("TeardownVMCalls = %v, want [imptap-deadbeef]", stub.TeardownVMCalls)
+	}
 }
