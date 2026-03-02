@@ -1,0 +1,136 @@
+package controller
+
+import (
+	"context"
+	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/cnidetect"
+)
+
+func newNetworkReconciler(store *cnidetect.Store) (*ImpNetworkReconciler, *record.FakeRecorder) {
+	rec := record.NewFakeRecorder(64)
+	return &ImpNetworkReconciler{
+		Client:   k8sClient,
+		Scheme:   k8sClient.Scheme(),
+		Recorder: rec,
+		CNIStore: store,
+	}, rec
+}
+
+func ciliumStore() *cnidetect.Store {
+	s := &cnidetect.Store{}
+	s.Set(cnidetect.Result{Provider: cnidetect.ProviderCilium, NATBackend: cnidetect.NATBackendNftables})
+	return s
+}
+
+func unknownStore() *cnidetect.Store {
+	return &cnidetect.Store{} // empty — not yet set
+}
+
+var _ = Describe("ImpNetwork Controller: core", func() {
+	ctx := context.Background()
+
+	It("adds finalizer on first reconcile", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "core-net-1", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpNetworkSpec{Subnet: "192.168.10.0/24"},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		r, _ := newNetworkReconciler(unknownStore())
+		_, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "core-net-1", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "core-net-1", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Finalizers).To(ContainElement(finalizerImpNetwork))
+	})
+
+	It("sets Ready=True condition on second reconcile", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "core-net-2", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpNetworkSpec{Subnet: "192.168.20.0/24"},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		r, _ := newNetworkReconciler(ciliumStore())
+		// First reconcile: adds finalizer.
+		_, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "core-net-2", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		// Second reconcile: runs sync.
+		_, err = r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "core-net-2", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "core-net-2", Namespace: "default"}, updated)).To(Succeed())
+		c := apimeta.FindStatusCondition(updated.Status.Conditions, ConditionNetworkReady)
+		Expect(c).NotTo(BeNil())
+		Expect(c.Status).To(Equal(metav1.ConditionTrue))
+	})
+
+	It("emits CNIDetected event on sync", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "core-net-3", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpNetworkSpec{Subnet: "192.168.30.0/24"},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		r, rec := newNetworkReconciler(ciliumStore())
+		// First reconcile: adds finalizer.
+		_, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "core-net-3", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		// Second reconcile: sync emits events.
+		_, err = r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "core-net-3", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(rec.Events, time.Second).Should(Receive(ContainSubstring(EventReasonCNIDetected)))
+	})
+
+	It("removes finalizer on deletion", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "core-net-del",
+				Namespace:  "default",
+				Finalizers: []string{finalizerImpNetwork},
+			},
+			Spec: impdevv1alpha1.ImpNetworkSpec{Subnet: "192.168.40.0/24"},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, net)).To(Succeed())
+
+		r, _ := newNetworkReconciler(unknownStore())
+		_, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "core-net-del", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		// Object should be gone (finalizer removed → GC'd by envtest).
+		updated := &impdevv1alpha1.ImpNetwork{}
+		err = k8sClient.Get(ctx, types.NamespacedName{Name: "core-net-del", Namespace: "default"}, updated)
+		if err == nil {
+			Expect(updated.Finalizers).NotTo(ContainElement(finalizerImpNetwork))
+		}
+	})
+})
