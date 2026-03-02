@@ -17,7 +17,7 @@ type VMState struct {
 }
 
 // VMDriver abstracts the VM runtime backend.
-// Implementations: StubDriver (testing/CI), FirecrackerDriver (production, Phase 2).
+// Implementations: StubDriver (testing/CI), FirecrackerDriver (production, Phase 1).
 type VMDriver interface {
 	// Start boots the VM and returns its runtime PID.
 	Start(ctx context.Context, vm *impdevv1alpha1.ImpVM) (pid int64, err error)

@@ -139,13 +139,15 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		return 0, fmt.Errorf("create machine: %w", err)
 	}
 	if err := m.Start(ctx); err != nil {
-		_ = m.StopVMM() //nolint:errcheck
+		_ = m.StopVMM()        //nolint:errcheck
+		_ = os.Remove(sockPath) //nolint:errcheck // best-effort cleanup
 		return 0, fmt.Errorf("start machine: %w", err)
 	}
 
 	pid, err := m.PID()
 	if err != nil {
-		_ = m.StopVMM() //nolint:errcheck
+		_ = m.StopVMM()        //nolint:errcheck
+		_ = os.Remove(sockPath) //nolint:errcheck // best-effort cleanup
 		return 0, fmt.Errorf("get pid: %w", err)
 	}
 
@@ -192,8 +194,10 @@ func (d *FirecrackerDriver) Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) 
 // process is still alive. Returns Running=false for VMs not launched by this driver.
 // Phase 1: IP is always empty (loopback only, no TAP).
 func (d *FirecrackerDriver) Inspect(_ context.Context, vm *impdevv1alpha1.ImpVM) (VMState, error) {
+	key := vmKey(vm)
+
 	d.mu.Lock()
-	proc, ok := d.procs[vmKey(vm)]
+	proc, ok := d.procs[key]
 	d.mu.Unlock()
 
 	if !ok {
@@ -205,7 +209,7 @@ func (d *FirecrackerDriver) Inspect(_ context.Context, vm *impdevv1alpha1.ImpVM)
 	if err != nil {
 		// Process not found (Unix: never happens; Windows: possible).
 		d.mu.Lock()
-		delete(d.procs, vmKey(vm))
+		delete(d.procs, key)
 		d.mu.Unlock()
 		return VMState{Running: false}, nil
 	}
@@ -213,11 +217,11 @@ func (d *FirecrackerDriver) Inspect(_ context.Context, vm *impdevv1alpha1.ImpVM)
 		if errors.Is(err, syscall.ESRCH) {
 			// Process no longer exists — clean up.
 			d.mu.Lock()
-			delete(d.procs, vmKey(vm))
+			delete(d.procs, key)
 			d.mu.Unlock()
 			return VMState{Running: false}, nil
 		}
-		return VMState{}, fmt.Errorf("inspect %s: %w", vmKey(vm), err)
+		return VMState{}, fmt.Errorf("inspect %s: %w", key, err)
 	}
 
 	// Phase 1: IP is empty (no TAP networking).
