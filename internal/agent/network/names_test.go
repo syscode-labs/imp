@@ -10,8 +10,8 @@ import (
 func TestBridgeName_length(t *testing.T) {
 	for _, key := range []string{"default/my-net", "prod/network-with-long-name", ""} {
 		got := network.BridgeName(key)
-		if len(got) > 15 {
-			t.Errorf("BridgeName(%q) = %q (len %d), exceeds 15", key, got, len(got))
+		if len(got) > 14 {
+			t.Errorf("BridgeName(%q) = %q (len %d), exceeds 14", key, got, len(got))
 		}
 		if len(got) == 0 {
 			t.Errorf("BridgeName(%q) returned empty string", key)
@@ -36,6 +36,9 @@ func TestTAPName_length(t *testing.T) {
 		got := network.TAPName(key)
 		if len(got) > 15 {
 			t.Errorf("TAPName(%q) = %q (len %d), exceeds 15", key, got, len(got))
+		}
+		if len(got) == 0 {
+			t.Errorf("TAPName(%q) returned empty string", key)
 		}
 	}
 }
