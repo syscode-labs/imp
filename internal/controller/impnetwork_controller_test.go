@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -132,5 +133,120 @@ var _ = Describe("ImpNetwork Controller: core", func() {
 		if err == nil {
 			Expect(updated.Finalizers).NotTo(ContainElement(finalizerImpNetwork))
 		}
+	})
+})
+
+var _ = Describe("ImpNetwork Controller: CiliumConfigMissing", func() {
+	ctx := context.Background()
+
+	// reconcileTwice runs reconcile twice: once for finalizer, once for sync.
+	reconcileTwice := func(r *ImpNetworkReconciler, name string) {
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: "default"}}
+		_, err := r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+	}
+
+	It("emits CiliumConfigMissing when masqueradeViaCilium=true and ConfigMap absent", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "cilium-warn-1", Namespace: "default"},
+			Spec: impdevv1alpha1.ImpNetworkSpec{
+				Subnet: "192.168.50.0/24",
+				Cilium: &impdevv1alpha1.CiliumNetworkSpec{MasqueradeViaCilium: true},
+			},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		r, rec := newNetworkReconciler(ciliumStore())
+		reconcileTwice(r, "cilium-warn-1")
+
+		Eventually(rec.Events, time.Second).Should(Receive(ContainSubstring(EventReasonCiliumConfigMissing)))
+	})
+
+	It("does not emit CiliumConfigMissing when ConfigMap contains the subnet", func() {
+		cm := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: "ip-masq-agent", Namespace: "kube-system"},
+			Data: map[string]string{
+				"config": "nonMasqueradeCIDRs:\n- 10.0.0.0/8\nmasqueradeCIDRs:\n- 192.168.60.0/24\n",
+			},
+		}
+		Expect(k8sClient.Create(ctx, cm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, cm) }) //nolint:errcheck
+
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "cilium-ok-1", Namespace: "default"},
+			Spec: impdevv1alpha1.ImpNetworkSpec{
+				Subnet: "192.168.60.0/24",
+				Cilium: &impdevv1alpha1.CiliumNetworkSpec{MasqueradeViaCilium: true},
+			},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		r, rec := newNetworkReconciler(ciliumStore())
+		reconcileTwice(r, "cilium-ok-1")
+
+		// Drain all events; none should be CiliumConfigMissing.
+		Consistently(func() string {
+			select {
+			case e := <-rec.Events:
+				return e
+			default:
+				return ""
+			}
+		}, 200*time.Millisecond, 50*time.Millisecond).ShouldNot(ContainSubstring(EventReasonCiliumConfigMissing))
+	})
+
+	It("does not emit CiliumConfigMissing when masqueradeViaCilium=false", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "cilium-off-1", Namespace: "default"},
+			Spec: impdevv1alpha1.ImpNetworkSpec{
+				Subnet: "192.168.70.0/24",
+				Cilium: &impdevv1alpha1.CiliumNetworkSpec{MasqueradeViaCilium: false},
+			},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		r, rec := newNetworkReconciler(ciliumStore())
+		reconcileTwice(r, "cilium-off-1")
+
+		Consistently(func() string {
+			select {
+			case e := <-rec.Events:
+				return e
+			default:
+				return ""
+			}
+		}, 200*time.Millisecond, 50*time.Millisecond).ShouldNot(ContainSubstring(EventReasonCiliumConfigMissing))
+	})
+
+	It("does not emit CiliumConfigMissing when CNI is not Cilium", func() {
+		flannelStore := &cnidetect.Store{}
+		flannelStore.Set(cnidetect.Result{Provider: cnidetect.ProviderFlannel, NATBackend: cnidetect.NATBackendIPTables})
+
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "flannel-masq-1", Namespace: "default"},
+			Spec: impdevv1alpha1.ImpNetworkSpec{
+				Subnet: "192.168.80.0/24",
+				Cilium: &impdevv1alpha1.CiliumNetworkSpec{MasqueradeViaCilium: true},
+			},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		r, rec := newNetworkReconciler(flannelStore)
+		reconcileTwice(r, "flannel-masq-1")
+
+		Consistently(func() string {
+			select {
+			case e := <-rec.Events:
+				return e
+			default:
+				return ""
+			}
+		}, 200*time.Millisecond, 50*time.Millisecond).ShouldNot(ContainSubstring(EventReasonCiliumConfigMissing))
 	})
 })
