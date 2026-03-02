@@ -28,6 +28,11 @@ import (
 // ImpVMWebhook implements defaulting and validation for ImpVM.
 type ImpVMWebhook struct{}
 
+var (
+	_ admission.Defaulter[*impdevv1alpha1.ImpVM] = &ImpVMWebhook{}
+	_ admission.Validator[*impdevv1alpha1.ImpVM] = &ImpVMWebhook{}
+)
+
 // Default implements admission.Defaulter[*impdevv1alpha1.ImpVM].
 func (w *ImpVMWebhook) Default(_ context.Context, vm *impdevv1alpha1.ImpVM) error {
 	if vm.Spec.Lifecycle == "" {
