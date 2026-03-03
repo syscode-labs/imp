@@ -1,0 +1,64 @@
+suite: webhook resources
+templates:
+  - templates/webhook/issuer.yaml
+  - templates/webhook/certificate.yaml
+  - templates/webhook/mutatingwebhook.yaml
+  - templates/webhook/validatingwebhook.yaml
+tests:
+  - it: creates Issuer when certManager enabled and no custom issuerRef
+    template: templates/webhook/issuer.yaml
+    asserts:
+      - isKind:
+          of: Issuer
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+
+  - it: skips Issuer when custom issuerRef is provided
+    template: templates/webhook/issuer.yaml
+    set:
+      webhook.certManager.issuerRef.name: my-issuer
+      webhook.certManager.issuerRef.kind: ClusterIssuer
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates Certificate with correct DNS names
+    template: templates/webhook/certificate.yaml
+    asserts:
+      - isKind:
+          of: Certificate
+      - equal:
+          path: spec.secretName
+          value: imp-webhook-tls
+      - contains:
+          path: spec.dnsNames
+          content: RELEASE-NAME-imp-operator.NAMESPACE.svc
+      - contains:
+          path: spec.dnsNames
+          content: RELEASE-NAME-imp-operator.NAMESPACE.svc.cluster.local
+
+  - it: MutatingWebhookConfiguration has cainjector annotation
+    template: templates/webhook/mutatingwebhook.yaml
+    asserts:
+      - isKind:
+          of: MutatingWebhookConfiguration
+      - equal:
+          path: metadata.annotations["cert-manager.io/inject-ca-from"]
+          value: NAMESPACE/imp-webhook-tls
+
+  - it: ValidatingWebhookConfiguration has cainjector annotation
+    template: templates/webhook/validatingwebhook.yaml
+    asserts:
+      - isKind:
+          of: ValidatingWebhookConfiguration
+      - equal:
+          path: metadata.annotations["cert-manager.io/inject-ca-from"]
+          value: NAMESPACE/imp-webhook-tls
+
+  - it: ValidatingWebhookConfiguration has three webhooks
+    template: templates/webhook/validatingwebhook.yaml
+    asserts:
+      - lengthEqual:
+          path: webhooks
+          count: 3

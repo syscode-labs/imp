@@ -1,0 +1,23 @@
+{{- if .Values.webhook.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: imp-webhook-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+spec:
+  secretName: imp-webhook-tls
+  duration: 8760h
+  renewBefore: 720h
+  dnsNames:
+    - {{ include "imp.fullname" . }}-operator.{{ .Release.Namespace }}.svc
+    - {{ include "imp.fullname" . }}-operator.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    {{- if .Values.webhook.certManager.issuerRef.name }}
+    {{- toYaml .Values.webhook.certManager.issuerRef | nindent 4 }}
+    {{- else }}
+    name: {{ include "imp.fullname" . }}-selfsigned
+    kind: Issuer
+    {{- end }}
+{{- end }}

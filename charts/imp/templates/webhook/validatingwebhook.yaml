@@ -1,0 +1,51 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "imp.fullname" . }}
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/imp-webhook-tls
+webhooks:
+- name: vimpvm.kb.io
+  admissionReviewVersions: ["v1"]
+  clientConfig:
+    service:
+      name: {{ include "imp.fullname" . }}-operator
+      namespace: {{ .Release.Namespace }}
+      path: /validate-imp-dev-v1alpha1-impvm
+  rules:
+  - apiGroups: ["imp.dev"]
+    apiVersions: ["v1alpha1"]
+    operations: [CREATE, UPDATE]
+    resources: [impvms]
+  failurePolicy: Fail
+  sideEffects: None
+- name: vimpvmclass.kb.io
+  admissionReviewVersions: ["v1"]
+  clientConfig:
+    service:
+      name: {{ include "imp.fullname" . }}-operator
+      namespace: {{ .Release.Namespace }}
+      path: /validate-imp-dev-v1alpha1-impvmclass
+  rules:
+  - apiGroups: ["imp.dev"]
+    apiVersions: ["v1alpha1"]
+    operations: [CREATE, UPDATE]
+    resources: [impvmclasses]
+  failurePolicy: Fail
+  sideEffects: None
+- name: vimpvmtemplate.kb.io
+  admissionReviewVersions: ["v1"]
+  clientConfig:
+    service:
+      name: {{ include "imp.fullname" . }}-operator
+      namespace: {{ .Release.Namespace }}
+      path: /validate-imp-dev-v1alpha1-impvmtemplate
+  rules:
+  - apiGroups: ["imp.dev"]
+    apiVersions: ["v1alpha1"]
+    operations: [CREATE, UPDATE]
+    resources: [impvmtemplates]
+  failurePolicy: Fail
+  sideEffects: None

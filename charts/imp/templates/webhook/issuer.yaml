@@ -1,0 +1,11 @@
+{{- if and .Values.webhook.certManager.enabled (not .Values.webhook.certManager.issuerRef.name) }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "imp.fullname" . }}-selfsigned
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+{{- end }}
