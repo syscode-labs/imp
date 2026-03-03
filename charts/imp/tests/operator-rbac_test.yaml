@@ -1,0 +1,68 @@
+suite: operator RBAC
+templates:
+  - templates/operator/serviceaccount.yaml
+  - templates/operator/clusterrole.yaml
+  - templates/operator/clusterrole-full.yaml
+  - templates/operator/clusterrolebinding.yaml
+  - templates/operator/role.yaml
+  - templates/operator/rolebinding.yaml
+tests:
+  - it: creates operator ServiceAccount
+    template: templates/operator/serviceaccount.yaml
+    asserts:
+      - isKind:
+          of: ServiceAccount
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-imp-operator
+
+  - it: creates minimal ClusterRole
+    template: templates/operator/clusterrole.yaml
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["imp.dev"]
+            resources:
+              - impvms
+              - impvmclasses
+              - impvmtemplates
+              - impnetworks
+              - clusterimpconfigs
+              - clusterimpnodeprofiles
+            verbs: [get, list, watch, update, patch]
+
+  - it: does not create full ClusterRole by default
+    template: templates/operator/clusterrole-full.yaml
+    set:
+      operator.rbac.cniDetection: minimal
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates full ClusterRole when cniDetection is full
+    template: templates/operator/clusterrole-full.yaml
+    set:
+      operator.rbac.cniDetection: full
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["apps"]
+            resources: [daemonsets]
+            verbs: [get, list]
+
+  - it: creates namespace-scoped Role for leader election
+    template: templates/operator/role.yaml
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE

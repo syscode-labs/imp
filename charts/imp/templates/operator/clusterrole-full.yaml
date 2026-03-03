@@ -1,0 +1,12 @@
+{{- if eq .Values.operator.rbac.cniDetection "full" }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "imp.fullname" . }}-operator-cni-full
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+rules:
+- apiGroups: ["apps"]
+  resources: [daemonsets]
+  verbs: [get, list]
+{{- end }}
