@@ -30,7 +30,7 @@ tests:
           of: Certificate
       - equal:
           path: spec.secretName
-          value: imp-webhook-tls
+          value: RELEASE-NAME-imp-webhook-tls
       - contains:
           path: spec.dnsNames
           content: RELEASE-NAME-imp-operator.NAMESPACE.svc
@@ -45,7 +45,7 @@ tests:
           of: MutatingWebhookConfiguration
       - equal:
           path: metadata.annotations["cert-manager.io/inject-ca-from"]
-          value: NAMESPACE/imp-webhook-tls
+          value: NAMESPACE/RELEASE-NAME-imp-webhook-tls
 
   - it: ValidatingWebhookConfiguration has cainjector annotation
     template: templates/webhook/validatingwebhook.yaml
@@ -54,7 +54,7 @@ tests:
           of: ValidatingWebhookConfiguration
       - equal:
           path: metadata.annotations["cert-manager.io/inject-ca-from"]
-          value: NAMESPACE/imp-webhook-tls
+          value: NAMESPACE/RELEASE-NAME-imp-webhook-tls
 
   - it: ValidatingWebhookConfiguration has three webhooks
     template: templates/webhook/validatingwebhook.yaml
@@ -62,3 +62,29 @@ tests:
       - lengthEqual:
           path: webhooks
           count: 3
+
+  - it: Certificate uses custom issuerRef when provided
+    template: templates/webhook/certificate.yaml
+    set:
+      webhook.certManager.issuerRef.name: my-issuer
+      webhook.certManager.issuerRef.kind: ClusterIssuer
+      webhook.certManager.issuerRef.group: cert-manager.io
+    asserts:
+      - equal:
+          path: spec.issuerRef.name
+          value: my-issuer
+      - equal:
+          path: spec.issuerRef.kind
+          value: ClusterIssuer
+
+  - it: MutatingWebhookConfiguration has one webhook with correct path
+    template: templates/webhook/mutatingwebhook.yaml
+    asserts:
+      - isKind:
+          of: MutatingWebhookConfiguration
+      - lengthEqual:
+          path: webhooks
+          count: 1
+      - equal:
+          path: webhooks[0].clientConfig.service.path
+          value: /mutate-imp-dev-v1alpha1-impvm
