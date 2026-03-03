@@ -52,14 +52,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 Operator ServiceAccount name.
 */}}
 {{- define "imp.operator.serviceAccountName" -}}
-{{- include "imp.fullname" . }}-operator
+{{- printf "%s-operator" (include "imp.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Agent ServiceAccount name.
 */}}
 {{- define "imp.agent.serviceAccountName" -}}
-{{- include "imp.fullname" . }}-agent
+{{- printf "%s-agent" (include "imp.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
