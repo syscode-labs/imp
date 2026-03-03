@@ -11,6 +11,8 @@ spec:
     matchLabels:
       {{- include "imp.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: agent
+  updateStrategy:
+    {{- toYaml .Values.agent.updateStrategy | nindent 4 }}
   template:
     metadata:
       labels:
@@ -26,17 +28,21 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- with .Values.agent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - name: agent
         image: {{ include "imp.agent.image" . }}
-        imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+        imagePullPolicy: {{ .Values.agent.image.pullPolicy | quote }}
         env:
         - name: NODE_NAME
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
         - name: FC_KERNEL
-          value: {{ required "agent.env.kernelPath is required" .Values.agent.env.kernelPath | quote }}
+          value: {{ .Values.agent.env.kernelPath | required "agent.env.kernelPath is required" | quote }}
         resources:
           {{- toYaml .Values.agent.resources | nindent 10 }}
         securityContext:
@@ -52,17 +58,21 @@ spec:
       - name: dev-kvm
         hostPath:
           path: /dev/kvm
+          type: CharDevice
       - name: socket-dir
         {{- if .Values.agent.hostPaths.socketDir.enabled }}
         hostPath:
-          path: {{ .Values.agent.hostPaths.socketDir.path }}
+          path: {{ .Values.agent.hostPaths.socketDir.path | quote }}
+          type: DirectoryOrCreate
         {{- else }}
         emptyDir: {}
         {{- end }}
       - name: image-cache
         {{- if .Values.agent.hostPaths.imageCache.enabled }}
         hostPath:
-          path: {{ .Values.agent.hostPaths.imageCache.path }}
+          path: {{ .Values.agent.hostPaths.imageCache.path | quote }}
+          type: DirectoryOrCreate
         {{- else }}
         emptyDir: {}
         {{- end }}
+      terminationGracePeriodSeconds: 10

@@ -30,6 +30,7 @@ tests:
             name: dev-kvm
             hostPath:
               path: /dev/kvm
+              type: CharDevice
 
   - it: uses emptyDir for socketDir when hostPaths disabled
     template: templates/agent/daemonset.yaml
@@ -56,6 +57,7 @@ tests:
             name: socket-dir
             hostPath:
               path: /run/imp/sockets
+              type: DirectoryOrCreate
 
   - it: uses emptyDir for imageCache when hostPaths disabled
     template: templates/agent/daemonset.yaml
@@ -82,3 +84,37 @@ tests:
             name: image-cache
             hostPath:
               path: /var/lib/imp/images
+              type: DirectoryOrCreate
+
+  - it: runs agent container with privileged security context
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.privileged
+          value: true
+
+  - it: injects NODE_NAME from downward API
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: NODE_NAME
+            valueFrom:
+              fieldRef:
+                fieldPath: spec.nodeName
+
+  - it: sets FC_KERNEL from kernelPath value
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /host/boot/vmlinux
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FC_KERNEL
+            value: /host/boot/vmlinux
