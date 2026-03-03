@@ -1,0 +1,57 @@
+suite: agent RBAC
+templates:
+  - templates/agent/serviceaccount.yaml
+  - templates/agent/clusterrole.yaml
+  - templates/agent/clusterrolebinding.yaml
+tests:
+  - it: creates agent ServiceAccount
+    template: templates/agent/serviceaccount.yaml
+    asserts:
+      - isKind:
+          of: ServiceAccount
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-imp-agent
+
+  - it: creates agent ClusterRole with required rules
+    template: templates/agent/clusterrole.yaml
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["imp.dev"]
+            resources: [impvms]
+            verbs: [get, list, watch, update, patch]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["imp.dev"]
+            resources: [impvms/status]
+            verbs: [get, update, patch]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["imp.dev"]
+            resources: [impvmclasses]
+            verbs: [get]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["imp.dev"]
+            resources: [impnetworks]
+            verbs: [get]
+
+  - it: binds agent ClusterRole to agent ServiceAccount
+    template: templates/agent/clusterrolebinding.yaml
+    asserts:
+      - equal:
+          path: roleRef.name
+          value: RELEASE-NAME-imp-agent
+      - equal:
+          path: subjects[0].name
+          value: RELEASE-NAME-imp-agent
+      - equal:
+          path: subjects[0].namespace
+          value: NAMESPACE
