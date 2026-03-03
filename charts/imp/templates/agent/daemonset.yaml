@@ -66,5 +66,3 @@ spec:
         {{- else }}
         emptyDir: {}
         {{- end }}
-      hostPID: false
-      hostNetwork: false
