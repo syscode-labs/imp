@@ -1,0 +1,169 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    "helm.sh/resource-policy": keep
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: clusterimpconfigs.imp.dev
+spec:
+  group: imp.dev
+  names:
+    categories:
+    - imp
+    kind: ClusterImpConfig
+    listKind: ClusterImpConfigList
+    plural: clusterimpconfigs
+    shortNames:
+    - impcfg
+    singular: clusterimpconfig
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.networking.cni.provider
+      name: CNI
+      type: string
+    - jsonPath: .spec.capacity.defaultFraction
+      name: DefaultFraction
+      type: string
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ClusterImpConfig is the Schema for the clusterimpconfigs API.
+          Create exactly one instance named "cluster".
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ClusterImpConfigSpec defines operator-wide settings.
+              There must be exactly one ClusterImpConfig named "cluster" per cluster.
+            properties:
+              capacity:
+                description: Capacity sets default compute headroom across all nodes.
+                properties:
+                  defaultFraction:
+                    default: "0.9"
+                    description: |-
+                      DefaultFraction is the fraction of node allocatable CPU and memory
+                      available to ImpVMs across all nodes. Range: 0.0–1.0.
+                    pattern: ^(0(\.[0-9]+)?|1(\.0+)?)$
+                    type: string
+                type: object
+              defaultHttpCheck:
+                description: |-
+                  DefaultHttpCheck sets the cluster-wide default for the operator HTTP health check.
+                  Individual ImpVMs can override this per-VM via spec.probes.httpCheck.
+                  Disabled by default.
+                properties:
+                  enabled:
+                    description: Enabled turns on the operator HTTP health check.
+                    type: boolean
+                  failureThreshold:
+                    default: 3
+                    description: FailureThreshold is the number of consecutive failures
+                      before marking Ready=False.
+                    format: int32
+                    type: integer
+                  intervalSeconds:
+                    default: 10
+                    description: IntervalSeconds is how often the operator checks
+                      the endpoint.
+                    format: int32
+                    type: integer
+                  path:
+                    default: /healthz
+                    description: Path is the HTTP path to GET. Defaults to /healthz.
+                    type: string
+                  port:
+                    description: Port is the TCP port to check.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                type: object
+              networking:
+                description: Networking controls CNI detection and NAT backend selection.
+                properties:
+                  cni:
+                    description: CNI controls how the operator detects and integrates
+                      with the cluster CNI.
+                    properties:
+                      autoDetect:
+                        default: true
+                        description: AutoDetect enables automatic CNI detection at
+                          operator startup.
+                        type: boolean
+                      natBackend:
+                        description: NATBackend selects the NAT implementation used
+                          by the node agent.
+                        enum:
+                        - nftables
+                        - iptables
+                        type: string
+                      provider:
+                        description: |-
+                          Provider explicitly sets the CNI, skipping auto-detection.
+                          Valid values: cilium-kubeproxy-free, cilium, flannel, calico, unknown.
+                        type: string
+                    type: object
+                  ipam:
+                    description: IPAM controls IP address management for ImpNetworks.
+                    properties:
+                      provider:
+                        default: internal
+                        description: Provider selects the IPAM backend.
+                        enum:
+                        - internal
+                        type: string
+                    type: object
+                type: object
+              observability:
+                description: Observability configures metrics and tracing.
+                properties:
+                  metrics:
+                    description: Metrics configures Prometheus metrics exposure.
+                    properties:
+                      enabled:
+                        default: true
+                        description: Enabled turns on the /metrics endpoint.
+                        type: boolean
+                      port:
+                        default: 9090
+                        description: Port is the port the /metrics endpoint listens
+                          on.
+                        format: int32
+                        type: integer
+                    type: object
+                  tracing:
+                    description: Tracing configures OpenTelemetry trace export (opt-in).
+                    properties:
+                      enabled:
+                        description: Enabled turns on trace export. Off by default.
+                        type: boolean
+                      endpoint:
+                        description: Endpoint is the OTLP gRPC endpoint (e.g. "http://otel-collector:4317").
+                        type: string
+                    type: object
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}
