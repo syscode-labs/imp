@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "imp.fullname" . }}-agent
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: agent
+spec:
+  selector:
+    matchLabels:
+      {{- include "imp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: agent
+  template:
+    metadata:
+      labels:
+        {{- include "imp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: agent
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "imp.agent.serviceAccountName" . }}
+      {{- with .Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: agent
+        image: {{ include "imp.agent.image" . }}
+        imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: FC_KERNEL
+          value: {{ required "agent.env.kernelPath is required" .Values.agent.env.kernelPath | quote }}
+        resources:
+          {{- toYaml .Values.agent.resources | nindent 10 }}
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: dev-kvm
+          mountPath: /dev/kvm
+        - name: socket-dir
+          mountPath: /run/imp/sockets
+        - name: image-cache
+          mountPath: /var/lib/imp/images
+      volumes:
+      - name: dev-kvm
+        hostPath:
+          path: /dev/kvm
+      - name: socket-dir
+        {{- if .Values.agent.hostPaths.socketDir.enabled }}
+        hostPath:
+          path: {{ .Values.agent.hostPaths.socketDir.path }}
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      - name: image-cache
+        {{- if .Values.agent.hostPaths.imageCache.enabled }}
+        hostPath:
+          path: {{ .Values.agent.hostPaths.imageCache.path }}
+        {{- else }}
+        emptyDir: {}
+        {{- end }}
+      hostPID: false
+      hostNetwork: false

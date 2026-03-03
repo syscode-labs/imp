@@ -1,0 +1,84 @@
+suite: agent DaemonSet
+templates:
+  - templates/agent/daemonset.yaml
+tests:
+  - it: renders DaemonSet with correct image
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+    asserts:
+      - isKind:
+          of: DaemonSet
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/syscode-labs/imp-agent:0.1.0
+
+  - it: fails when kernelPath is not set
+    template: templates/agent/daemonset.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "agent.env.kernelPath is required"
+
+  - it: always mounts /dev/kvm
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: dev-kvm
+            hostPath:
+              path: /dev/kvm
+
+  - it: uses emptyDir for socketDir when hostPaths disabled
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+      agent.hostPaths.socketDir.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: socket-dir
+            emptyDir: {}
+
+  - it: uses hostPath for socketDir when enabled
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+      agent.hostPaths.socketDir.enabled: true
+      agent.hostPaths.socketDir.path: /run/imp/sockets
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: socket-dir
+            hostPath:
+              path: /run/imp/sockets
+
+  - it: uses emptyDir for imageCache when hostPaths disabled
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+      agent.hostPaths.imageCache.enabled: false
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: image-cache
+            emptyDir: {}
+
+  - it: uses hostPath for imageCache when enabled
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+      agent.hostPaths.imageCache.enabled: true
+      agent.hostPaths.imageCache.path: /var/lib/imp/images
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: image-cache
+            hostPath:
+              path: /var/lib/imp/images
