@@ -49,3 +49,5 @@ webhook:
   certManager:
     enabled: true
     issuerRef: {}
+    duration: 8760h
+    renewBefore: 720h

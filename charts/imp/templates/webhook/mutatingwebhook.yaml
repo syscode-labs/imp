@@ -1,11 +1,12 @@
+{{- if .Values.webhook.certManager.enabled }}
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
-  name: {{ include "imp.fullname" . }}
+  name: {{ include "imp.fullname" . }}-mutating-webhooks
   labels:
     {{- include "imp.labels" . | nindent 4 }}
   annotations:
-    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/imp-webhook-tls
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "imp.fullname" . }}-webhook-tls
 webhooks:
 - name: mimpvm.kb.io
   admissionReviewVersions: ["v1"]
@@ -17,7 +18,11 @@ webhooks:
   rules:
   - apiGroups: ["imp.dev"]
     apiVersions: ["v1alpha1"]
-    operations: [CREATE, UPDATE]
+    operations:
+      - CREATE
+      - UPDATE
     resources: [impvms]
+    scope: Namespaced
   failurePolicy: Fail
   sideEffects: None
+{{- end }}

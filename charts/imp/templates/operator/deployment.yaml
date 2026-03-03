@@ -74,5 +74,5 @@ spec:
       volumes:
       - name: webhook-tls
         secret:
-          secretName: imp-webhook-tls
+          secretName: {{ include "imp.fullname" . }}-webhook-tls
       terminationGracePeriodSeconds: 10
