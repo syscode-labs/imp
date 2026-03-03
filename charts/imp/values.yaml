@@ -30,6 +30,11 @@ agent:
     limits:
       memory: 128Mi
   nodeSelector: {}
+  tolerations: []
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
   env:
     kernelPath: ""
   hostPaths:
