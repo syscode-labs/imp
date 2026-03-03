@@ -12,6 +12,9 @@ tests:
       - equal:
           path: metadata.name
           value: RELEASE-NAME-imp-agent
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
 
   - it: creates agent ClusterRole with required rules
     template: templates/agent/clusterrole.yaml
@@ -42,6 +45,12 @@ tests:
             apiGroups: ["imp.dev"]
             resources: [impnetworks]
             verbs: [get]
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [events]
+            verbs: [create, patch]
 
   - it: binds agent ClusterRole to agent ServiceAccount
     template: templates/agent/clusterrolebinding.yaml
@@ -55,3 +64,6 @@ tests:
       - equal:
           path: subjects[0].namespace
           value: NAMESPACE
+      - equal:
+          path: subjects[0].kind
+          value: ServiceAccount

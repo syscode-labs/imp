@@ -6,17 +6,22 @@ metadata:
     {{- include "imp.labels" . | nindent 4 }}
 rules:
 - apiGroups: ["imp.dev"]
-  resources: [impvms]
+  resources:
+    - impvms
   verbs: [get, list, watch, update, patch]
 - apiGroups: ["imp.dev"]
-  resources: [impvms/status]
+  resources:
+    - impvms/status
   verbs: [get, update, patch]
 - apiGroups: ["imp.dev"]
-  resources: [impvmclasses]
+  resources:
+    - impvmclasses
   verbs: [get]
 - apiGroups: ["imp.dev"]
-  resources: [impnetworks]
+  resources:
+    - impnetworks
   verbs: [get]
 - apiGroups: [""]
-  resources: [events]
+  resources:
+    - events
   verbs: [create, patch]
