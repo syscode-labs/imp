@@ -1,0 +1,46 @@
+nameOverride: ""
+fullnameOverride: ""
+imagePullSecrets: []
+
+operator:
+  image:
+    repository: ghcr.io/syscode-labs/imp-operator
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  nodeSelector: {}
+  rbac:
+    cniDetection: minimal
+
+agent:
+  image:
+    repository: ghcr.io/syscode-labs/imp-agent
+    tag: ""
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  nodeSelector: {}
+  env:
+    kernelPath: ""
+  hostPaths:
+    socketDir:
+      enabled: false
+      path: /run/imp/sockets
+    imageCache:
+      enabled: false
+      path: /var/lib/imp/images
+
+webhook:
+  certManager:
+    enabled: true
+    issuerRef: {}

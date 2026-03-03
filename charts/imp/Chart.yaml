@@ -1,0 +1,11 @@
+apiVersion: v2
+name: imp
+description: Imp — Firecracker microVM operator for Kubernetes
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - firecracker
+  - microvm
+  - kubernetes
+home: https://github.com/syscode-labs/imp
