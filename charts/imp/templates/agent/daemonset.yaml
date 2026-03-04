@@ -43,6 +43,10 @@ spec:
               fieldPath: spec.nodeName
         - name: FC_KERNEL
           value: {{ .Values.agent.env.kernelPath | required "agent.env.kernelPath is required" | quote }}
+        ports:
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
         resources:
           {{- toYaml .Values.agent.resources | nindent 10 }}
         securityContext:

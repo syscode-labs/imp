@@ -11,18 +11,23 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	firecracker "github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/models"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent/network"
+	"github.com/syscode-labs/imp/internal/agent/probe"
+	pb "github.com/syscode-labs/imp/internal/proto/guest"
 	"github.com/syscode-labs/imp/internal/agent/rootfs"
+	agentvsock "github.com/syscode-labs/imp/internal/agent/vsock"
 )
 
 // shuttingDownTimeout is how long Stop waits for a graceful ACPI shutdown
@@ -31,10 +36,11 @@ var shuttingDownTimeout = 5 * time.Second
 
 // fcProc holds the runtime state of a running Firecracker microVM process.
 type fcProc struct {
-	machine *firecracker.Machine
-	pid     int64
-	socket  string
-	netInfo *network.NetworkInfo // nil when NetworkRef is absent
+	machine      *firecracker.Machine
+	pid          int64
+	socket       string
+	netInfo      *network.NetworkInfo // nil when NetworkRef is absent
+	probeCancel  context.CancelFunc   // non-nil when probe goroutine is running
 }
 
 // FirecrackerDriver is a VMDriver that launches real Firecracker microVMs.
@@ -57,6 +63,9 @@ type FirecrackerDriver struct {
 	Net network.NetManager
 	// Alloc manages in-memory IP allocation per ImpNetwork.
 	Alloc *network.Allocator
+	// GuestAgentPath is the host path to the guest-agent binary for injection.
+	// Defaults to rootfs.GuestAgentContainerPath when empty.
+	GuestAgentPath string
 
 	// mu guards procs. Must be held for any read or write of the procs map.
 	mu    sync.Mutex
@@ -125,8 +134,14 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		return 0, fmt.Errorf("get class %q: %w", vm.Spec.ClassRef.Name, err)
 	}
 
+	gaEnabled := d.guestAgentEnabled(vm, &class)
+
 	// 2. Build ext4 rootfs from OCI image (cached by digest).
-	rootfsPath, err := d.Cache.Build(ctx, vm.Spec.Image)
+	var buildOpts []rootfs.BuildOption
+	if gaEnabled {
+		buildOpts = append(buildOpts, rootfs.WithGuestAgent(d.guestAgentPath()))
+	}
+	rootfsPath, err := d.Cache.Build(ctx, vm.Spec.Image, buildOpts...)
 	if err != nil {
 		return 0, fmt.Errorf("build rootfs for %s: %w", vm.Spec.Image, err)
 	}
@@ -148,7 +163,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	sockPath := d.socketPath(vm)
 
 	// 5. Build Firecracker config.
-	cfg := d.buildConfig(&class, rootfsPath, sockPath, netInfo)
+	cfg := d.buildConfig(&class, rootfsPath, sockPath, netInfo, gaEnabled)
 
 	// 6. Build the VMM command.
 	cmd := exec.CommandContext(ctx, d.BinPath, "--api-sock", sockPath) //nolint:gosec // G204: BinPath validated in NewFirecrackerDriver
@@ -171,9 +186,29 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		return 0, fmt.Errorf("get pid: %w", err)
 	}
 
+	proc := &fcProc{machine: m, pid: int64(pid), socket: sockPath, netInfo: netInfo}
+
+	// Capture probe arguments before goroutine launch to avoid data race on vm.
+	var probeCtx context.Context
+	var probes *impdevv1alpha1.ProbeSpec
+	var vsockPath string
+	if gaEnabled && vm.Spec.Probes != nil {
+		vsockPath = strings.TrimSuffix(sockPath, ".sock") + ".vsock"
+		probes = vm.Spec.Probes
+		var probeCancel context.CancelFunc
+		probeCtx, probeCancel = context.WithCancel(context.Background())
+		proc.probeCancel = probeCancel
+	}
+
+	// Insert into map before launching the goroutine so Stop() can always find
+	// and cancel the probe context, even if called concurrently with Start().
 	d.mu.Lock()
-	d.procs[vmKey(vm)] = &fcProc{machine: m, pid: int64(pid), socket: sockPath, netInfo: netInfo}
+	d.procs[vmKey(vm)] = proc
 	d.mu.Unlock()
+
+	if probeCtx != nil {
+		go d.runProbes(probeCtx, probes, vsockPath)
+	}
 
 	return int64(pid), nil
 }
@@ -190,6 +225,10 @@ func (d *FirecrackerDriver) Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) 
 
 	if !ok {
 		return nil // already stopped or never started
+	}
+
+	if proc.probeCancel != nil {
+		proc.probeCancel()
 	}
 
 	if proc.machine != nil {
@@ -276,11 +315,16 @@ func (d *FirecrackerDriver) buildConfig(
 	class *impdevv1alpha1.ImpVMClass,
 	rootfsPath, socketPath string,
 	netInfo *network.NetworkInfo,
+	gaEnabled bool,
 ) firecracker.Config {
+	kernelArgs := d.KernelArgs
+	if gaEnabled {
+		kernelArgs += " init=/.imp/init"
+	}
 	cfg := firecracker.Config{
 		SocketPath:      socketPath,
 		KernelImagePath: d.KernelPath,
-		KernelArgs:      d.KernelArgs,
+		KernelArgs:      kernelArgs,
 		Drives: []models.Drive{
 			{
 				DriveID:      firecracker.String("rootfs"),
@@ -308,6 +352,14 @@ func (d *FirecrackerDriver) buildConfig(
 					Nameservers: netInfo.DNS,
 				},
 			},
+		}}
+	}
+	if gaEnabled {
+		vsockPath := strings.TrimSuffix(socketPath, ".sock") + ".vsock"
+		cfg.VsockDevices = []firecracker.VsockDevice{{
+			ID:   "vsock0",
+			Path: vsockPath,
+			CID:  3, // guest CID; host always uses CID 2
 		}}
 	}
 	return cfg
@@ -380,6 +432,37 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 		Subnet:     impNet.Spec.Subnet,
 		NetworkKey: netKey,
 	}, nil
+}
+
+// guestAgentEnabled returns true when the guest agent should be injected for this VM.
+func (d *FirecrackerDriver) guestAgentEnabled(vm *impdevv1alpha1.ImpVM, class *impdevv1alpha1.ImpVMClass) bool {
+	return ResolveGuestAgentEnabled(vm, class)
+}
+
+// guestAgentPath returns the host path to the guest-agent binary.
+func (d *FirecrackerDriver) guestAgentPath() string {
+	if d.GuestAgentPath != "" {
+		return d.GuestAgentPath
+	}
+	return rootfs.GuestAgentContainerPath
+}
+
+// runProbes dials the guest VSOCK and runs probe polling until ctx is cancelled.
+// Called in a goroutine after the VM reaches Running. probes must not be nil.
+func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha1.ProbeSpec, vsockPath string) {
+	conn, err := agentvsock.Dial(ctx, vsockPath, 10000)
+	if err != nil {
+		logf.Log.Error(err, "runProbes: VSOCK dial failed", "vsock", vsockPath)
+		return
+	}
+	defer conn.Close() //nolint:errcheck
+	client := pb.NewGuestAgentClient(conn)
+	runner := probe.NewRunner(client, probes, func(conds []metav1.Condition) {
+		// Best-effort patch of ImpVM status conditions.
+		// Use d.Client to patch if available.
+		_ = conds // no-op for now; wired in reconciler status path
+	})
+	runner.Run(ctx)
 }
 
 // compile-time interface check.

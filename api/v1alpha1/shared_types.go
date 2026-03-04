@@ -89,6 +89,16 @@ const (
 	ArchMulti Arch = "multi"
 )
 
+// GuestAgentConfig controls guest agent injection into the VM rootfs.
+// When enabled (default), the node agent injects /.imp/guest-agent at boot,
+// enabling probes, env injection, and VM-side metrics.
+// Set enabled: false for bare VMs that prioritise fast boot over observability.
+type GuestAgentConfig struct {
+	// Enabled controls guest agent injection. Defaults to true when omitted.
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
 // HTTPCheckSpec configures the operator-side HTTP health check (opt-in).
 // Enabled per-VM via spec.probes.httpCheck or cluster-wide via ClusterImpConfig.spec.defaultHttpCheck.
 type HTTPCheckSpec struct {
