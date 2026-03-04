@@ -32,7 +32,7 @@ tests:
   - it: skips PodMonitor when disabled
     template: templates/agent/podmonitor.yaml
     set:
-      metrics.serviceMonitor.enabled: false
+      metrics.podMonitor.enabled: false
     asserts:
       - hasDocuments:
           count: 0
