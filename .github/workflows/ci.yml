@@ -105,3 +105,24 @@ jobs:
       - name: Cleanup
         if: always()
         run: talosctl cluster destroy --name imp-e2e
+
+  e2e-kind:
+    name: E2E (Kind)
+    runs-on: ${{ vars.E2E_RUNNER_LABEL || 'ubuntu-latest' }}
+    needs: [lint, build]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: imp-e2e
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Run E2E tests
+        run: go test -tags e2e ./test/e2e/... -v -timeout 15m
