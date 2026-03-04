@@ -85,6 +85,7 @@ func TestHTTPCheck_ok(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { httpLis.Close() })
 	port := httpLis.Addr().(*net.TCPAddr).Port
 	go func() {
 		http.Serve(httpLis, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { //nolint:errcheck
@@ -117,5 +118,28 @@ func TestMetrics_returns(t *testing.T) {
 	}
 	if resp.MemoryUsedBytes < 0 {
 		t.Errorf("memory_used_bytes = %d, want >= 0", resp.MemoryUsedBytes)
+	}
+}
+
+func TestHTTPCheck_connectionRefused(t *testing.T) {
+	// Use a port we know has no listener (bind then close to get a free port)
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := l.Addr().(*net.TCPAddr).Port
+	l.Close() // close it so nothing is listening
+
+	client := startTestServer(t)
+	resp, err := client.HTTPCheck(context.Background(), &pb.HTTPCheckRequest{
+		Port:           int32(port),
+		Path:           "/",
+		TimeoutSeconds: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 0 {
+		t.Errorf("status_code = %d, want 0 for connection refused", resp.StatusCode)
 	}
 }

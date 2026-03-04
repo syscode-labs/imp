@@ -91,7 +91,6 @@ func diskUsedBytes(path string) (int64, error) {
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return 0, err
 	}
-	total := int64(stat.Blocks) * stat.Bsize
-	free := int64(stat.Bfree) * stat.Bsize
-	return total - free, nil
+	used := int64(stat.Blocks-stat.Bavail) * stat.Bsize
+	return used, nil
 }
