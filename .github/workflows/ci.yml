@@ -108,14 +108,14 @@ jobs:
 
   e2e-kind:
     name: E2E (Kind)
-    runs-on: ${{ vars.E2E_RUNNER_LABEL || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     needs: [lint, build]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
 
       - uses: helm/kind-action@v1
         with:

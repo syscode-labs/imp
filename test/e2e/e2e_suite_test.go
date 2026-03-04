@@ -35,6 +35,13 @@ const (
 	helmCRDRelease = "imp-crds"
 )
 
+// Note: the Kind cluster itself is managed by the CI workflow (helm/kind-action@v1) or
+// must be created manually before running these tests locally:
+//
+//	kind create cluster --name imp-e2e
+//	go test -tags e2e ./test/e2e/... -v -timeout 15m
+//	kind delete cluster --name imp-e2e
+
 var _ = BeforeSuite(func() {
 	By("creating namespace")
 	nsCmd := exec.Command("kubectl", "create", "ns", namespace)
