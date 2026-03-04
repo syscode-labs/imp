@@ -73,6 +73,7 @@ func main() {
 		Scheme:   mgr.GetScheme(),
 		NodeName: nodeName,
 		Driver:   driver,
+		Metrics:  agent.NewVMMetricsCollector(),
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "Unable to set up ImpVMReconciler")
 		os.Exit(1)
