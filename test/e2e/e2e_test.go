@@ -127,10 +127,13 @@ spec:
 				fmt.Sprintf("svc/%s-operator", helmRelease),
 				"18080:8080", "-n", namespace)
 			Expect(pf.Start()).To(Succeed())
-			defer pf.Process.Kill() //nolint:errcheck
+			DeferCleanup(func() {
+				if pf.Process != nil {
+					_ = pf.Process.Kill()
+				}
+			})
 
-			time.Sleep(2 * time.Second)
-
+			// Eventually handles connection-refused while port-forward is starting up.
 			Eventually(func(g Gomega) {
 				resp, err := http.Get("http://localhost:18080/metrics") //nolint:noctx
 				g.Expect(err).NotTo(HaveOccurred())
