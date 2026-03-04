@@ -22,6 +22,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -100,6 +101,13 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		vmCopy := vm.DeepCopy()
 		vm.Status.Phase = impdevv1alpha1.VMPhaseScheduled
 		setScheduled(vm, nodeName)
+		if vm.Status.ScheduledAt == nil {
+			now := metav1.Now()
+			vm.Status.ScheduledAt = &now
+			if !vm.CreationTimestamp.IsZero() {
+				ObserveSchedulingLatency(now.Sub(vm.CreationTimestamp.Time))
+			}
+		}
 		if err := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -167,6 +175,13 @@ func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.Imp
 
 	var annotationChanged bool
 	if vm.Status.Phase == impdevv1alpha1.VMPhaseRunning {
+		if vm.Status.RunningAt == nil {
+			now := metav1.Now()
+			vm.Status.RunningAt = &now
+			if vm.Status.ScheduledAt != nil {
+				ObserveBootLatency(now.Sub(vm.Status.ScheduledAt.Time))
+			}
+		}
 		httpSpec := resolveHTTPCheck(vm, r.globalHTTPCheck(ctx))
 		if httpSpec != nil {
 			annotationChanged = r.applyHTTPCheck(ctx, vm, httpSpec)
