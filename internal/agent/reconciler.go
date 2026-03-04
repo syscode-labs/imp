@@ -185,17 +185,30 @@ func (r *ImpVMReconciler) clearOwnership(ctx context.Context, vm *impdevv1alpha1
 	return ctrl.Result{}, nil
 }
 
+// metricsServer is a controller-runtime Runnable that serves Prometheus metrics.
+// Registered with the manager so it shuts down cleanly when the manager stops.
+type metricsServer struct{ handler http.Handler }
+
+func (s *metricsServer) Start(ctx context.Context) error {
+	srv := &http.Server{Addr: metricsPort, Handler: s.handler, ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		<-ctx.Done()
+		_ = srv.Shutdown(context.Background()) //nolint:errcheck
+	}()
+	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
+}
+
 // SetupWithManager registers the reconciler with the controller-runtime manager.
 func (r *ImpVMReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if r.Metrics != nil {
-		go func() {
-			mux := http.NewServeMux()
-			mux.Handle("/metrics", NewMetricsHandlerWithCollector(r.Metrics))
-			srv := &http.Server{Addr: metricsPort, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
-			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				logf.Log.Error(err, "metrics server failed")
-			}
-		}()
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", NewMetricsHandlerWithCollector(r.Metrics))
+		if err := mgr.Add(&metricsServer{handler: mux}); err != nil {
+			return err
+		}
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).

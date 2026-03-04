@@ -49,8 +49,11 @@ func NewVMMetricsCollector() *VMMetricsCollector {
 }
 
 // SetVMState sets the imp_vm_state gauge for a VM. key = "namespace/name".
+// Clears any previous state series for this VM so only one state is active at a time.
 func (c *VMMetricsCollector) SetVMState(key, state, node string) {
 	ns, name := splitKey(key)
+	// Remove stale state series before setting the new one to avoid double-counting.
+	c.vmState.DeletePartialMatch(prometheus.Labels{"impvm": name, "namespace": ns, "node": node})
 	c.vmState.WithLabelValues(name, ns, node, state).Set(1)
 }
 
