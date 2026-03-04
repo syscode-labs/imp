@@ -27,6 +27,10 @@ type ImpVMClassSpec struct {
 	// Can be overridden by ImpVMTemplate or ImpVM.
 	// +optional
 	Probes *ProbeSpec `json:"probes,omitempty"`
+
+	// GuestAgent controls guest agent injection. Overrides defaults when set.
+	// +optional
+	GuestAgent *GuestAgentConfig `json:"guestAgent,omitempty"`
 }
 
 // +kubebuilder:object:root=true

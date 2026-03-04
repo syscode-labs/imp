@@ -72,6 +72,10 @@ type ImpVMSpec struct {
 	// Probes override probe settings inherited from ImpVMTemplate or ImpVMClass.
 	// +optional
 	Probes *ProbeSpec `json:"probes,omitempty"`
+
+	// GuestAgent controls guest agent injection. Overrides defaults when set.
+	// +optional
+	GuestAgent *GuestAgentConfig `json:"guestAgent,omitempty"`
 }
 
 // UserDataSource references a ConfigMap containing cloud-init user-data.
