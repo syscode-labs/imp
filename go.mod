@@ -5,6 +5,7 @@ go 1.25.6
 require (
 	github.com/firecracker-microvm/firecracker-go-sdk v1.0.0
 	github.com/google/go-containerregistry v0.21.1
+	github.com/mdlayher/vsock v1.1.1
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
 	github.com/vishvananda/netlink v1.1.1-0.20210330154013-f5de75959ad5
@@ -58,6 +59,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
+	github.com/mdlayher/socket v0.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/mapstructure v1.4.3 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
