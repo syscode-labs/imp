@@ -23,7 +23,7 @@ type Server struct {
 func NewServer() *Server { return &Server{} }
 
 // Exec runs a command and returns exit code, stdout, and stderr.
-func (s *Server) Exec(_ context.Context, req *pb.ExecRequest) (*pb.ExecResponse, error) {
+func (s *Server) Exec(ctx context.Context, req *pb.ExecRequest) (*pb.ExecResponse, error) {
 	if len(req.Command) == 0 {
 		return nil, fmt.Errorf("command is required")
 	}
@@ -31,7 +31,7 @@ func (s *Server) Exec(_ context.Context, req *pb.ExecRequest) (*pb.ExecResponse,
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	var stdout, stderr bytes.Buffer
