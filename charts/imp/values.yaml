@@ -51,3 +51,8 @@ webhook:
     issuerRef: {}
     duration: 8760h
     renewBefore: 720h
+
+metrics:
+  serviceMonitor:
+    enabled: true
+    interval: 30s
