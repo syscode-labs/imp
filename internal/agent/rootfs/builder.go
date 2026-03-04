@@ -25,8 +25,10 @@ type Builder struct {
 }
 
 // Build returns the path to a ready-to-use ext4 image for imageRef.
+// opts are applied to the extracted layer directory before building the ext4.
+// When opts are provided, the cache key includes a "-ga" suffix.
 // Blocks until the image is built. Subsequent calls with the same manifest digest return immediately.
-func (b *Builder) Build(ctx context.Context, imageRef string) (string, error) {
+func (b *Builder) Build(ctx context.Context, imageRef string, opts ...BuildOption) (string, error) {
 	// 1. Fetch image manifest (layers are downloaded lazily).
 	img, err := b.pullImage(ctx, imageRef)
 	if err != nil {
@@ -40,7 +42,11 @@ func (b *Builder) Build(ctx context.Context, imageRef string) (string, error) {
 	}
 
 	// 3. Check cache — return immediately if already built.
-	dest := b.cachePath(digest.Hex)
+	cacheKey := digest.Hex
+	if len(opts) > 0 {
+		cacheKey += "-ga"
+	}
+	dest := b.cachePath(cacheKey)
 	if _, err := os.Stat(dest); err == nil {
 		return dest, nil
 	}
@@ -59,6 +65,13 @@ func (b *Builder) Build(ctx context.Context, imageRef string) (string, error) {
 
 	if err := extractLayers(img, tmpDir); err != nil {
 		return "", fmt.Errorf("extract layers: %w", err)
+	}
+
+	// 5a. Apply build options (e.g. guest agent injection).
+	for _, opt := range opts {
+		if err := opt(tmpDir); err != nil {
+			return "", fmt.Errorf("build option: %w", err)
+		}
 	}
 
 	// 6. Write /sbin/init from CMD/ENTRYPOINT.
