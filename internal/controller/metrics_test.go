@@ -4,25 +4,31 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
 
-func TestSchedulingLatency_observed(t *testing.T) {
-	ObserveSchedulingLatency(500 * time.Millisecond)
+// sampleCount reads the cumulative sample count from a histogram.
+func sampleCount(h prometheus.Histogram) uint64 {
+	var m dto.Metric
+	_ = h.Write(&m) //nolint:errcheck
+	return m.GetHistogram().GetSampleCount()
+}
 
-	// Use testutil.CollectAndCount to verify the histogram has observations
-	// The histogram name is "imp_vm_scheduling_latency_seconds"
-	count := testutil.CollectAndCount(SchedulingLatencyHistogram)
-	if count == 0 {
-		t.Error("expected scheduling latency histogram to have observations")
+func TestSchedulingLatency_observed(t *testing.T) {
+	before := sampleCount(SchedulingLatencyHistogram)
+	ObserveSchedulingLatency(500 * time.Millisecond)
+	after := sampleCount(SchedulingLatencyHistogram)
+	if after != before+1 {
+		t.Errorf("sample count: got %d, want %d", after, before+1)
 	}
 }
 
 func TestBootLatency_observed(t *testing.T) {
+	before := sampleCount(BootLatencyHistogram)
 	ObserveBootLatency(2 * time.Second)
-
-	count := testutil.CollectAndCount(BootLatencyHistogram)
-	if count == 0 {
-		t.Error("expected boot latency histogram to have observations")
+	after := sampleCount(BootLatencyHistogram)
+	if after != before+1 {
+		t.Errorf("sample count: got %d, want %d", after, before+1)
 	}
 }

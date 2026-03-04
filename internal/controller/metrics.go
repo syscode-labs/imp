@@ -36,6 +36,3 @@ func ObserveSchedulingLatency(d time.Duration) {
 func ObserveBootLatency(d time.Duration) {
 	BootLatencyHistogram.Observe(d.Seconds())
 }
-
-// ResetMetricsForTest is a no-op; histograms are cumulative and cannot be reset.
-func ResetMetricsForTest() {}
