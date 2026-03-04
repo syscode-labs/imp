@@ -1,7 +1,11 @@
+//go:build linux
+
 package agent
 
 import (
 	"context"
+	"errors"
+	"net/http"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -20,6 +24,7 @@ type ImpVMReconciler struct {
 	Scheme   *runtime.Scheme
 	NodeName string
 	Driver   VMDriver
+	Metrics  *VMMetricsCollector
 }
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;update;patch
@@ -92,6 +97,10 @@ func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha
 		return ctrl.Result{}, err
 	}
 
+	if r.Metrics != nil {
+		r.Metrics.SetVMState(vm.Namespace+"/"+vm.Name, "Running", r.NodeName)
+	}
+
 	log.Info("VM started", "pid", pid, "ip", state.IP)
 	return ctrl.Result{}, nil
 }
@@ -123,6 +132,11 @@ func (r *ImpVMReconciler) handleTerminating(ctx context.Context, vm *impdevv1alp
 		log.Error(err, "Driver Stop failed — will retry")
 		return ctrl.Result{RequeueAfter: 2 * time.Second}, err
 	}
+
+	if r.Metrics != nil {
+		r.Metrics.ClearVM(vm.Namespace + "/" + vm.Name)
+	}
+
 	return r.clearOwnership(ctx, vm)
 }
 
@@ -173,6 +187,17 @@ func (r *ImpVMReconciler) clearOwnership(ctx context.Context, vm *impdevv1alpha1
 
 // SetupWithManager registers the reconciler with the controller-runtime manager.
 func (r *ImpVMReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.Metrics != nil {
+		go func() {
+			mux := http.NewServeMux()
+			mux.Handle("/metrics", NewMetricsHandlerWithCollector(r.Metrics))
+			srv := &http.Server{Addr: metricsPort, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+			if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				logf.Log.Error(err, "metrics server failed")
+			}
+		}()
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&impdevv1alpha1.ImpVM{}).
 		Named("agent-impvm").
