@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 
 	gvsock "github.com/syscode-labs/imp/internal/agent/vsock"
 	"github.com/syscode-labs/imp/internal/guest"
@@ -92,6 +91,3 @@ func TestVSOCKClient_callsGuestAgent(t *testing.T) {
 		t.Errorf("exit_code = %d, want 0", resp.ExitCode)
 	}
 }
-
-// Ensure the unused import is referenced to avoid compile errors.
-var _ = insecure.NewCredentials

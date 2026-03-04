@@ -69,8 +69,8 @@ func (r *Runner) pollProbe(ctx context.Context, condType string, p *impv1alpha1.
 			if ok {
 				consecutiveFails = 0
 				consecutiveSuccesses++
-				// Report success on first success (successThreshold = 1)
-				if consecutiveSuccesses >= 1 {
+				// Patch only on transition to success (== 1) to avoid noisy repeated API calls.
+				if consecutiveSuccesses == 1 {
 					r.patcher([]metav1.Condition{probeCondition(condType, true)})
 				}
 			} else {
