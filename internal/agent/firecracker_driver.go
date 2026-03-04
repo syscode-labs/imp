@@ -36,10 +36,11 @@ var shuttingDownTimeout = 5 * time.Second
 
 // fcProc holds the runtime state of a running Firecracker microVM process.
 type fcProc struct {
-	machine *firecracker.Machine
-	pid     int64
-	socket  string
-	netInfo *network.NetworkInfo // nil when NetworkRef is absent
+	machine      *firecracker.Machine
+	pid          int64
+	socket       string
+	netInfo      *network.NetworkInfo // nil when NetworkRef is absent
+	probeCancel  context.CancelFunc   // non-nil when probe goroutine is running
 }
 
 // FirecrackerDriver is a VMDriver that launches real Firecracker microVMs.
@@ -185,14 +186,19 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		return 0, fmt.Errorf("get pid: %w", err)
 	}
 
-	d.mu.Lock()
-	d.procs[vmKey(vm)] = &fcProc{machine: m, pid: int64(pid), socket: sockPath, netInfo: netInfo}
-	d.mu.Unlock()
+	proc := &fcProc{machine: m, pid: int64(pid), socket: sockPath, netInfo: netInfo}
 
 	if gaEnabled && vm.Spec.Probes != nil {
 		vsockPath := strings.TrimSuffix(sockPath, ".sock") + ".vsock"
-		go d.runProbes(ctx, vm, vsockPath)
+		probes := vm.Spec.Probes // capture before goroutine to avoid data race
+		probeCtx, probeCancel := context.WithCancel(context.Background())
+		proc.probeCancel = probeCancel
+		go d.runProbes(probeCtx, probes, vsockPath)
 	}
+
+	d.mu.Lock()
+	d.procs[vmKey(vm)] = proc
+	d.mu.Unlock()
 
 	return int64(pid), nil
 }
@@ -209,6 +215,10 @@ func (d *FirecrackerDriver) Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) 
 
 	if !ok {
 		return nil // already stopped or never started
+	}
+
+	if proc.probeCancel != nil {
+		proc.probeCancel()
 	}
 
 	if proc.machine != nil {
@@ -428,15 +438,16 @@ func (d *FirecrackerDriver) guestAgentPath() string {
 }
 
 // runProbes dials the guest VSOCK and runs probe polling until ctx is cancelled.
-// Called in a goroutine after the VM reaches Running.
-func (d *FirecrackerDriver) runProbes(ctx context.Context, vm *impdevv1alpha1.ImpVM, vsockPath string) {
+// Called in a goroutine after the VM reaches Running. probes must not be nil.
+func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha1.ProbeSpec, vsockPath string) {
 	conn, err := agentvsock.Dial(ctx, vsockPath, 10000)
 	if err != nil {
-		return // best-effort; probes will simply not run
+		logf.Log.Error(err, "runProbes: VSOCK dial failed", "vsock", vsockPath)
+		return
 	}
 	defer conn.Close() //nolint:errcheck
 	client := pb.NewGuestAgentClient(conn)
-	runner := probe.NewRunner(client, vm.Spec.Probes, func(conds []metav1.Condition) {
+	runner := probe.NewRunner(client, probes, func(conds []metav1.Condition) {
 		// Best-effort patch of ImpVM status conditions.
 		// Use d.Client to patch if available.
 		_ = conds // no-op for now; wired in reconciler status path
