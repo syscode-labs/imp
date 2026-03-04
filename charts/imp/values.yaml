@@ -56,3 +56,6 @@ metrics:
   serviceMonitor:
     enabled: true
     interval: 30s
+  podMonitor:
+    enabled: true
+    interval: 30s

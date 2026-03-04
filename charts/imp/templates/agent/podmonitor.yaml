@@ -1,4 +1,4 @@
-{{- if .Values.metrics.serviceMonitor.enabled }}
+{{- if .Values.metrics.podMonitor.enabled }}
 apiVersion: monitoring.coreos.com/v1
 kind: PodMonitor
 metadata:
@@ -14,7 +14,7 @@ spec:
       app.kubernetes.io/component: agent
   podMetricsEndpoints:
     - port: metrics
-      interval: {{ .Values.metrics.serviceMonitor.interval }}
+      interval: {{ .Values.metrics.podMonitor.interval | quote }}
   namespaceSelector:
     matchNames:
       - {{ .Release.Namespace }}
