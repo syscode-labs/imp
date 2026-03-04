@@ -188,17 +188,27 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 
 	proc := &fcProc{machine: m, pid: int64(pid), socket: sockPath, netInfo: netInfo}
 
+	// Capture probe arguments before goroutine launch to avoid data race on vm.
+	var probeCtx context.Context
+	var probes *impdevv1alpha1.ProbeSpec
+	var vsockPath string
 	if gaEnabled && vm.Spec.Probes != nil {
-		vsockPath := strings.TrimSuffix(sockPath, ".sock") + ".vsock"
-		probes := vm.Spec.Probes // capture before goroutine to avoid data race
-		probeCtx, probeCancel := context.WithCancel(context.Background())
+		vsockPath = strings.TrimSuffix(sockPath, ".sock") + ".vsock"
+		probes = vm.Spec.Probes
+		var probeCancel context.CancelFunc
+		probeCtx, probeCancel = context.WithCancel(context.Background())
 		proc.probeCancel = probeCancel
-		go d.runProbes(probeCtx, probes, vsockPath)
 	}
 
+	// Insert into map before launching the goroutine so Stop() can always find
+	// and cancel the probe context, even if called concurrently with Start().
 	d.mu.Lock()
 	d.procs[vmKey(vm)] = proc
 	d.mu.Unlock()
+
+	if probeCtx != nil {
+		go d.runProbes(probeCtx, probes, vsockPath)
+	}
 
 	return int64(pid), nil
 }
