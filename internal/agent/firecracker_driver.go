@@ -11,18 +11,23 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	firecracker "github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/models"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent/network"
+	"github.com/syscode-labs/imp/internal/agent/probe"
+	pb "github.com/syscode-labs/imp/internal/proto/guest"
 	"github.com/syscode-labs/imp/internal/agent/rootfs"
+	agentvsock "github.com/syscode-labs/imp/internal/agent/vsock"
 )
 
 // shuttingDownTimeout is how long Stop waits for a graceful ACPI shutdown
@@ -57,6 +62,9 @@ type FirecrackerDriver struct {
 	Net network.NetManager
 	// Alloc manages in-memory IP allocation per ImpNetwork.
 	Alloc *network.Allocator
+	// GuestAgentPath is the host path to the guest-agent binary for injection.
+	// Defaults to rootfs.GuestAgentContainerPath when empty.
+	GuestAgentPath string
 
 	// mu guards procs. Must be held for any read or write of the procs map.
 	mu    sync.Mutex
@@ -125,8 +133,14 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		return 0, fmt.Errorf("get class %q: %w", vm.Spec.ClassRef.Name, err)
 	}
 
+	gaEnabled := d.guestAgentEnabled(vm, &class)
+
 	// 2. Build ext4 rootfs from OCI image (cached by digest).
-	rootfsPath, err := d.Cache.Build(ctx, vm.Spec.Image)
+	var buildOpts []rootfs.BuildOption
+	if gaEnabled {
+		buildOpts = append(buildOpts, rootfs.WithGuestAgent(d.guestAgentPath()))
+	}
+	rootfsPath, err := d.Cache.Build(ctx, vm.Spec.Image, buildOpts...)
 	if err != nil {
 		return 0, fmt.Errorf("build rootfs for %s: %w", vm.Spec.Image, err)
 	}
@@ -148,7 +162,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	sockPath := d.socketPath(vm)
 
 	// 5. Build Firecracker config.
-	cfg := d.buildConfig(&class, rootfsPath, sockPath, netInfo)
+	cfg := d.buildConfig(&class, rootfsPath, sockPath, netInfo, gaEnabled)
 
 	// 6. Build the VMM command.
 	cmd := exec.CommandContext(ctx, d.BinPath, "--api-sock", sockPath) //nolint:gosec // G204: BinPath validated in NewFirecrackerDriver
@@ -174,6 +188,11 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	d.mu.Lock()
 	d.procs[vmKey(vm)] = &fcProc{machine: m, pid: int64(pid), socket: sockPath, netInfo: netInfo}
 	d.mu.Unlock()
+
+	if gaEnabled && vm.Spec.Probes != nil {
+		vsockPath := strings.TrimSuffix(sockPath, ".sock") + ".vsock"
+		go d.runProbes(ctx, vm, vsockPath)
+	}
 
 	return int64(pid), nil
 }
@@ -276,11 +295,16 @@ func (d *FirecrackerDriver) buildConfig(
 	class *impdevv1alpha1.ImpVMClass,
 	rootfsPath, socketPath string,
 	netInfo *network.NetworkInfo,
+	gaEnabled bool,
 ) firecracker.Config {
+	kernelArgs := d.KernelArgs
+	if gaEnabled {
+		kernelArgs += " init=/.imp/init"
+	}
 	cfg := firecracker.Config{
 		SocketPath:      socketPath,
 		KernelImagePath: d.KernelPath,
-		KernelArgs:      d.KernelArgs,
+		KernelArgs:      kernelArgs,
 		Drives: []models.Drive{
 			{
 				DriveID:      firecracker.String("rootfs"),
@@ -308,6 +332,14 @@ func (d *FirecrackerDriver) buildConfig(
 					Nameservers: netInfo.DNS,
 				},
 			},
+		}}
+	}
+	if gaEnabled {
+		vsockPath := strings.TrimSuffix(socketPath, ".sock") + ".vsock"
+		cfg.VsockDevices = []firecracker.VsockDevice{{
+			ID:   "vsock0",
+			Path: vsockPath,
+			CID:  3, // guest CID; host always uses CID 2
 		}}
 	}
 	return cfg
@@ -380,6 +412,36 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 		Subnet:     impNet.Spec.Subnet,
 		NetworkKey: netKey,
 	}, nil
+}
+
+// guestAgentEnabled returns true when the guest agent should be injected for this VM.
+func (d *FirecrackerDriver) guestAgentEnabled(vm *impdevv1alpha1.ImpVM, class *impdevv1alpha1.ImpVMClass) bool {
+	return ResolveGuestAgentEnabled(vm, class)
+}
+
+// guestAgentPath returns the host path to the guest-agent binary.
+func (d *FirecrackerDriver) guestAgentPath() string {
+	if d.GuestAgentPath != "" {
+		return d.GuestAgentPath
+	}
+	return rootfs.GuestAgentContainerPath
+}
+
+// runProbes dials the guest VSOCK and runs probe polling until ctx is cancelled.
+// Called in a goroutine after the VM reaches Running.
+func (d *FirecrackerDriver) runProbes(ctx context.Context, vm *impdevv1alpha1.ImpVM, vsockPath string) {
+	conn, err := agentvsock.Dial(ctx, vsockPath, 10000)
+	if err != nil {
+		return // best-effort; probes will simply not run
+	}
+	defer conn.Close() //nolint:errcheck
+	client := pb.NewGuestAgentClient(conn)
+	runner := probe.NewRunner(client, vm.Spec.Probes, func(conds []metav1.Condition) {
+		// Best-effort patch of ImpVM status conditions.
+		// Use d.Client to patch if available.
+		_ = conds // no-op for now; wired in reconciler status path
+	})
+	runner.Run(ctx)
 }
 
 // compile-time interface check.
