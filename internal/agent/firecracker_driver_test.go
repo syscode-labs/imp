@@ -133,7 +133,7 @@ func TestFirecrackerDriver_BuildConfig(t *testing.T) {
 	class.Spec.VCPU = 2
 	class.Spec.MemoryMiB = 512
 
-	cfg := d.buildConfig(class, "/cache/abc.ext4", "/run/imp/sockets/default-vm.sock", nil)
+	cfg := d.buildConfig(class, "/cache/abc.ext4", "/run/imp/sockets/default-vm.sock", nil, false)
 
 	if cfg.SocketPath != "/run/imp/sockets/default-vm.sock" {
 		t.Errorf("SocketPath = %q, want %q", cfg.SocketPath, "/run/imp/sockets/default-vm.sock")
@@ -260,7 +260,7 @@ func TestFirecrackerDriver_BuildConfig_WithNetInfo(t *testing.T) {
 		DNS:       []string{"8.8.8.8"},
 	}
 
-	cfg := d.buildConfig(class, "/cache/root.ext4", "/run/imp/s/vm.sock", ni)
+	cfg := d.buildConfig(class, "/cache/root.ext4", "/run/imp/s/vm.sock", ni, false)
 
 	if len(cfg.NetworkInterfaces) != 1 {
 		t.Fatalf("len(NetworkInterfaces) = %d, want 1", len(cfg.NetworkInterfaces))
@@ -289,7 +289,7 @@ func TestFirecrackerDriver_BuildConfig_WithoutNetInfo(t *testing.T) {
 	class.Spec.VCPU = 1
 	class.Spec.MemoryMiB = 256
 
-	cfg := d.buildConfig(class, "/cache/root.ext4", "/run/imp/s/vm.sock", nil)
+	cfg := d.buildConfig(class, "/cache/root.ext4", "/run/imp/s/vm.sock", nil, false)
 
 	if len(cfg.NetworkInterfaces) != 0 {
 		t.Errorf("expected no NetworkInterfaces when netInfo is nil, got %d", len(cfg.NetworkInterfaces))
@@ -346,5 +346,78 @@ func TestFirecrackerDriver_Stop_TeardownVMCalled(t *testing.T) {
 	}
 	if len(stub.TeardownVMCalls) != 1 || stub.TeardownVMCalls[0] != "imptap-deadbeef" {
 		t.Errorf("TeardownVMCalls = %v, want [imptap-deadbeef]", stub.TeardownVMCalls)
+	}
+}
+
+func TestFirecrackerDriver_resolveGuestAgent(t *testing.T) {
+	d := &FirecrackerDriver{GuestAgentPath: "/opt/imp/guest-agent"}
+	vm := &impdevv1alpha1.ImpVM{}
+	class := &impdevv1alpha1.ImpVMClass{}
+	if !d.guestAgentEnabled(vm, class) {
+		t.Error("expected guest agent enabled by default")
+	}
+	b := false
+	class.Spec.GuestAgent = &impdevv1alpha1.GuestAgentConfig{Enabled: &b}
+	if d.guestAgentEnabled(vm, class) {
+		t.Error("expected guest agent disabled when class sets enabled=false")
+	}
+}
+
+func TestFirecrackerDriver_BuildConfig_GuestAgentEnabled(t *testing.T) {
+	d := &FirecrackerDriver{
+		KernelPath: "/boot/vmlinux",
+		KernelArgs: "console=ttyS0 reboot=k panic=1 pci=off",
+	}
+	class := &impdevv1alpha1.ImpVMClass{}
+	class.Spec.VCPU = 1
+	class.Spec.MemoryMiB = 256
+
+	cfg := d.buildConfig(class, "/cache/root.ext4", "/run/imp/s/vm.sock", nil, true)
+
+	wantArgs := "console=ttyS0 reboot=k panic=1 pci=off init=/.imp/init"
+	if cfg.KernelArgs != wantArgs {
+		t.Errorf("KernelArgs = %q, want %q", cfg.KernelArgs, wantArgs)
+	}
+	if len(cfg.VsockDevices) != 1 {
+		t.Fatalf("len(VsockDevices) = %d, want 1", len(cfg.VsockDevices))
+	}
+	if cfg.VsockDevices[0].Path != "/run/imp/s/vm.vsock" {
+		t.Errorf("VsockDevices[0].Path = %q, want %q", cfg.VsockDevices[0].Path, "/run/imp/s/vm.vsock")
+	}
+	if cfg.VsockDevices[0].CID != 3 {
+		t.Errorf("VsockDevices[0].CID = %d, want 3", cfg.VsockDevices[0].CID)
+	}
+}
+
+func TestFirecrackerDriver_BuildConfig_GuestAgentDisabled(t *testing.T) {
+	d := &FirecrackerDriver{
+		KernelPath: "/boot/vmlinux",
+		KernelArgs: "console=ttyS0 reboot=k panic=1 pci=off",
+	}
+	class := &impdevv1alpha1.ImpVMClass{}
+	class.Spec.VCPU = 1
+	class.Spec.MemoryMiB = 256
+
+	cfg := d.buildConfig(class, "/cache/root.ext4", "/run/imp/s/vm.sock", nil, false)
+
+	if cfg.KernelArgs != "console=ttyS0 reboot=k panic=1 pci=off" {
+		t.Errorf("KernelArgs should be unchanged when gaEnabled=false, got %q", cfg.KernelArgs)
+	}
+	if len(cfg.VsockDevices) != 0 {
+		t.Errorf("expected no VsockDevices when gaEnabled=false, got %d", len(cfg.VsockDevices))
+	}
+}
+
+func TestFirecrackerDriver_guestAgentPath_default(t *testing.T) {
+	d := &FirecrackerDriver{}
+	if d.guestAgentPath() != rootfs.GuestAgentContainerPath {
+		t.Errorf("guestAgentPath() = %q, want %q", d.guestAgentPath(), rootfs.GuestAgentContainerPath)
+	}
+}
+
+func TestFirecrackerDriver_guestAgentPath_override(t *testing.T) {
+	d := &FirecrackerDriver{GuestAgentPath: "/custom/path/guest-agent"}
+	if d.guestAgentPath() != "/custom/path/guest-agent" {
+		t.Errorf("guestAgentPath() = %q, want %q", d.guestAgentPath(), "/custom/path/guest-agent")
 	}
 }

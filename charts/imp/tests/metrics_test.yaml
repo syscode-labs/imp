@@ -1,0 +1,38 @@
+suite: metrics resources
+templates:
+  - templates/operator/servicemonitor.yaml
+  - templates/agent/podmonitor.yaml
+tests:
+  - it: creates ServiceMonitor by default
+    template: templates/operator/servicemonitor.yaml
+    asserts:
+      - isKind:
+          of: ServiceMonitor
+      - equal:
+          path: spec.endpoints[0].port
+          value: metrics
+
+  - it: skips ServiceMonitor when disabled
+    template: templates/operator/servicemonitor.yaml
+    set:
+      metrics.serviceMonitor.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: creates PodMonitor by default
+    template: templates/agent/podmonitor.yaml
+    asserts:
+      - isKind:
+          of: PodMonitor
+      - equal:
+          path: spec.podMetricsEndpoints[0].port
+          value: metrics
+
+  - it: skips PodMonitor when disabled
+    template: templates/agent/podmonitor.yaml
+    set:
+      metrics.podMonitor.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

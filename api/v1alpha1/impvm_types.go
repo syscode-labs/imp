@@ -72,6 +72,10 @@ type ImpVMSpec struct {
 	// Probes override probe settings inherited from ImpVMTemplate or ImpVMClass.
 	// +optional
 	Probes *ProbeSpec `json:"probes,omitempty"`
+
+	// GuestAgent controls guest agent injection. Overrides defaults when set.
+	// +optional
+	GuestAgent *GuestAgentConfig `json:"guestAgent,omitempty"`
 }
 
 // UserDataSource references a ConfigMap containing cloud-init user-data.
@@ -96,6 +100,14 @@ type ImpVMStatus struct {
 	// RuntimePID is the PID of the VM runtime process on the node (informational).
 	// +optional
 	RuntimePID int64 `json:"runtimePID,omitempty"`
+
+	// ScheduledAt is the time the VM was first assigned to a node.
+	// +optional
+	ScheduledAt *metav1.Time `json:"scheduledAt,omitempty"`
+
+	// RunningAt is the time the VM first reached Running phase.
+	// +optional
+	RunningAt *metav1.Time `json:"runningAt,omitempty"`
 
 	// Conditions follow the standard k8s condition convention.
 	// +optional
