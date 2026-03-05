@@ -85,6 +85,8 @@ func (a *Allocator) Release(netKey, ip string) (wasLast bool) {
 
 // Reserve marks an IP as in-use without going through Allocate.
 // Use this during startup to re-register IPs from existing running VMs.
+// It increments vmCount for netKey so that Release correctly tracks when
+// the last VM for a network is removed.
 func (a *Allocator) Reserve(netKey, ip string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -92,6 +94,7 @@ func (a *Allocator) Reserve(netKey, ip string) {
 		a.allocated[netKey] = make(map[string]struct{})
 	}
 	a.allocated[netKey][ip] = struct{}{}
+	a.vmCount[netKey]++
 }
 
 // nextIP returns a copy of ip with the value incremented by 1 (carries through octets).
