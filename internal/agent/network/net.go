@@ -31,6 +31,11 @@ type NetManager interface {
 	// EnsureNAT installs MASQUERADE rules for subnet via egressIface.
 	// If egressIface is empty, the default-route interface is used.
 	EnsureNAT(ctx context.Context, subnet, egressIface string) error
+
+	// RemoveNAT removes the MASQUERADE rule for subnet.
+	// Idempotent — no error if the rule does not exist.
+	// If egressIface is empty, the default-route interface is used.
+	RemoveNAT(ctx context.Context, subnet, egressIface string) error
 }
 
 // StubNetManager is a no-op NetManager for tests.
@@ -40,11 +45,13 @@ type StubNetManager struct {
 	SetupVMCalls       []string // tapName
 	TeardownVMCalls    []string // tapName
 	EnsureNATCalls     []string // subnet
+	RemoveNATCalls     []string // subnet
 
 	EnsureNetworkErr error
 	SetupVMErr       error
 	TeardownVMErr    error
 	EnsureNATErr     error
+	RemoveNATErr     error
 }
 
 func (s *StubNetManager) EnsureNetwork(_ context.Context, bridgeName, _ string, _ int) error {
@@ -65,6 +72,11 @@ func (s *StubNetManager) TeardownVM(_ context.Context, tapName string) error {
 func (s *StubNetManager) EnsureNAT(_ context.Context, subnet, _ string) error {
 	s.EnsureNATCalls = append(s.EnsureNATCalls, subnet)
 	return s.EnsureNATErr
+}
+
+func (s *StubNetManager) RemoveNAT(_ context.Context, subnet, _ string) error {
+	s.RemoveNATCalls = append(s.RemoveNATCalls, subnet)
+	return s.RemoveNATErr
 }
 
 // compile-time assertion
