@@ -115,7 +115,12 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 
-	// 4. SyncStatus
+	// 4. Handle Failed phase — apply restart policy before re-syncing.
+	if vm.Status.Phase == impdevv1alpha1.VMPhaseFailed {
+		return r.handleFailed(ctx, vm)
+	}
+
+	// 5. SyncStatus
 	return r.syncStatus(ctx, vm)
 }
 
