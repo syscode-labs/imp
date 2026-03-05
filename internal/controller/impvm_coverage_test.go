@@ -575,6 +575,68 @@ var _ = Describe("ImpVM handleDeletion with nodeName", func() {
 	})
 })
 
+// ─── Scheduler: explicit VCPUCapacity path ───────────────────────────────────
+
+var _ = Describe("ImpVM Scheduler: explicit VCPUCapacity scheduling", func() {
+	ctx := context.Background()
+
+	It("schedules VM via explicit-capacity path when ClusterImpNodeProfile has VCPUCapacity set", func() {
+		nodeName := "explicit-cap-node"
+		node := readyNode(nodeName)
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, node) }) //nolint:errcheck
+
+		profile := &impdevv1alpha1.ClusterImpNodeProfile{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeName},
+			Spec: impdevv1alpha1.ClusterImpNodeProfileSpec{
+				VCPUCapacity: 8,
+				MemoryMiB:    8192,
+			},
+		}
+		Expect(k8sClient.Create(ctx, profile)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, profile) }) //nolint:errcheck
+
+		class := &impdevv1alpha1.ImpVMClass{
+			ObjectMeta: metav1.ObjectMeta{Name: "explicit-cap-small"},
+			Spec: impdevv1alpha1.ImpVMClassSpec{
+				VCPU:      2,
+				MemoryMiB: 512,
+				DiskGiB:   10,
+			},
+		}
+		Expect(k8sClient.Create(ctx, class)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, class) }) //nolint:errcheck
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "explicit-cap-vm", Namespace: "default"},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				ClassRef: &impdevv1alpha1.ClusterObjectRef{Name: "explicit-cap-small"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		r := newReconciler()
+		// First reconcile: adds finalizer.
+		_, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "explicit-cap-vm", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		// Second reconcile: schedules via explicit-capacity path.
+		_, err = r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "explicit-cap-vm", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "explicit-cap-vm", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Spec.NodeName).To(Equal(nodeName))
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseScheduled))
+	})
+})
+
 // ─── syncStatus: node healthy path ───────────────────────────────────────────
 
 var _ = Describe("ImpVM syncStatus: node healthy", func() {
