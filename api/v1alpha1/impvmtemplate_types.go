@@ -22,6 +22,10 @@ type ImpVMTemplateSpec struct {
 	// GuestAgent controls guest agent injection. Overrides defaults when set.
 	// +optional
 	GuestAgent *GuestAgentConfig `json:"guestAgent,omitempty"`
+
+	// RestartPolicy overrides the class-level restart policy for this template.
+	// +optional
+	RestartPolicy *RestartPolicy `json:"restartPolicy,omitempty"`
 }
 
 // +kubebuilder:object:root=true

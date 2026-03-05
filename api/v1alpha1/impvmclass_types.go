@@ -31,6 +31,10 @@ type ImpVMClassSpec struct {
 	// GuestAgent controls guest agent injection. Overrides defaults when set.
 	// +optional
 	GuestAgent *GuestAgentConfig `json:"guestAgent,omitempty"`
+
+	// RestartPolicy configures automatic restart for persistent VMs using this class.
+	// +optional
+	RestartPolicy *RestartPolicy `json:"restartPolicy,omitempty"`
 }
 
 // +kubebuilder:object:root=true

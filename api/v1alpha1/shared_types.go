@@ -66,7 +66,7 @@ const (
 )
 
 // VMPhase is the current lifecycle phase of an ImpVM.
-// +kubebuilder:validation:Enum=Pending;Scheduled;Starting;Running;Terminating;Succeeded;Failed
+// +kubebuilder:validation:Enum=Pending;Scheduled;Starting;Running;Terminating;Succeeded;Failed;RetryExhausted
 type VMPhase string
 
 const (
@@ -77,6 +77,9 @@ const (
 	VMPhaseTerminating VMPhase = "Terminating"
 	VMPhaseSucceeded   VMPhase = "Succeeded"
 	VMPhaseFailed      VMPhase = "Failed"
+	// VMPhaseRetryExhausted means all restart attempts are exhausted with onExhaustion="manual-reset".
+	// The VM will not restart until the retry counter is cleared via the imp/reset-retries annotation.
+	VMPhaseRetryExhausted VMPhase = "RetryExhausted"
 )
 
 // Arch is the CPU architecture for a VM class.
@@ -97,6 +100,50 @@ type GuestAgentConfig struct {
 	// Enabled controls guest agent injection. Defaults to true when omitted.
 	// +optional
 	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// RestartPolicy controls automatic restart behaviour for persistent VMs.
+type RestartPolicy struct {
+	// Mode controls where the VM restarts after failure.
+	// "in-place" restarts on the same node. "reschedule" re-runs the scheduler.
+	// +optional
+	// +kubebuilder:default=in-place
+	// +kubebuilder:validation:Enum=in-place;reschedule
+	Mode string `json:"mode,omitempty"`
+
+	// Backoff configures exponential backoff between restart attempts.
+	// +optional
+	Backoff RestartBackoff `json:"backoff,omitempty"`
+
+	// OnExhaustion controls behaviour once Backoff.MaxRetries is exhausted.
+	// +optional
+	// +kubebuilder:default=fail
+	// +kubebuilder:validation:Enum=fail;manual-reset;cool-down
+	OnExhaustion string `json:"onExhaustion,omitempty"`
+
+	// CoolDownPeriod is the duration before the retry counter resets automatically.
+	// Only used when OnExhaustion is "cool-down".
+	// +optional
+	// +kubebuilder:default="1h"
+	CoolDownPeriod string `json:"coolDownPeriod,omitempty"`
+}
+
+// RestartBackoff configures exponential backoff timing.
+type RestartBackoff struct {
+	// MaxRetries is the maximum number of restart attempts before OnExhaustion applies.
+	// +optional
+	// +kubebuilder:default=5
+	MaxRetries int32 `json:"maxRetries,omitempty"`
+
+	// InitialDelay is the delay before the first restart attempt.
+	// +optional
+	// +kubebuilder:default="10s"
+	InitialDelay string `json:"initialDelay,omitempty"`
+
+	// MaxDelay caps the exponential backoff.
+	// +optional
+	// +kubebuilder:default="5m"
+	MaxDelay string `json:"maxDelay,omitempty"`
 }
 
 // HTTPCheckSpec configures the operator-side HTTP health check (opt-in).

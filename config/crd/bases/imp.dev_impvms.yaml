@@ -272,6 +272,15 @@ spec:
                       x-kubernetes-map-type: atomic
                   type: object
                 type: array
+              guestAgent:
+                description: GuestAgent controls guest agent injection. Overrides
+                  defaults when set.
+                properties:
+                  enabled:
+                    description: Enabled controls guest agent injection. Defaults
+                      to true when omitted.
+                    type: boolean
+                type: object
               image:
                 description: |-
                   Image is the OCI image used as the VM rootfs. CMD/ENTRYPOINT from the
@@ -472,6 +481,56 @@ spec:
                         type: integer
                     type: object
                 type: object
+              restartPolicy:
+                description: |-
+                  RestartPolicy overrides restart policy for this specific VM.
+                  Resolved inheritance: class → template → VM (VM wins).
+                properties:
+                  backoff:
+                    description: Backoff configures exponential backoff between restart
+                      attempts.
+                    properties:
+                      initialDelay:
+                        default: 10s
+                        description: InitialDelay is the delay before the first restart
+                          attempt.
+                        type: string
+                      maxDelay:
+                        default: 5m
+                        description: MaxDelay caps the exponential backoff.
+                        type: string
+                      maxRetries:
+                        default: 5
+                        description: MaxRetries is the maximum number of restart attempts
+                          before OnExhaustion applies.
+                        format: int32
+                        type: integer
+                    type: object
+                  coolDownPeriod:
+                    default: 1h
+                    description: |-
+                      CoolDownPeriod is the duration before the retry counter resets automatically.
+                      Only used when OnExhaustion is "cool-down".
+                    type: string
+                  mode:
+                    default: in-place
+                    description: |-
+                      Mode controls where the VM restarts after failure.
+                      "in-place" restarts on the same node. "reschedule" re-runs the scheduler.
+                    enum:
+                    - in-place
+                    - reschedule
+                    type: string
+                  onExhaustion:
+                    default: fail
+                    description: OnExhaustion controls behaviour once Backoff.MaxRetries
+                      is exhausted.
+                    enum:
+                    - fail
+                    - manual-reset
+                    - cool-down
+                    type: string
+                type: object
               templateRef:
                 description: TemplateRef references an ImpVMTemplate. Mutually exclusive
                   with ClassRef.
@@ -562,8 +621,18 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              exhaustedAt:
+                description: ExhaustedAt is the time restart retries were exhausted
+                  (informational).
+                format: date-time
+                type: string
               ip:
                 description: IP is the IP address assigned to the VM by the ImpNetwork.
+                type: string
+              nextRetryAfter:
+                description: NextRetryAfter is the earliest time the controller will
+                  attempt the next restart.
+                format: date-time
                 type: string
               nodeName:
                 description: NodeName is the node where the VM is running.
@@ -578,12 +647,27 @@ spec:
                 - Terminating
                 - Succeeded
                 - Failed
+                - RetryExhausted
+                type: string
+              restartCount:
+                description: RestartCount is the cumulative number of times this VM
+                  has been restarted.
+                format: int32
+                type: integer
+              runningAt:
+                description: RunningAt is the time the VM first reached Running phase.
+                format: date-time
                 type: string
               runtimePID:
                 description: RuntimePID is the PID of the VM runtime process on the
                   node (informational).
                 format: int64
                 type: integer
+              scheduledAt:
+                description: ScheduledAt is the time the VM was first assigned to
+                  a node.
+                format: date-time
+                type: string
             type: object
         type: object
     served: true

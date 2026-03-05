@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestImpVMSpec_TemplateRef_XOR_ClassRef(t *testing.T) {
@@ -43,4 +46,34 @@ func TestImpVMSpec_EnvVars(t *testing.T) {
 	if len(got.Env) != 1 || got.Env[0].Name != "PORT" {
 		t.Fatalf("Env lost in round-trip: %+v", got.Env)
 	}
+}
+
+func TestImpVMStatus_restartFields(t *testing.T) {
+	now := metav1.Now()
+	status := ImpVMStatus{
+		RestartCount:   3,
+		NextRetryAfter: &now,
+	}
+	b, err := json.Marshal(status)
+	require.NoError(t, err)
+	var out ImpVMStatus
+	require.NoError(t, json.Unmarshal(b, &out))
+	assert.Equal(t, int32(3), out.RestartCount)
+	assert.NotNil(t, out.NextRetryAfter)
+}
+
+func TestRestartPolicy_roundTrip(t *testing.T) {
+	rp := RestartPolicy{
+		Mode:           "reschedule",
+		Backoff:        RestartBackoff{MaxRetries: 10, InitialDelay: "5s", MaxDelay: "10m"},
+		OnExhaustion:   "cool-down",
+		CoolDownPeriod: "2h",
+	}
+	b, err := json.Marshal(rp)
+	require.NoError(t, err)
+	var out RestartPolicy
+	require.NoError(t, json.Unmarshal(b, &out))
+	assert.Equal(t, "reschedule", out.Mode)
+	assert.Equal(t, int32(10), out.Backoff.MaxRetries)
+	assert.Equal(t, "cool-down", out.OnExhaustion)
 }
