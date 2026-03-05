@@ -76,6 +76,11 @@ type ImpVMSpec struct {
 	// GuestAgent controls guest agent injection. Overrides defaults when set.
 	// +optional
 	GuestAgent *GuestAgentConfig `json:"guestAgent,omitempty"`
+
+	// RestartPolicy overrides restart policy for this specific VM.
+	// Resolved inheritance: class → template → VM (VM wins).
+	// +optional
+	RestartPolicy *RestartPolicy `json:"restartPolicy,omitempty"`
 }
 
 // UserDataSource references a ConfigMap containing cloud-init user-data.
@@ -108,6 +113,18 @@ type ImpVMStatus struct {
 	// RunningAt is the time the VM first reached Running phase.
 	// +optional
 	RunningAt *metav1.Time `json:"runningAt,omitempty"`
+
+	// RestartCount is the cumulative number of times this VM has been restarted.
+	// +optional
+	RestartCount int32 `json:"restartCount,omitempty"`
+
+	// NextRetryAfter is the earliest time the controller will attempt the next restart.
+	// +optional
+	NextRetryAfter *metav1.Time `json:"nextRetryAfter,omitempty"`
+
+	// ExhaustedAt is the time restart retries were exhausted (informational).
+	// +optional
+	ExhaustedAt *metav1.Time `json:"exhaustedAt,omitempty"`
 
 	// Conditions follow the standard k8s condition convention.
 	// +optional
