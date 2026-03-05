@@ -97,6 +97,22 @@ func (a *Allocator) Reserve(netKey, ip string) {
 	a.vmCount[netKey]++
 }
 
+// sizeToCIDRPrefix returns the smallest CIDR prefix length that accommodates n hosts.
+// Minimum is /30 (2 usable addresses). n=0 or n=1 returns /30.
+// The result accounts for network and broadcast addresses (n+2 total addresses needed).
+func sizeToCIDRPrefix(n int32) int {
+	if n <= 2 {
+		return 30
+	}
+	// Need n+2 addresses (network + broadcast)
+	needed := int(n) + 2
+	prefix := 30
+	for (1 << (32 - prefix)) < needed {
+		prefix--
+	}
+	return prefix
+}
+
 // nextIP returns a copy of ip with the value incremented by 1 (carries through octets).
 func nextIP(ip net.IP) net.IP {
 	ip = ip.To4()
