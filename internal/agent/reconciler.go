@@ -211,6 +211,9 @@ func (r *ImpVMReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 	}
 
+	// Detect and patch CPU model onto ClusterImpNodeProfile at startup (best-effort).
+	go detectAndPatchCPUModel(context.Background(), r.Client, r.NodeName)
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&impdevv1alpha1.ImpVM{}).
 		Named("agent-impvm").
