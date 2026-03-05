@@ -17,6 +17,18 @@ type ClusterImpNodeProfileSpec struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	MaxImpVMs int32 `json:"maxImpVMs,omitempty"`
+
+	// VCPUCapacity is the total number of vCPUs available for VMs on this node.
+	// When non-zero, takes precedence over fraction-based scheduling.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	VCPUCapacity int32 `json:"vcpuCapacity,omitempty"`
+
+	// MemoryMiB is the total memory in MiB available for VMs on this node.
+	// When non-zero, takes precedence over fraction-based scheduling.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	MemoryMiB int64 `json:"memoryMiB,omitempty"`
 }
 
 // +kubebuilder:object:root=true
