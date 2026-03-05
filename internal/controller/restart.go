@@ -29,17 +29,25 @@ import (
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
 
+// effectiveMaxRetries returns the configured MaxRetries, defaulting to 5 when the
+// field is zero (kubebuilder default may not apply at runtime).
+func effectiveMaxRetries(policy *impdevv1alpha1.RestartPolicy) int32 {
+	if policy == nil {
+		return 0
+	}
+	if policy.Backoff.MaxRetries == 0 {
+		return 5
+	}
+	return policy.Backoff.MaxRetries
+}
+
 // shouldRestart returns true when the VM should be restarted according to policy.
 // restartCount is the number of restarts already performed (pre-increment).
 func shouldRestart(policy *impdevv1alpha1.RestartPolicy, restartCount int32) bool {
 	if policy == nil {
 		return false
 	}
-	maxRetries := policy.Backoff.MaxRetries
-	if maxRetries == 0 {
-		maxRetries = 5 // kubebuilder default may not apply at runtime
-	}
-	return restartCount < maxRetries
+	return restartCount < effectiveMaxRetries(policy)
 }
 
 // computeBackoffDelay returns the wait duration before the next restart attempt.
@@ -56,9 +64,6 @@ func computeBackoffDelay(backoff impdevv1alpha1.RestartBackoff, restartCount int
 			break
 		}
 	}
-	if delay > max {
-		delay = max
-	}
 	return delay
 }
 
@@ -74,6 +79,9 @@ func parseDurationOrDefault(s string, def time.Duration) time.Duration {
 }
 
 // handleFailed processes a VM in the Failed phase, applying restart policy if set.
+//
+// Note: VMPhaseFailed is only reachable after a node was assigned and the VM started.
+// Spec.NodeName is therefore always set when this function is called.
 func (r *ImpVMReconciler) handleFailed(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	policy := vm.Spec.RestartPolicy
@@ -89,6 +97,7 @@ func (r *ImpVMReconciler) handleFailed(ctx context.Context, vm *impdevv1alpha1.I
 				return ctrl.Result{}, r.Status().Patch(ctx, vm, client.MergeFrom(base))
 			}
 		}
+		// TODO(Task 4): cool-down onExhaustion not yet handled
 		return ctrl.Result{}, nil // stay Failed (or RetryExhausted)
 	}
 
@@ -125,7 +134,7 @@ func (r *ImpVMReconciler) handleFailed(ctx context.Context, vm *impdevv1alpha1.I
 
 	r.Recorder.Eventf(vm, corev1.EventTypeNormal, "Restarting",
 		"Restarting VM (attempt %d/%d, delay %s)", vm.Status.RestartCount,
-		policy.Backoff.MaxRetries, delay)
+		effectiveMaxRetries(policy), delay)
 
 	return ctrl.Result{RequeueAfter: delay}, nil
 }
