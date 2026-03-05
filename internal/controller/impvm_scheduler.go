@@ -30,6 +30,33 @@ import (
 
 const labelImpEnabled = "imp/enabled"
 
+// sumUsedResources returns (usedVCPU, usedMemMiB) per node for active VMs.
+// VMs in Failed, Succeeded, or Terminating phase are excluded.
+// VMs whose class cannot be resolved are skipped (best-effort).
+func sumUsedResources(ctx context.Context, c client.Client, vms []impdevv1alpha1.ImpVM) map[string][2]int64 {
+	result := make(map[string][2]int64)
+	for _, vm := range vms {
+		switch vm.Status.Phase {
+		case impdevv1alpha1.VMPhaseFailed,
+			impdevv1alpha1.VMPhaseSucceeded,
+			impdevv1alpha1.VMPhaseTerminating:
+			continue
+		}
+		if vm.Spec.NodeName == "" {
+			continue
+		}
+		spec, err := resolveClassSpec(ctx, c, &vm)
+		if err != nil {
+			continue // best-effort
+		}
+		cur := result[vm.Spec.NodeName]
+		cur[0] += int64(spec.VCPU)
+		cur[1] += int64(spec.MemoryMiB)
+		result[vm.Spec.NodeName] = cur
+	}
+	return result
+}
+
 // schedule selects a node for vm using a capacity-aware least-loaded strategy.
 // Returns "" and no error when no suitable node is available.
 func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM) (string, error) {
@@ -62,6 +89,32 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 	} else {
 		vmVCPU = classSpec.VCPU
 		vmMemMiB = classSpec.MemoryMiB
+	}
+
+	// 5a. Explicit-capacity scheduling: use Schedule() for nodes that have VCPUCapacity set on profile.
+	usedResources := sumUsedResources(ctx, r.Client, allVMs.Items)
+	var explicitNodes []NodeInfo
+	for _, node := range eligible {
+		profile := &impdevv1alpha1.ClusterImpNodeProfile{}
+		if err := r.Get(ctx, client.ObjectKey{Name: node.Name}, profile); err != nil || profile.Spec.VCPUCapacity == 0 {
+			continue
+		}
+		used := usedResources[node.Name]
+		explicitNodes = append(explicitNodes, NodeInfo{
+			NodeName:      node.Name,
+			VCPUCapacity:  profile.Spec.VCPUCapacity,
+			MemoryMiB:     profile.Spec.MemoryMiB,
+			UsedVCPU:      int32(used[0]), //nolint:gosec
+			UsedMemoryMiB: used[1],
+		})
+	}
+	if len(explicitNodes) > 0 && vmVCPU > 0 {
+		chosen, err := Schedule(log, vmVCPU, int64(vmMemMiB), explicitNodes)
+		if err == nil {
+			return chosen, nil
+		}
+		// ErrUnschedulable from explicit-capacity nodes — fall through to fraction-based
+		// logic for any nodes without explicit profiles.
 	}
 
 	// 5. Fetch global default fraction from ClusterImpConfig (best-effort)
