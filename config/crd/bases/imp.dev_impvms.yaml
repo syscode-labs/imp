@@ -494,10 +494,12 @@ spec:
                         default: 10s
                         description: InitialDelay is the delay before the first restart
                           attempt.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
                         type: string
                       maxDelay:
                         default: 5m
                         description: MaxDelay caps the exponential backoff.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
                         type: string
                       maxRetries:
                         default: 5
@@ -511,6 +513,7 @@ spec:
                     description: |-
                       CoolDownPeriod is the duration before the retry counter resets automatically.
                       Only used when OnExhaustion is "cool-down".
+                    pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
                     type: string
                   mode:
                     default: in-place
