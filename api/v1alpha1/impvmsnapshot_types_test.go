@@ -42,7 +42,10 @@ func TestImpVMSnapshot_nodeLocal(t *testing.T) {
 		Spec: ImpVMSnapshotSpec{
 			SourceVMName:      "my-vm",
 			SourceVMNamespace: "default",
-			Storage:           SnapshotStorageSpec{Type: "node-local"},
+			Storage: SnapshotStorageSpec{
+				Type:      "node-local",
+				NodeLocal: &NodeLocalSpec{Path: "/mnt/nfs/snapshots"},
+			},
 		},
 	}
 	b, err := json.Marshal(snap)
@@ -51,4 +54,27 @@ func TestImpVMSnapshot_nodeLocal(t *testing.T) {
 	require.NoError(t, json.Unmarshal(b, &out))
 	assert.Equal(t, "node-local", out.Spec.Storage.Type)
 	assert.Nil(t, out.Spec.Storage.OCIRegistry)
+	assert.Equal(t, "/mnt/nfs/snapshots", out.Spec.Storage.NodeLocal.Path)
+}
+
+func TestImpVMSnapshot_baseSnapshotElection(t *testing.T) {
+	snap := ImpVMSnapshot{
+		Spec: ImpVMSnapshotSpec{
+			SourceVMName:      "golden-vm",
+			SourceVMNamespace: "default",
+			BaseSnapshot:      "snap-20260305-0200",
+			Storage:           SnapshotStorageSpec{Type: "node-local"},
+		},
+		Status: ImpVMSnapshotStatus{
+			BaseSnapshot: "snap-20260305-0200",
+			TerminatedAt: &metav1.Time{Time: metav1.Now().Time},
+		},
+	}
+	b, err := json.Marshal(snap)
+	require.NoError(t, err)
+	var out ImpVMSnapshot
+	require.NoError(t, json.Unmarshal(b, &out))
+	assert.Equal(t, "snap-20260305-0200", out.Spec.BaseSnapshot)
+	assert.Equal(t, "snap-20260305-0200", out.Status.BaseSnapshot)
+	assert.NotNil(t, out.Status.TerminatedAt)
 }
