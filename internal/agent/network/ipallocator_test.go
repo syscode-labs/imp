@@ -84,3 +84,31 @@ func TestAllocator_multipleNetworks(t *testing.T) {
 		t.Errorf("different network keys should have independent allocation state, got %q and %q", ip1, ip2)
 	}
 }
+
+func TestAllocator_release_wasLast_true(t *testing.T) {
+	a := network.NewAllocator()
+	ip, _ := a.Allocate("ns/net", "10.0.0.0/24", "")
+	wasLast := a.Release("ns/net", ip)
+	if !wasLast {
+		t.Error("expected wasLast=true when last VM released")
+	}
+}
+
+func TestAllocator_release_wasLast_false(t *testing.T) {
+	a := network.NewAllocator()
+	ip1, _ := a.Allocate("ns/net", "10.0.0.0/24", "")
+	_, _ = a.Allocate("ns/net", "10.0.0.0/24", "")
+	wasLast := a.Release("ns/net", ip1)
+	if wasLast {
+		t.Error("expected wasLast=false when one VM still allocated")
+	}
+}
+
+func TestAllocator_release_unknown_key(t *testing.T) {
+	a := network.NewAllocator()
+	// Releasing an unknown key must not panic and must return true.
+	wasLast := a.Release("ns/notexist", "10.0.0.2")
+	if !wasLast {
+		t.Error("expected wasLast=true for unknown key (no VMs remain)")
+	}
+}
