@@ -4,15 +4,17 @@ import "context"
 
 // NetworkInfo holds all networking state for a running VM.
 type NetworkInfo struct {
-	TAPName    string   // e.g. "imptap-a1b2c3d4"
-	BridgeName string   // e.g. "impbr-e5f6a7b8"
-	MACAddr    string   // e.g. "02:ab:cd:ef:01:23"
-	IP         string   // VM's assigned IP, e.g. "192.168.100.2"
-	PrefixLen  int      // subnet prefix length, e.g. 24
-	Gateway    string   // bridge/gateway IP, e.g. "192.168.100.1"
-	DNS        []string // nameservers injected into VM
-	Subnet     string   // e.g. "192.168.100.0/24"
-	NetworkKey string   // e.g. "default/mynet" — used by Allocator.Release
+	TAPName         string   // e.g. "imptap-a1b2c3d4"
+	BridgeName      string   // e.g. "impbr-e5f6a7b8"
+	MACAddr         string   // e.g. "02:ab:cd:ef:01:23"
+	IP              string   // VM's assigned IP, e.g. "192.168.100.2"
+	PrefixLen       int      // subnet prefix length, e.g. 24
+	Gateway         string   // bridge/gateway IP, e.g. "192.168.100.1"
+	DNS             []string // nameservers injected into VM
+	Subnet          string   // e.g. "192.168.100.0/24"
+	NetworkKey      string   // e.g. "default/mynet" — used by Allocator.Release
+	NATEnabled      bool     // true when NAT was enabled for this network
+	EgressInterface string   // egress interface used for NAT (may be "" for auto-detect)
 }
 
 // NetManager abstracts host-level network operations for a VM.

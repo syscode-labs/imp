@@ -253,7 +253,12 @@ func (d *FirecrackerDriver) Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) 
 			}
 		}
 		if d.Alloc != nil {
-			_ = d.Alloc.Release(proc.netInfo.NetworkKey, proc.netInfo.IP)
+			wasLast := d.Alloc.Release(proc.netInfo.NetworkKey, proc.netInfo.IP)
+			if wasLast && proc.netInfo.NATEnabled && d.Net != nil {
+				if err := d.Net.RemoveNAT(ctx, proc.netInfo.Subnet, proc.netInfo.EgressInterface); err != nil {
+					logf.FromContext(ctx).Error(err, "RemoveNAT failed", "subnet", proc.netInfo.Subnet)
+				}
+			}
 		}
 	}
 
@@ -422,15 +427,17 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 	}
 
 	return &network.NetworkInfo{
-		TAPName:    tapName,
-		BridgeName: bridgeName,
-		MACAddr:    macAddr,
-		IP:         ip,
-		PrefixLen:  prefixLen,
-		Gateway:    gateway,
-		DNS:        impNet.Spec.DNS,
-		Subnet:     impNet.Spec.Subnet,
-		NetworkKey: netKey,
+		TAPName:         tapName,
+		BridgeName:      bridgeName,
+		MACAddr:         macAddr,
+		IP:              ip,
+		PrefixLen:       prefixLen,
+		Gateway:         gateway,
+		DNS:             impNet.Spec.DNS,
+		Subnet:          impNet.Spec.Subnet,
+		NetworkKey:      netKey,
+		NATEnabled:      impNet.Spec.NAT.Enabled,
+		EgressInterface: impNet.Spec.NAT.EgressInterface,
 	}, nil
 }
 
