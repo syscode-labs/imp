@@ -18,13 +18,22 @@ type ImpVMSnapshotSpec struct {
 	// +optional
 	Schedule string `json:"schedule,omitempty"`
 
-	// Retention is the number of completed snapshots to keep (oldest pruned first).
+	// Retention is the number of completed executions to keep (oldest pruned first).
 	// +optional
 	// +kubebuilder:default=3
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
 	Retention int32 `json:"retention,omitempty"`
 
 	// Storage defines where the snapshot artifact is persisted.
 	Storage SnapshotStorageSpec `json:"storage"`
+
+	// BaseSnapshot pins a specific child execution as the elected base image.
+	// Set declaratively or via `kubectl imp elect`.
+	// Consumers (ImpWarmPool, ImpVMMigration) use this as their boot source.
+	// The operator validates the named child exists and has phase=Succeeded.
+	// +optional
+	BaseSnapshot string `json:"baseSnapshot,omitempty"`
 }
 
 // SnapshotStorageSpec configures snapshot artifact storage.
@@ -33,10 +42,23 @@ type SnapshotStorageSpec struct {
 	// +kubebuilder:validation:Enum=node-local;oci-registry
 	Type string `json:"type"`
 
+	// NodeLocal configures node-local artifact storage.
+	// Required when Type is "node-local".
+	// +optional
+	NodeLocal *NodeLocalSpec `json:"nodeLocal,omitempty"`
+
 	// OCIRegistry configures an OCI registry destination.
 	// Required when Type is "oci-registry".
 	// +optional
 	OCIRegistry *OCIRegistrySpec `json:"ociRegistry,omitempty"`
+}
+
+// NodeLocalSpec configures node-local snapshot storage.
+type NodeLocalSpec struct {
+	// Path is the base directory for snapshot artifacts on the node.
+	// Supports remotely-mounted paths (NFS, etc.).
+	// +kubebuilder:default="/var/lib/imp/snapshots"
+	Path string `json:"path,omitempty"`
 }
 
 // OCIRegistrySpec configures OCI registry access for snapshot storage.
@@ -71,6 +93,21 @@ type ImpVMSnapshotStatus struct {
 	// NextScheduledAt is when the next scheduled snapshot will run.
 	// +optional
 	NextScheduledAt *metav1.Time `json:"nextScheduledAt,omitempty"`
+
+	// LastExecutionRef is the most recently created child execution object.
+	// +optional
+	LastExecutionRef *corev1.LocalObjectReference `json:"lastExecutionRef,omitempty"`
+
+	// BaseSnapshot mirrors spec.baseSnapshot once the referenced child is
+	// validated as Succeeded. Consumers read this field only.
+	// +optional
+	BaseSnapshot string `json:"baseSnapshot,omitempty"`
+
+	// TerminatedAt is set by the agent once the execution reaches a terminal
+	// state (Succeeded or Failed) and all cleanup is complete.
+	// The operator uses this — not phase alone — to gate new execution creation.
+	// +optional
+	TerminatedAt *metav1.Time `json:"terminatedAt,omitempty"`
 
 	// Conditions follow the standard k8s condition convention.
 	// +optional

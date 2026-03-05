@@ -58,11 +58,20 @@ spec:
           spec:
             description: ImpVMSnapshotSpec defines the desired snapshot.
             properties:
+              baseSnapshot:
+                description: |-
+                  BaseSnapshot pins a specific child execution as the elected base image.
+                  Set declaratively or via `kubectl imp elect`.
+                  Consumers (ImpWarmPool, ImpVMMigration) use this as their boot source.
+                  The operator validates the named child exists and has phase=Succeeded.
+                type: string
               retention:
                 default: 3
-                description: Retention is the number of completed snapshots to keep
+                description: Retention is the number of completed executions to keep
                   (oldest pruned first).
                 format: int32
+                maximum: 10
+                minimum: 1
                 type: integer
               schedule:
                 description: |-
@@ -78,6 +87,18 @@ spec:
               storage:
                 description: Storage defines where the snapshot artifact is persisted.
                 properties:
+                  nodeLocal:
+                    description: |-
+                      NodeLocal configures node-local artifact storage.
+                      Required when Type is "node-local".
+                    properties:
+                      path:
+                        default: /var/lib/imp/snapshots
+                        description: |-
+                          Path is the base directory for snapshot artifacts on the node.
+                          Supports remotely-mounted paths (NFS, etc.).
+                        type: string
+                    type: object
                   ociRegistry:
                     description: |-
                       OCIRegistry configures an OCI registry destination.
@@ -123,6 +144,11 @@ spec:
           status:
             description: ImpVMSnapshotStatus reflects the observed state.
             properties:
+              baseSnapshot:
+                description: |-
+                  BaseSnapshot mirrors spec.baseSnapshot once the referenced child is
+                  validated as Succeeded. Consumers read this field only.
+                type: string
               completedAt:
                 description: CompletedAt is the time the last snapshot completed.
                 format: date-time
@@ -191,6 +217,21 @@ spec:
                 description: Digest is the OCI digest of the produced artifact (oci-registry
                   only).
                 type: string
+              lastExecutionRef:
+                description: LastExecutionRef is the most recently created child execution
+                  object.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               nextScheduledAt:
                 description: NextScheduledAt is when the next scheduled snapshot will
                   run.
@@ -202,6 +243,13 @@ spec:
               snapshotPath:
                 description: SnapshotPath is the node-local path of the snapshot artifact
                   (node-local only).
+                type: string
+              terminatedAt:
+                description: |-
+                  TerminatedAt is set by the agent once the execution reaches a terminal
+                  state (Succeeded or Failed) and all cleanup is complete.
+                  The operator uses this — not phase alone — to gate new execution creation.
+                format: date-time
                 type: string
             type: object
         type: object
