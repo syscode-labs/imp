@@ -20,13 +20,18 @@ import (
 	"context"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
 
 // ImpVMWebhook implements defaulting and validation for ImpVM.
-type ImpVMWebhook struct{}
+type ImpVMWebhook struct {
+	// Client is used to resolve RestartPolicy from referenced ImpVMTemplate and ImpVMClass.
+	// May be nil in unit tests that do not exercise mergeRestartPolicy.
+	Client client.Client
+}
 
 var (
 	_ admission.Defaulter[*impdevv1alpha1.ImpVM] = &ImpVMWebhook{}
@@ -34,11 +39,57 @@ var (
 )
 
 // Default implements admission.Defaulter[*impdevv1alpha1.ImpVM].
-func (w *ImpVMWebhook) Default(_ context.Context, vm *impdevv1alpha1.ImpVM) error {
+func (w *ImpVMWebhook) Default(ctx context.Context, vm *impdevv1alpha1.ImpVM) error {
 	if vm.Spec.Lifecycle == "" {
 		vm.Spec.Lifecycle = impdevv1alpha1.VMLifecycleEphemeral
 	}
+	w.mergeRestartPolicy(ctx, vm)
 	return nil
+}
+
+// mergeRestartPolicy resolves the restart policy inheritance chain (class → template → VM).
+// The most specific non-nil policy wins. Result is written to vm.Spec.RestartPolicy.
+// If no policy is set anywhere in the chain, Spec.RestartPolicy remains nil.
+// A nil Client is a no-op (tests that do not exercise this path may omit the client).
+func (w *ImpVMWebhook) mergeRestartPolicy(ctx context.Context, vm *impdevv1alpha1.ImpVM) {
+	// VM-level wins outright — nothing to resolve.
+	if vm.Spec.RestartPolicy != nil {
+		return
+	}
+
+	if w.Client == nil {
+		return
+	}
+
+	if vm.Spec.TemplateRef != nil {
+		tpl := &impdevv1alpha1.ImpVMTemplate{}
+		if err := w.Client.Get(ctx, client.ObjectKey{
+			Namespace: vm.Namespace, Name: vm.Spec.TemplateRef.Name,
+		}, tpl); err != nil {
+			return
+		}
+
+		// Template-level wins over class.
+		if tpl.Spec.RestartPolicy != nil {
+			vm.Spec.RestartPolicy = tpl.Spec.RestartPolicy.DeepCopy()
+			return
+		}
+
+		// Fall through to class via template.
+		cls := &impdevv1alpha1.ImpVMClass{}
+		if err := w.Client.Get(ctx, client.ObjectKey{Name: tpl.Spec.ClassRef.Name}, cls); err == nil {
+			vm.Spec.RestartPolicy = cls.Spec.RestartPolicy.DeepCopy()
+		}
+		return
+	}
+
+	// Direct classRef (no template).
+	if vm.Spec.ClassRef != nil {
+		cls := &impdevv1alpha1.ImpVMClass{}
+		if err := w.Client.Get(ctx, client.ObjectKey{Name: vm.Spec.ClassRef.Name}, cls); err == nil {
+			vm.Spec.RestartPolicy = cls.Spec.RestartPolicy.DeepCopy()
+		}
+	}
 }
 
 // ValidateCreate implements admission.Validator[*impdevv1alpha1.ImpVM].
