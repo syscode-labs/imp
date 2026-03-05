@@ -68,6 +68,20 @@ spec:
                 format: int32
                 minimum: 0
                 type: integer
+              memoryMiB:
+                description: |-
+                  MemoryMiB is the total memory in MiB available for VMs on this node.
+                  When non-zero, takes precedence over fraction-based scheduling.
+                format: int64
+                minimum: 0
+                type: integer
+              vcpuCapacity:
+                description: |-
+                  VCPUCapacity is the total number of vCPUs available for VMs on this node.
+                  When non-zero, takes precedence over fraction-based scheduling.
+                format: int32
+                minimum: 0
+                type: integer
             type: object
         type: object
     served: true
