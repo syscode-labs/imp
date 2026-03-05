@@ -253,7 +253,7 @@ func (d *FirecrackerDriver) Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) 
 			}
 		}
 		if d.Alloc != nil {
-			d.Alloc.Release(proc.netInfo.NetworkKey, proc.netInfo.IP)
+			_ = d.Alloc.Release(proc.netInfo.NetworkKey, proc.netInfo.IP)
 		}
 	}
 
@@ -404,13 +404,13 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 
 	// Ensure bridge exists with gateway IP.
 	if err := d.Net.EnsureNetwork(ctx, bridgeName, gateway, prefixLen); err != nil {
-		d.Alloc.Release(netKey, ip)
+		_ = d.Alloc.Release(netKey, ip)
 		return nil, fmt.Errorf("ensure bridge: %w", err)
 	}
 
 	// Create TAP and attach to bridge.
 	if err := d.Net.SetupVM(ctx, tapName, bridgeName, macAddr); err != nil {
-		d.Alloc.Release(netKey, ip)
+		_ = d.Alloc.Release(netKey, ip)
 		return nil, fmt.Errorf("setup tap: %w", err)
 	}
 

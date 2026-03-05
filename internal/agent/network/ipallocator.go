@@ -12,11 +12,15 @@ import (
 type Allocator struct {
 	mu        sync.Mutex
 	allocated map[string]map[string]struct{} // netKey → set of allocated IPs
+	vmCount   map[string]int                 // netKey → number of VMs currently holding an IP
 }
 
 // NewAllocator returns an empty Allocator.
 func NewAllocator() *Allocator {
-	return &Allocator{allocated: make(map[string]map[string]struct{})}
+	return &Allocator{
+		allocated: make(map[string]map[string]struct{}),
+		vmCount:   make(map[string]int),
+	}
 }
 
 // Allocate returns the next free IP in subnet for the given network key.
@@ -54,6 +58,7 @@ func (a *Allocator) Allocate(netKey, subnet, gateway string) (string, error) {
 		if !ip.Equal(gwIP) {
 			if _, used := set[s]; !used {
 				set[s] = struct{}{}
+				a.vmCount[netKey]++
 				return s, nil
 			}
 		}
@@ -63,12 +68,19 @@ func (a *Allocator) Allocate(netKey, subnet, gateway string) (string, error) {
 }
 
 // Release frees a previously allocated IP so it can be reused.
-func (a *Allocator) Release(netKey, ip string) {
+// Returns true when this was the last allocated IP for netKey (VM count reached zero).
+func (a *Allocator) Release(netKey, ip string) (wasLast bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if set, ok := a.allocated[netKey]; ok {
 		delete(set, ip)
 	}
+	a.vmCount[netKey]--
+	if a.vmCount[netKey] <= 0 {
+		delete(a.vmCount, netKey)
+		return true
+	}
+	return false
 }
 
 // Reserve marks an IP as in-use without going through Allocate.
