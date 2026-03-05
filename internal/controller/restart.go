@@ -169,6 +169,19 @@ func (r *ImpVMReconciler) handleFailed(ctx context.Context, vm *impdevv1alpha1.I
 // It is invoked when the annotation imp/reset-retries: "true" is present on the VM.
 func (r *ImpVMReconciler) handleResetRetries(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+
+	// Only reset when the VM is in a terminal phase — resetting a Running VM would
+	// orphan the live Firecracker process on the node agent.
+	switch vm.Status.Phase {
+	case impdevv1alpha1.VMPhaseFailed, impdevv1alpha1.VMPhaseRetryExhausted:
+		// allowed
+	default:
+		log.V(1).Info("ignoring reset-retries annotation on non-terminal VM", "vm", vm.Name, "phase", vm.Status.Phase)
+		base := vm.DeepCopy()
+		delete(vm.Annotations, AnnotationResetRetries)
+		return ctrl.Result{}, r.Patch(ctx, vm, client.MergeFrom(base))
+	}
+
 	log.Info("resetting retry counter via annotation", "vm", vm.Name)
 
 	// Remove annotation first
