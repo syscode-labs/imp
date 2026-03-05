@@ -457,3 +457,42 @@ func TestFirecrackerDriver_Stop_callsRemoveNATOnLastVM(t *testing.T) {
 		t.Errorf("expected RemoveNAT called with %q, got %v", "10.0.0.0/24", stub.RemoveNATCalls)
 	}
 }
+
+func TestFirecrackerDriver_Stop_doesNotCallRemoveNATWhenNotLast(t *testing.T) {
+	stub := &network.StubNetManager{}
+	alloc := network.NewAllocator()
+	d := &FirecrackerDriver{
+		Net:   stub,
+		Alloc: alloc,
+		procs: make(map[string]*fcProc),
+	}
+
+	// Allocate two IPs — simulating two VMs on the same network.
+	_, _ = alloc.Allocate("ns/net", "10.0.0.0/24", "10.0.0.1") // vmCount=1
+	_, _ = alloc.Allocate("ns/net", "10.0.0.0/24", "10.0.0.1") // vmCount=2
+
+	// Insert one proc — stopping it leaves one VM still allocated (wasLast=false).
+	d.procs["ns/vm1"] = &fcProc{
+		netInfo: &network.NetworkInfo{
+			TAPName:         "imptap-00000001",
+			IP:              "10.0.0.2",
+			NetworkKey:      "ns/net",
+			Subnet:          "10.0.0.0/24",
+			NATEnabled:      true,
+			EgressInterface: "eth0",
+		},
+	}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "ns"
+	vm.Name = "vm1"
+
+	ctx := context.Background()
+	if err := d.Stop(ctx, vm); err != nil {
+		t.Fatalf("Stop returned error: %v", err)
+	}
+
+	if len(stub.RemoveNATCalls) != 0 {
+		t.Errorf("expected RemoveNAT NOT called, but got calls: %v", stub.RemoveNATCalls)
+	}
+}
