@@ -170,6 +170,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.ImpVMMigrationReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ImpVMMigration")
+		os.Exit(1)
+	}
+
 	if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpVM{}).
 		WithDefaulter(&webhookv1alpha1.ImpVMWebhook{}).
 		WithValidator(&webhookv1alpha1.ImpVMWebhook{}).
