@@ -33,6 +33,12 @@ type ImpVMMigrationStatus struct {
 	// CompletedAt is the time migration completed or failed.
 	// +optional
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`
+
+	// Conditions follow the standard k8s condition convention.
+	// +optional
+	// +listType=map
+	// +listMapKey=type
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
