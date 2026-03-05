@@ -240,14 +240,20 @@ func findNftHandle(output, subnet string) string {
 // removeNATIptables deletes the MASQUERADE rule via iptables -D.
 // Idempotent: treats "not found" (exit 1) as success.
 func removeNATIptables(subnet, egressIface string) error {
+	// -C checks whether the rule exists. Non-zero exit means not found — nothing to remove.
 	//nolint:gosec // G204: subnet and egressIface are controlled values
-	_ = exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
-		"-s", subnet, "-o", egressIface, "-j", "MASQUERADE").Run()
+	check := exec.Command("iptables", "-t", "nat", "-C", "POSTROUTING",
+		"-s", subnet, "-o", egressIface, "-j", "MASQUERADE")
+	if check.Run() != nil {
+		return nil // rule not present — idempotent
+	}
+	//nolint:gosec // G204: subnet and egressIface are controlled values
+	if out, err := exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
+		"-s", subnet, "-o", egressIface, "-j", "MASQUERADE").CombinedOutput(); err != nil {
+		return fmt.Errorf("iptables -D: %w: %s", err, out)
+	}
 	return nil
 }
-
-// FindNftHandle is exported for testing.
-var FindNftHandle = findNftHandle
 
 // compile-time assertion
 var _ NetManager = (*LinuxNetManager)(nil)
