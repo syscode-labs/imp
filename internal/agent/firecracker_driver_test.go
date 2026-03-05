@@ -421,3 +421,39 @@ func TestFirecrackerDriver_guestAgentPath_override(t *testing.T) {
 		t.Errorf("guestAgentPath() = %q, want %q", d.guestAgentPath(), "/custom/path/guest-agent")
 	}
 }
+
+func TestFirecrackerDriver_Stop_callsRemoveNATOnLastVM(t *testing.T) {
+	stub := &network.StubNetManager{}
+	alloc := network.NewAllocator()
+	d := &FirecrackerDriver{
+		Net:   stub,
+		Alloc: alloc,
+		procs: make(map[string]*fcProc),
+	}
+
+	// Pre-populate: allocate one IP (vmCount=1) then pre-insert the proc.
+	_, _ = alloc.Allocate("ns/net", "10.0.0.0/24", "10.0.0.1")
+	d.procs["ns/vm"] = &fcProc{
+		netInfo: &network.NetworkInfo{
+			TAPName:         "imptap-00000001",
+			IP:              "10.0.0.2",
+			NetworkKey:      "ns/net",
+			Subnet:          "10.0.0.0/24",
+			NATEnabled:      true,
+			EgressInterface: "eth0",
+		},
+	}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "ns"
+	vm.Name = "vm"
+
+	ctx := context.Background()
+	if err := d.Stop(ctx, vm); err != nil {
+		t.Fatalf("Stop returned error: %v", err)
+	}
+
+	if len(stub.RemoveNATCalls) != 1 || stub.RemoveNATCalls[0] != "10.0.0.0/24" {
+		t.Errorf("expected RemoveNAT called with %q, got %v", "10.0.0.0/24", stub.RemoveNATCalls)
+	}
+}
