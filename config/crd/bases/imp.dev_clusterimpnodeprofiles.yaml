@@ -61,6 +61,13 @@ spec:
                   Range: 0.0–1.0.
                 pattern: ^(0(\.[0-9]+)?|1(\.0+)?)$
                 type: string
+              cpuModel:
+                description: |-
+                  CPUModel is the CPU model string detected by the node agent at startup
+                  (e.g. "Intel(R) Core(TM) i5-8500T CPU @ 2.10GHz").
+                  Used by the migration scheduler to filter CPU-compatible destination nodes.
+                  Set automatically by the node agent; do not edit manually.
+                type: string
               maxImpVMs:
                 description: |-
                   MaxImpVMs is a hard cap on the number of ImpVMs allowed on this node,

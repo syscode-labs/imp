@@ -1,0 +1,100 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: impvmmigrations.imp.dev
+spec:
+  group: imp.dev
+  names:
+    categories:
+    - imp
+    kind: ImpVMMigration
+    listKind: ImpVMMigrationList
+    plural: impvmmigrations
+    shortNames:
+    - impmig
+    singular: impvmmigration
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.sourceVMName
+      name: Source
+      type: string
+    - jsonPath: .spec.targetNode
+      name: Target
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ImpVMMigration moves a running ImpVM to another node via Firecracker snapshot/restore.
+          The destination node must have a compatible CPU model.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ImpVMMigrationSpec defines a migration request.
+            properties:
+              sourceVMName:
+                description: SourceVMName is the name of the ImpVM to migrate.
+                type: string
+              sourceVMNamespace:
+                description: SourceVMNamespace is the namespace of the source ImpVM.
+                type: string
+              targetNode:
+                description: |-
+                  TargetNode optionally pins the destination node.
+                  If empty, the controller picks the best-fit CPU-compatible node.
+                type: string
+            required:
+            - sourceVMName
+            - sourceVMNamespace
+            type: object
+          status:
+            description: ImpVMMigrationStatus reflects the observed migration state.
+            properties:
+              completedAt:
+                description: CompletedAt is the time migration completed or failed.
+                format: date-time
+                type: string
+              message:
+                description: Message is a human-readable description of the current
+                  state.
+                type: string
+              phase:
+                description: Phase is the current migration phase (Pending, Running,
+                  Succeeded, Failed).
+                type: string
+              selectedNode:
+                description: SelectedNode is the node chosen by the scheduler (when
+                  TargetNode was empty).
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
