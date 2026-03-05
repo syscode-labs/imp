@@ -62,6 +62,20 @@ func TestImpVMStatus_restartFields(t *testing.T) {
 	assert.NotNil(t, out.NextRetryAfter)
 }
 
+func TestImpVMStatus_exhaustedAt(t *testing.T) {
+	exhausted := metav1.Now()
+	status2 := ImpVMStatus{
+		RestartCount: 5,
+		ExhaustedAt:  &exhausted,
+	}
+	b2, err2 := json.Marshal(status2)
+	require.NoError(t, err2)
+	var out2 ImpVMStatus
+	require.NoError(t, json.Unmarshal(b2, &out2))
+	assert.NotNil(t, out2.ExhaustedAt)
+	assert.Equal(t, int32(5), out2.RestartCount)
+}
+
 func TestRestartPolicy_roundTrip(t *testing.T) {
 	rp := RestartPolicy{
 		Mode:           "reschedule",

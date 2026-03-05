@@ -125,6 +125,7 @@ type RestartPolicy struct {
 	// Only used when OnExhaustion is "cool-down".
 	// +optional
 	// +kubebuilder:default="1h"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$`
 	CoolDownPeriod string `json:"coolDownPeriod,omitempty"`
 }
 
@@ -138,11 +139,13 @@ type RestartBackoff struct {
 	// InitialDelay is the delay before the first restart attempt.
 	// +optional
 	// +kubebuilder:default="10s"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$`
 	InitialDelay string `json:"initialDelay,omitempty"`
 
 	// MaxDelay caps the exponential backoff.
 	// +optional
 	// +kubebuilder:default="5m"
+	// +kubebuilder:validation:Pattern=`^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$`
 	MaxDelay string `json:"maxDelay,omitempty"`
 }
 
