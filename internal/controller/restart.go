@@ -97,7 +97,33 @@ func (r *ImpVMReconciler) handleFailed(ctx context.Context, vm *impdevv1alpha1.I
 				return ctrl.Result{}, r.Status().Patch(ctx, vm, client.MergeFrom(base))
 			}
 		}
-		// TODO(Task 4): cool-down onExhaustion not yet handled
+		// cool-down: auto-reset after period elapses
+		if policy != nil && policy.OnExhaustion == "cool-down" {
+			if shouldCoolDownReset(policy.CoolDownPeriod, vm.Status.ExhaustedAt) {
+				base := vm.DeepCopy()
+				vm.Status.RestartCount = 0
+				vm.Status.NextRetryAfter = nil
+				vm.Status.ExhaustedAt = nil
+				vm.Status.Phase = impdevv1alpha1.VMPhasePending
+				return ctrl.Result{}, r.Status().Patch(ctx, vm, client.MergeFrom(base))
+			}
+			// Set ExhaustedAt if not already set
+			if vm.Status.ExhaustedAt == nil {
+				base := vm.DeepCopy()
+				now := metav1.Now()
+				vm.Status.ExhaustedAt = &now
+				if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+					return ctrl.Result{}, err
+				}
+			}
+			// Requeue when cool-down expires
+			period := parseDurationOrDefault(policy.CoolDownPeriod, time.Hour)
+			remaining := period - time.Since(vm.Status.ExhaustedAt.Time)
+			if remaining < 0 {
+				remaining = 0
+			}
+			return ctrl.Result{RequeueAfter: remaining}, nil
+		}
 		return ctrl.Result{}, nil // stay Failed (or RetryExhausted)
 	}
 
@@ -137,4 +163,35 @@ func (r *ImpVMReconciler) handleFailed(ctx context.Context, vm *impdevv1alpha1.I
 		effectiveMaxRetries(policy), delay)
 
 	return ctrl.Result{RequeueAfter: delay}, nil
+}
+
+// handleResetRetries clears all retry state and resumes normal reconciliation.
+// It is invoked when the annotation imp/reset-retries: "true" is present on the VM.
+func (r *ImpVMReconciler) handleResetRetries(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	log.Info("resetting retry counter via annotation", "vm", vm.Name)
+
+	// Remove annotation first
+	base := vm.DeepCopy()
+	delete(vm.Annotations, AnnotationResetRetries)
+	if err := r.Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Reset status
+	statusBase := vm.DeepCopy()
+	vm.Status.RestartCount = 0
+	vm.Status.NextRetryAfter = nil
+	vm.Status.ExhaustedAt = nil
+	vm.Status.Phase = impdevv1alpha1.VMPhasePending
+	return ctrl.Result{}, r.Status().Patch(ctx, vm, client.MergeFrom(statusBase))
+}
+
+// shouldCoolDownReset returns true when the cool-down period has elapsed since exhaustion.
+func shouldCoolDownReset(coolDownPeriod string, exhaustedAt *metav1.Time) bool {
+	if exhaustedAt == nil {
+		return false
+	}
+	period := parseDurationOrDefault(coolDownPeriod, time.Hour)
+	return time.Since(exhaustedAt.Time) >= period
 }

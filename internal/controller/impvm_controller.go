@@ -36,7 +36,10 @@ import (
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
 
-const finalizerImp = "imp/finalizer"
+const (
+	finalizerImp           = "imp/finalizer"
+	AnnotationResetRetries = "imp/reset-retries"
+)
 
 var terminationTimeout = 2 * time.Minute
 
@@ -74,7 +77,12 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, r.Update(ctx, vm)
 	}
 
-	// 3. Schedule if not yet assigned
+	// 3. Handle manual retry reset annotation
+	if vm.Annotations[AnnotationResetRetries] == "true" {
+		return r.handleResetRetries(ctx, vm)
+	}
+
+	// 4. Schedule if not yet assigned
 	if vm.Spec.NodeName == "" {
 		nodeName, err := r.schedule(ctx, vm)
 		if err != nil {
@@ -115,12 +123,12 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 
-	// 4. Handle Failed phase — apply restart policy before re-syncing.
+	// 5. Handle Failed phase — apply restart policy before re-syncing.
 	if vm.Status.Phase == impdevv1alpha1.VMPhaseFailed {
 		return r.handleFailed(ctx, vm)
 	}
 
-	// 5. SyncStatus
+	// 6. SyncStatus
 	return r.syncStatus(ctx, vm)
 }
 

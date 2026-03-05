@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
@@ -92,4 +93,20 @@ func TestShouldRestart_defaultMaxRetries(t *testing.T) {
 	}
 	assert.True(t, shouldRestart(policy, 4))
 	assert.False(t, shouldRestart(policy, 5))
+}
+
+func TestShouldCoolDownReset(t *testing.T) {
+	// 2h ago, coolDown 1h → should reset
+	exhausted := metav1.NewTime(time.Now().Add(-2 * time.Hour))
+	assert.True(t, shouldCoolDownReset("1h", &exhausted))
+
+	// 30min ago, coolDown 1h → should NOT reset
+	recent := metav1.NewTime(time.Now().Add(-30 * time.Minute))
+	assert.False(t, shouldCoolDownReset("1h", &recent))
+
+	// nil exhaustedAt → false
+	assert.False(t, shouldCoolDownReset("1h", nil))
+
+	// empty period → defaults to 1h; exhausted 2h ago → reset
+	assert.True(t, shouldCoolDownReset("", &exhausted))
 }
