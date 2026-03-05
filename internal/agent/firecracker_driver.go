@@ -19,6 +19,8 @@ import (
 	firecracker "github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -191,10 +193,12 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	// Capture probe arguments before goroutine launch to avoid data race on vm.
 	var probeCtx context.Context
 	var probes *impdevv1alpha1.ProbeSpec
-	var vsockPath string
+	var vsockPath, vmNamespace, vmName string
 	if gaEnabled && vm.Spec.Probes != nil {
 		vsockPath = strings.TrimSuffix(sockPath, ".sock") + ".vsock"
 		probes = vm.Spec.Probes
+		vmNamespace = vm.Namespace
+		vmName = vm.Name
 		var probeCancel context.CancelFunc
 		probeCtx, probeCancel = context.WithCancel(context.Background())
 		proc.probeCancel = probeCancel
@@ -207,7 +211,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	d.mu.Unlock()
 
 	if probeCtx != nil {
-		go d.runProbes(probeCtx, probes, vsockPath)
+		go d.runProbes(probeCtx, probes, vsockPath, vmNamespace, vmName)
 	}
 
 	return int64(pid), nil
@@ -456,7 +460,8 @@ func (d *FirecrackerDriver) guestAgentPath() string {
 
 // runProbes dials the guest VSOCK and runs probe polling until ctx is cancelled.
 // Called in a goroutine after the VM reaches Running. probes must not be nil.
-func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha1.ProbeSpec, vsockPath string) {
+// vmNamespace and vmName identify the ImpVM to patch conditions onto.
+func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha1.ProbeSpec, vsockPath, vmNamespace, vmName string) {
 	conn, err := agentvsock.Dial(ctx, vsockPath, 10000)
 	if err != nil {
 		logf.Log.Error(err, "runProbes: VSOCK dial failed", "vsock", vsockPath)
@@ -465,9 +470,19 @@ func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha
 	defer conn.Close() //nolint:errcheck
 	client := pb.NewGuestAgentClient(conn)
 	runner := probe.NewRunner(client, probes, func(conds []metav1.Condition) {
-		// Best-effort patch of ImpVM status conditions.
-		// Use d.Client to patch if available.
-		_ = conds // no-op for now; wired in reconciler status path
+		nn := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
+		vm := &impdevv1alpha1.ImpVM{}
+		if err := d.Client.Get(ctx, nn, vm); err != nil {
+			logf.Log.Error(err, "probe patcher: Get failed", "vm", nn)
+			return
+		}
+		base := vm.DeepCopy()
+		for _, c := range conds {
+			apimeta.SetStatusCondition(&vm.Status.Conditions, c)
+		}
+		if err := d.Client.Status().Patch(ctx, vm, ctrlclient.MergeFrom(base)); err != nil {
+			logf.Log.Error(err, "probe patcher: Patch failed", "vm", nn)
+		}
 	})
 	runner.Run(ctx)
 }
