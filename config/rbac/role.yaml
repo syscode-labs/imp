@@ -7,18 +7,19 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - events
-  verbs:
-  - create
-  - patch
-- apiGroups:
-  - ""
-  resources:
+  - configmaps
   - nodes
   verbs:
   - get
   - list
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
 - apiGroups:
   - imp.dev
   resources:
@@ -31,6 +32,7 @@ rules:
 - apiGroups:
   - imp.dev
   resources:
+  - impnetworks
   - impvms
   verbs:
   - create
@@ -43,12 +45,14 @@ rules:
 - apiGroups:
   - imp.dev
   resources:
+  - impnetworks/finalizers
   - impvms/finalizers
   verbs:
   - update
 - apiGroups:
   - imp.dev
   resources:
+  - impnetworks/status
   - impvms/status
   verbs:
   - get

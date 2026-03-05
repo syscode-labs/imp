@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
@@ -69,6 +71,63 @@ func TestImpVMWebhook_Default_PreservesExistingLifecycle(t *testing.T) {
 	}
 	if vm.Spec.Lifecycle != impdevv1alpha1.VMLifecyclePersistent {
 		t.Errorf("expected lifecycle=%q, got %q", impdevv1alpha1.VMLifecyclePersistent, vm.Spec.Lifecycle)
+	}
+}
+
+// --- mergeRestartPolicy tests ----------------------------------------------
+
+func TestImpVMWebhook_mergeRestartPolicy_ClassInherited(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+
+	cls := &impdevv1alpha1.ImpVMClass{}
+	cls.Name = "small"
+	cls.Spec.RestartPolicy = &impdevv1alpha1.RestartPolicy{Mode: "in-place"}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cls).Build()
+	wh := &ImpVMWebhook{Client: c}
+
+	vm := newVM("", "small", "my-image")
+	// RestartPolicy is nil on the VM — should be inherited from class.
+
+	if err := wh.Default(context.Background(), vm); err != nil {
+		t.Fatalf("Default() returned unexpected error: %v", err)
+	}
+	if vm.Spec.RestartPolicy == nil {
+		t.Fatal("expected RestartPolicy to be stamped from class, got nil")
+	}
+	if vm.Spec.RestartPolicy.Mode != "in-place" {
+		t.Errorf("expected RestartPolicy.Mode=%q, got %q", "in-place", vm.Spec.RestartPolicy.Mode)
+	}
+}
+
+func TestImpVMWebhook_mergeRestartPolicy_VMOverridesClass(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+
+	cls := &impdevv1alpha1.ImpVMClass{}
+	cls.Name = "small"
+	cls.Spec.RestartPolicy = &impdevv1alpha1.RestartPolicy{Mode: "in-place"}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cls).Build()
+	wh := &ImpVMWebhook{Client: c}
+
+	vm := newVM("", "small", "my-image")
+	// VM explicitly sets a different policy — it should win.
+	vm.Spec.RestartPolicy = &impdevv1alpha1.RestartPolicy{Mode: "reschedule"}
+
+	if err := wh.Default(context.Background(), vm); err != nil {
+		t.Fatalf("Default() returned unexpected error: %v", err)
+	}
+	if vm.Spec.RestartPolicy == nil {
+		t.Fatal("expected RestartPolicy to remain set, got nil")
+	}
+	if vm.Spec.RestartPolicy.Mode != "reschedule" {
+		t.Errorf("expected RestartPolicy.Mode=%q (VM override), got %q", "reschedule", vm.Spec.RestartPolicy.Mode)
 	}
 }
 
