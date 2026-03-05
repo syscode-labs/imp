@@ -26,6 +26,10 @@ type ImpVMTemplateSpec struct {
 	// RestartPolicy overrides the class-level restart policy for this template.
 	// +optional
 	RestartPolicy *RestartPolicy `json:"restartPolicy,omitempty"`
+
+	// NetworkGroup places VMs from this template in a named group.
+	// +optional
+	NetworkGroup string `json:"networkGroup,omitempty"`
 }
 
 // +kubebuilder:object:root=true

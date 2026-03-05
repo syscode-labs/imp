@@ -293,6 +293,11 @@ spec:
                 - ephemeral
                 - persistent
                 type: string
+              networkGroup:
+                description: |-
+                  NetworkGroup places this VM in a named group within its ImpNetwork.
+                  Members of the same group share a subnet (see ImpNetworkSpec.groups).
+                type: string
               networkRef:
                 description: NetworkRef references the ImpNetwork to attach this VM
                   to.
