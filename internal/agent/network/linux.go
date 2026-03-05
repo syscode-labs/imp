@@ -185,5 +185,69 @@ func ensureNATIptables(subnet, egressIface string) error {
 	return nil
 }
 
+// RemoveNAT removes the MASQUERADE rule for subnet on egressIface.
+// Idempotent — no-op if the rule does not exist. Uses the same backend
+// (nftables or iptables) chosen at construction time.
+func (m *LinuxNetManager) RemoveNAT(_ context.Context, subnet, egressIface string) error {
+	if egressIface == "" {
+		iface, err := defaultRouteIface()
+		if err != nil {
+			return fmt.Errorf("detect egress interface: %w", err)
+		}
+		egressIface = iface
+	}
+	if m.natBackend == "nftables" {
+		return removeNATNftables(subnet, egressIface)
+	}
+	return removeNATIptables(subnet, egressIface)
+}
+
+// removeNATNftables removes the per-subnet MASQUERADE rule from the imp_nat chain.
+// Uses handle-based deletion to avoid removing unrelated rules.
+func removeNATNftables(subnet, _ string) error {
+	//nolint:gosec
+	out, err := exec.Command("nft", "-a", "list", "chain", "ip", "imp_nat", "postrouting").Output()
+	if err != nil {
+		return nil // chain doesn't exist — idempotent
+	}
+	handle := findNftHandle(string(out), subnet)
+	if handle == "" {
+		return nil // rule not found — idempotent
+	}
+	//nolint:gosec // G204: handle is a number parsed from nft output
+	if out2, err := exec.Command("nft", "delete", "rule", "ip", "imp_nat", "postrouting", "handle", handle).CombinedOutput(); err != nil {
+		return fmt.Errorf("nft delete rule: %w: %s", err, out2)
+	}
+	return nil
+}
+
+// findNftHandle returns the handle number for the first rule in nft -a list output
+// that contains subnet. Returns "" if not found.
+func findNftHandle(output, subnet string) string {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, subnet) {
+			if idx := strings.Index(line, "# handle "); idx >= 0 {
+				rest := strings.TrimSpace(line[idx+len("# handle "):])
+				if fields := strings.Fields(rest); len(fields) > 0 {
+					return fields[0]
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// removeNATIptables deletes the MASQUERADE rule via iptables -D.
+// Idempotent: treats "not found" (exit 1) as success.
+func removeNATIptables(subnet, egressIface string) error {
+	//nolint:gosec // G204: subnet and egressIface are controlled values
+	_ = exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
+		"-s", subnet, "-o", egressIface, "-j", "MASQUERADE").Run()
+	return nil
+}
+
+// FindNftHandle is exported for testing.
+var FindNftHandle = findNftHandle
+
 // compile-time assertion
 var _ NetManager = (*LinuxNetManager)(nil)
