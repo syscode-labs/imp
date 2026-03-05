@@ -4,14 +4,18 @@ import (
 	"context"
 	"flag"
 	"os"
+	"strings"
 
+	"github.com/go-logr/logr"
 	// Import all Kubernetes client auth plugins (e.g. OIDC).
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -34,6 +38,37 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(impv1alpha1.AddToScheme(scheme))
+}
+
+// logCiliumPresence checks for key Cilium CRDs and logs their presence at startup.
+// This is informational only — it does not affect operator behaviour.
+func logCiliumPresence(cfg *rest.Config, log logr.Logger) {
+	dc, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		log.V(1).Info("could not create discovery client for Cilium check", "err", err)
+		return
+	}
+	ciliumGroups := []string{"cilium.io"}
+	_, lists, err := dc.ServerGroupsAndResources()
+	if err != nil && !discovery.IsGroupDiscoveryFailedError(err) {
+		log.V(1).Info("could not query API groups for Cilium check", "err", err)
+		return
+	}
+	found := []string{}
+	for _, list := range lists {
+		for _, g := range ciliumGroups {
+			if strings.Contains(list.GroupVersion, g) {
+				for _, r := range list.APIResources {
+					found = append(found, list.GroupVersion+"/"+r.Name)
+				}
+			}
+		}
+	}
+	if len(found) > 0 {
+		log.Info("Cilium CRDs detected at startup", "resources", found)
+	} else {
+		log.V(1).Info("no Cilium CRDs detected")
+	}
 }
 
 // cniDetectRunnable runs CNI detection once after the manager cache is synced,
@@ -89,7 +124,8 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	cfg := ctrl.GetConfigOrDie()
+	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
 			BindAddress: metricsAddr,
@@ -102,6 +138,8 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+
+	logCiliumPresence(cfg, setupLog)
 
 	cniStore := &cnidetect.Store{}
 
