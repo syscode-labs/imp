@@ -112,3 +112,22 @@ func TestAllocator_release_unknown_key(t *testing.T) {
 		t.Error("expected wasLast=true for unknown key (no VMs remain)")
 	}
 }
+
+func TestAllocator_reserve_countsForWasLast(t *testing.T) {
+	a := network.NewAllocator()
+	// Reserve two IPs as if recovering running VMs on restart.
+	a.Reserve("ns/net", "10.0.0.2")
+	a.Reserve("ns/net", "10.0.0.3")
+
+	// Releasing the first should NOT be wasLast.
+	wasLast := a.Release("ns/net", "10.0.0.2")
+	if wasLast {
+		t.Error("expected wasLast=false after releasing one of two reserved IPs")
+	}
+
+	// Releasing the second should be wasLast.
+	wasLast = a.Release("ns/net", "10.0.0.3")
+	if !wasLast {
+		t.Error("expected wasLast=true after releasing last reserved IP")
+	}
+}
