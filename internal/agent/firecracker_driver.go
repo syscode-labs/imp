@@ -470,6 +470,10 @@ func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha
 	defer conn.Close() //nolint:errcheck
 	client := pb.NewGuestAgentClient(conn)
 	runner := probe.NewRunner(client, probes, func(conds []metav1.Condition) {
+		if d.Client == nil {
+			logf.Log.Error(nil, "probe patcher: client is nil, skipping condition patch", "vm", vmNamespace+"/"+vmName)
+			return
+		}
 		nn := types.NamespacedName{Namespace: vmNamespace, Name: vmName}
 		vm := &impdevv1alpha1.ImpVM{}
 		if err := d.Client.Get(ctx, nn, vm); err != nil {
