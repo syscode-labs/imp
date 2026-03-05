@@ -4,7 +4,10 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // ImpWarmPoolSpec defines a pool of pre-booted VMs ready for instant assignment.
 type ImpWarmPoolSpec struct {
-	// SnapshotRef names the ImpVMSnapshot to boot pool members from.
+	// SnapshotRef names the ImpVMSnapshot parent to boot pool members from.
+	// The pool controller uses status.baseSnapshot on the referenced object
+	// to resolve the elected execution artifact. The pool stays idle until
+	// a base snapshot has been elected via `kubectl imp elect`.
 	SnapshotRef string `json:"snapshotRef"`
 
 	// Size is the number of pre-booted VMs to maintain in the pool.
