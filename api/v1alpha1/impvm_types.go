@@ -81,6 +81,11 @@ type ImpVMSpec struct {
 	// Resolved inheritance: class → template → VM (VM wins).
 	// +optional
 	RestartPolicy *RestartPolicy `json:"restartPolicy,omitempty"`
+
+	// NetworkGroup places this VM in a named group within its ImpNetwork.
+	// Members of the same group share a subnet (see ImpNetworkSpec.groups).
+	// +optional
+	NetworkGroup string `json:"networkGroup,omitempty"`
 }
 
 // UserDataSource references a ConfigMap containing cloud-init user-data.

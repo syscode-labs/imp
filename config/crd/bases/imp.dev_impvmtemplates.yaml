@@ -74,6 +74,10 @@ spec:
               image:
                 description: Image is the OCI image to use as the VM rootfs.
                 type: string
+              networkGroup:
+                description: NetworkGroup places VMs from this template in a named
+                  group.
+                type: string
               networkRef:
                 description: NetworkRef optionally binds VMs to a specific ImpNetwork.
                 properties:

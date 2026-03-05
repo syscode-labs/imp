@@ -25,6 +25,16 @@ type ImpNetworkSpec struct {
 	// Only relevant when the cluster CNI is Cilium.
 	// +optional
 	Cilium *CiliumNetworkSpec `json:"cilium,omitempty"`
+
+	// IPAM configures the IP address management backend for this network.
+	// Defaults to "internal" (Imp's built-in allocator).
+	// +optional
+	IPAM *IPAMSpec `json:"ipam,omitempty"`
+
+	// Groups defines named VM groups that share subnets within this network.
+	// VMs not in any group receive an isolated /30 CIDR.
+	// +optional
+	Groups []NetworkGroupSpec `json:"groups,omitempty"`
 }
 
 // NATSpec configures outbound NAT for a network.
@@ -48,6 +58,46 @@ type CiliumNetworkSpec struct {
 	// Requires Cilium ipMasqAgent to be configured with this subnet.
 	// +optional
 	MasqueradeViaCilium bool `json:"masqueradeViaCilium,omitempty"`
+}
+
+// IPAMSpec configures the IP address management backend for an ImpNetwork.
+type IPAMSpec struct {
+	// Provider selects the IPAM backend.
+	// "internal" uses Imp's built-in allocator.
+	// "cilium" delegates to a CiliumPodIPPool.
+	// +kubebuilder:default=internal
+	// +kubebuilder:validation:Enum=internal;cilium
+	Provider string `json:"provider,omitempty"`
+
+	// Cilium configures Cilium IPAM. Required when Provider is "cilium".
+	// +optional
+	Cilium *CiliumIPAMSpec `json:"cilium,omitempty"`
+}
+
+// CiliumIPAMSpec configures Cilium pool-based IP allocation.
+type CiliumIPAMSpec struct {
+	// PoolRef is the name of the CiliumPodIPPool resource to allocate from.
+	PoolRef string `json:"poolRef"`
+}
+
+// NetworkGroupSpec defines a named group of VMs sharing a subnet within an ImpNetwork.
+type NetworkGroupSpec struct {
+	// Name identifies this group. ImpVMs reference this name via spec.networkGroup.
+	Name string `json:"name"`
+
+	// Connectivity controls L2/L3 adjacency between group members.
+	// "subnet" places all members on the same subnet (default).
+	// "policy-only" uses group identity for policy without L2 adjacency.
+	// +kubebuilder:default=subnet
+	// +kubebuilder:validation:Enum=subnet;policy-only
+	Connectivity string `json:"connectivity,omitempty"`
+
+	// ExpectedSize is a hint for CIDR sizing.
+	// The controller rounds up to the next power-of-2 subnet.
+	// Isolated VMs (no group) always receive a /30.
+	// Default: 14 → /28.
+	// +kubebuilder:default=14
+	ExpectedSize int32 `json:"expectedSize,omitempty"`
 }
 
 // ImpNetworkStatus reflects the observed state of an ImpNetwork.

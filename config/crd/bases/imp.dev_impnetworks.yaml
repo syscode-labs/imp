@@ -79,6 +79,68 @@ spec:
                   Gateway is the default gateway IP for VMs on this network.
                   Defaults to the first usable host address in Subnet if unset.
                 type: string
+              groups:
+                description: |-
+                  Groups defines named VM groups that share subnets within this network.
+                  VMs not in any group receive an isolated /30 CIDR.
+                items:
+                  description: NetworkGroupSpec defines a named group of VMs sharing
+                    a subnet within an ImpNetwork.
+                  properties:
+                    connectivity:
+                      default: subnet
+                      description: |-
+                        Connectivity controls L2/L3 adjacency between group members.
+                        "subnet" places all members on the same subnet (default).
+                        "policy-only" uses group identity for policy without L2 adjacency.
+                      enum:
+                      - subnet
+                      - policy-only
+                      type: string
+                    expectedSize:
+                      default: 14
+                      description: |-
+                        ExpectedSize is a hint for CIDR sizing.
+                        The controller rounds up to the next power-of-2 subnet.
+                        Isolated VMs (no group) always receive a /30.
+                        Default: 14 → /28.
+                      format: int32
+                      type: integer
+                    name:
+                      description: Name identifies this group. ImpVMs reference this
+                        name via spec.networkGroup.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              ipam:
+                description: |-
+                  IPAM configures the IP address management backend for this network.
+                  Defaults to "internal" (Imp's built-in allocator).
+                properties:
+                  cilium:
+                    description: Cilium configures Cilium IPAM. Required when Provider
+                      is "cilium".
+                    properties:
+                      poolRef:
+                        description: PoolRef is the name of the CiliumPodIPPool resource
+                          to allocate from.
+                        type: string
+                    required:
+                    - poolRef
+                    type: object
+                  provider:
+                    default: internal
+                    description: |-
+                      Provider selects the IPAM backend.
+                      "internal" uses Imp's built-in allocator.
+                      "cilium" delegates to a CiliumPodIPPool.
+                    enum:
+                    - internal
+                    - cilium
+                    type: string
+                type: object
               nat:
                 description: NAT configures masquerade/SNAT for outbound VM traffic.
                 properties:
