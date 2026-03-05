@@ -29,6 +29,13 @@ type ClusterImpNodeProfileSpec struct {
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	MemoryMiB int64 `json:"memoryMiB,omitempty"`
+
+	// CPUModel is the CPU model string detected by the node agent at startup
+	// (e.g. "Intel(R) Core(TM) i5-8500T CPU @ 2.10GHz").
+	// Used by the migration scheduler to filter CPU-compatible destination nodes.
+	// Set automatically by the node agent; do not edit manually.
+	// +optional
+	CPUModel string `json:"cpuModel,omitempty"`
 }
 
 // +kubebuilder:object:root=true
