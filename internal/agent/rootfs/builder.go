@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 )
 
@@ -29,19 +30,65 @@ type Builder struct {
 // When opts are provided, the cache key includes a "-ga" suffix.
 // Blocks until the image is built. Subsequent calls with the same manifest digest return immediately.
 func (b *Builder) Build(ctx context.Context, imageRef string, opts ...BuildOption) (string, error) {
-	// 1. Fetch image manifest (layers are downloaded lazily).
 	img, err := b.pullImage(ctx, imageRef)
 	if err != nil {
 		return "", err
 	}
+	return b.buildFromImage(ctx, img, opts...)
+}
 
-	// 2. Resolve manifest digest → cache key.
+// BuildComposite fetches baseImage, overlays each image in extraLayers on top
+// (in order), then builds an ext4 rootfs from the resulting composite image.
+// extraLayers is typically [runnerLayer, ciliumLayer] with empty strings
+// filtered out by the caller.
+func (b *Builder) BuildComposite(ctx context.Context, baseImage string, extraLayers []string, opts ...BuildOption) (string, error) {
+	// Filter empty strings.
+	filtered := extraLayers[:0]
+	for _, l := range extraLayers {
+		if l != "" {
+			filtered = append(filtered, l)
+		}
+	}
+
+	// No extra layers — fall through to regular Build.
+	if len(filtered) == 0 {
+		return b.Build(ctx, baseImage, opts...)
+	}
+
+	// Fetch base image.
+	img, err := b.pullImage(ctx, baseImage)
+	if err != nil {
+		return "", err
+	}
+
+	// Overlay each extra layer image on top of the base.
+	for _, layerRef := range filtered {
+		extra, err := b.pullImage(ctx, layerRef)
+		if err != nil {
+			return "", fmt.Errorf("pull extra layer %q: %w", layerRef, err)
+		}
+		layers, err := extra.Layers()
+		if err != nil {
+			return "", fmt.Errorf("get layers from %q: %w", layerRef, err)
+		}
+		img, err = mutate.AppendLayers(img, layers...)
+		if err != nil {
+			return "", fmt.Errorf("append layers from %q: %w", layerRef, err)
+		}
+	}
+
+	return b.buildFromImage(ctx, img, opts...)
+}
+
+// buildFromImage builds an ext4 rootfs from an already-fetched v1.Image.
+func (b *Builder) buildFromImage(ctx context.Context, img v1.Image, opts ...BuildOption) (string, error) {
+	// Resolve manifest digest → cache key.
 	digest, err := img.Digest()
 	if err != nil {
 		return "", fmt.Errorf("digest: %w", err)
 	}
 
-	// 3. Check cache — return immediately if already built.
+	// Check cache — return immediately if already built.
 	cacheKey := digest.Hex
 	if len(opts) > 0 {
 		cacheKey += "-ga"
@@ -51,12 +98,12 @@ func (b *Builder) Build(ctx context.Context, imageRef string, opts ...BuildOptio
 		return dest, nil
 	}
 
-	// 4. Ensure cache directory exists.
+	// Ensure cache directory exists.
 	if err := b.ensureCacheDir(); err != nil {
 		return "", fmt.Errorf("cache dir: %w", err)
 	}
 
-	// 5. Extract all image layers into a temp directory.
+	// Extract all image layers into a temp directory.
 	tmpDir, err := os.MkdirTemp("", "imp-rootfs-*")
 	if err != nil {
 		return "", err
@@ -67,19 +114,19 @@ func (b *Builder) Build(ctx context.Context, imageRef string, opts ...BuildOptio
 		return "", fmt.Errorf("extract layers: %w", err)
 	}
 
-	// 5a. Apply build options (e.g. guest agent injection).
+	// Apply build options (e.g. guest agent injection).
 	for _, opt := range opts {
 		if err := opt(tmpDir); err != nil {
 			return "", fmt.Errorf("build option: %w", err)
 		}
 	}
 
-	// 6. Write /sbin/init from CMD/ENTRYPOINT.
+	// Write /sbin/init from CMD/ENTRYPOINT.
 	if err := writeInit(img, tmpDir); err != nil {
 		return "", fmt.Errorf("write init: %w", err)
 	}
 
-	// 7. Calculate size + 64 MiB headroom, then assemble ext4.
+	// Calculate size + 64 MiB headroom, then assemble ext4.
 	size, err := dirSize(tmpDir)
 	if err != nil {
 		return "", fmt.Errorf("dir size: %w", err)
