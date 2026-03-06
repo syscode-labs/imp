@@ -4,6 +4,9 @@ const (
 	// LabelSnapshotParent is the label key on child ImpVMSnapshot execution objects
 	// that identifies their parent ImpVMSnapshot (the schedule/config object).
 	LabelSnapshotParent = "imp.dev/snapshot-parent"
+
+	// LabelWarmPool is the label key applied to ImpVM objects that belong to a warm pool.
+	LabelWarmPool = "imp.dev/warm-pool"
 )
 
 // LocalObjectRef is a reference to an object in the same namespace.

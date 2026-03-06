@@ -51,6 +51,14 @@ type ImpVMSpec struct {
 	// +optional
 	NodeName string `json:"nodeName,omitempty"`
 
+	// SnapshotRef names the child ImpVMSnapshot execution to restore this VM from.
+	// When set, the agent configures Firecracker to boot from the snapshot files
+	// rather than a fresh image. The snapshot must be in the same namespace as the VM.
+	// Used by ImpWarmPool (pool members boot from elected base snapshot) and
+	// ImpVMMigration (target VM restores source VM state).
+	// +optional
+	SnapshotRef string `json:"snapshotRef,omitempty"`
+
 	// NodeSelector constrains scheduling to nodes matching all labels.
 	// Same semantics as Pod.spec.nodeSelector.
 	// +optional

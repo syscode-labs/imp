@@ -539,6 +539,14 @@ spec:
                     - cool-down
                     type: string
                 type: object
+              snapshotRef:
+                description: |-
+                  SnapshotRef names the child ImpVMSnapshot execution to restore this VM from.
+                  When set, the agent configures Firecracker to boot from the snapshot files
+                  rather than a fresh image. The snapshot must be in the same namespace as the VM.
+                  Used by ImpWarmPool (pool members boot from elected base snapshot) and
+                  ImpVMMigration (target VM restores source VM state).
+                type: string
               templateRef:
                 description: TemplateRef references an ImpVMTemplate. Mutually exclusive
                   with ClassRef.

@@ -66,8 +66,11 @@ spec:
                 format: int32
                 type: integer
               snapshotRef:
-                description: SnapshotRef names the ImpVMSnapshot to boot pool members
-                  from.
+                description: |-
+                  SnapshotRef names the ImpVMSnapshot parent to boot pool members from.
+                  The pool controller uses status.baseSnapshot on the referenced object
+                  to resolve the elected execution artifact. The pool stays idle until
+                  a base snapshot has been elected via `kubectl imp elect`.
                 type: string
               templateName:
                 description: TemplateName is the ImpVMTemplate used to create pool
