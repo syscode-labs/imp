@@ -58,6 +58,13 @@ spec:
               ImpVMSpec defines the desired state of an ImpVM.
               Exactly one of TemplateRef or ClassRef must be set.
             properties:
+              ciliumLayer:
+                description: |-
+                  CiliumLayer is an optional OCI image whose filesystem layers are composited
+                  on top of the base image (after RunnerLayer if also set) before building
+                  the ext4 rootfs. Used to inject the cilium-agent binary for Cilium mesh
+                  enrollment.
+                type: string
               classRef:
                 description: ClassRef references an ImpVMClass directly. Mutually
                   exclusive with TemplateRef.
@@ -539,6 +546,13 @@ spec:
                     - cool-down
                     type: string
                 type: object
+              runnerLayer:
+                description: |-
+                  RunnerLayer is an optional OCI image whose filesystem layers are composited
+                  on top of the base image before building the ext4 rootfs. Used to inject
+                  CI runner binaries (GitHub Actions runner, gitlab-runner, etc.) without
+                  modifying the base image.
+                type: string
               snapshotRef:
                 description: |-
                   SnapshotRef names the child ImpVMSnapshot execution to restore this VM from.

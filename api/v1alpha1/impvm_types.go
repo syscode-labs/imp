@@ -94,6 +94,20 @@ type ImpVMSpec struct {
 	// Members of the same group share a subnet (see ImpNetworkSpec.groups).
 	// +optional
 	NetworkGroup string `json:"networkGroup,omitempty"`
+
+	// RunnerLayer is an optional OCI image whose filesystem layers are composited
+	// on top of the base image before building the ext4 rootfs. Used to inject
+	// CI runner binaries (GitHub Actions runner, gitlab-runner, etc.) without
+	// modifying the base image.
+	// +optional
+	RunnerLayer string `json:"runnerLayer,omitempty"`
+
+	// CiliumLayer is an optional OCI image whose filesystem layers are composited
+	// on top of the base image (after RunnerLayer if also set) before building
+	// the ext4 rootfs. Used to inject the cilium-agent binary for Cilium mesh
+	// enrollment.
+	// +optional
+	CiliumLayer string `json:"ciliumLayer,omitempty"`
 }
 
 // UserDataSource references a ConfigMap containing cloud-init user-data.

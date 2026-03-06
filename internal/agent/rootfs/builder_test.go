@@ -270,6 +270,110 @@ func TestBuild_CacheHitSkipsNetwork(t *testing.T) {
 	}
 }
 
+func TestBuildComposite_NoExtraLayers(t *testing.T) {
+	_, addr := startRegistry(t)
+	img := makeImage(t, []string{"/bin/app"}, map[string]string{"/bin/app": "#!/bin/sh"})
+	ref := pushImage(t, addr, img)
+
+	b := newBuilder(t)
+
+	// Pre-populate the cache so we don't need mke2fs.
+	pulled, err := b.pullImage(context.Background(), ref)
+	if err != nil {
+		t.Fatalf("pullImage: %v", err)
+	}
+	digest, err := pulled.Digest()
+	if err != nil {
+		t.Fatalf("Digest: %v", err)
+	}
+	cachedPath := b.cachePath(digest.Hex)
+	if err := os.MkdirAll(b.CacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachedPath, []byte("fake ext4"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// BuildComposite with empty extraLayers should behave like Build (cache hit).
+	got, err := b.BuildComposite(context.Background(), ref, nil)
+	if err != nil {
+		t.Fatalf("BuildComposite(no layers): %v", err)
+	}
+	if got != cachedPath {
+		t.Errorf("got %q, want cached path %q", got, cachedPath)
+	}
+
+	// Also test with a slice of empty strings.
+	got2, err := b.BuildComposite(context.Background(), ref, []string{"", ""})
+	if err != nil {
+		t.Fatalf("BuildComposite(empty strings): %v", err)
+	}
+	if got2 != cachedPath {
+		t.Errorf("got %q, want cached path %q", got2, cachedPath)
+	}
+}
+
+func TestBuildComposite_WithExtraLayer(t *testing.T) {
+	_, addr := startRegistry(t)
+
+	// Base image.
+	base := makeImage(t, []string{"/bin/app"}, map[string]string{
+		"/bin/app": "#!/bin/sh\necho base",
+	})
+	baseRef := pushImage(t, addr, base)
+
+	// Extra layer image: adds /usr/local/bin/runner.
+	extra := makeImage(t, nil, map[string]string{
+		"/usr/local/bin/runner": "#!/bin/sh\necho runner",
+	})
+	extraRef := addr + "/test/extra:latest"
+	if err := crane.Push(extra, extraRef, crane.Insecure); err != nil {
+		t.Fatalf("push extra: %v", err)
+	}
+
+	b := newBuilder(t)
+
+	// Pull both images and build the expected composite digest manually
+	// so we can pre-populate the cache without needing mke2fs.
+	pulledBase, err := b.pullImage(context.Background(), baseRef)
+	if err != nil {
+		t.Fatalf("pullImage base: %v", err)
+	}
+	pulledExtra, err := b.pullImage(context.Background(), extraRef)
+	if err != nil {
+		t.Fatalf("pullImage extra: %v", err)
+	}
+	extraLayers, err := pulledExtra.Layers()
+	if err != nil {
+		t.Fatalf("extra.Layers: %v", err)
+	}
+	composite, err := mutate.AppendLayers(pulledBase, extraLayers...)
+	if err != nil {
+		t.Fatalf("AppendLayers: %v", err)
+	}
+	compositeDigest, err := composite.Digest()
+	if err != nil {
+		t.Fatalf("composite.Digest: %v", err)
+	}
+
+	// Pre-populate cache for the composite digest.
+	cachedPath := b.cachePath(compositeDigest.Hex)
+	if err := os.MkdirAll(b.CacheDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cachedPath, []byte("fake composite ext4"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := b.BuildComposite(context.Background(), baseRef, []string{extraRef})
+	if err != nil {
+		t.Fatalf("BuildComposite: %v", err)
+	}
+	if got != cachedPath {
+		t.Errorf("got %q, want composite cached path %q", got, cachedPath)
+	}
+}
+
 func TestWriteInit(t *testing.T) {
 	tests := []struct {
 		name       string
