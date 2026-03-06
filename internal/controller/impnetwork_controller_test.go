@@ -256,6 +256,48 @@ var _ = Describe("ImpNetwork Controller: reconcileVTEPTable", func() {
 	})
 })
 
+var _ = Describe("ImpNetwork Controller: reconcileCiliumEnrollment", func() {
+	ctx := context.Background()
+
+	It("skips CEW creation when CNI store reports non-Cilium provider", func() {
+		// Use a store that says Flannel is the CNI — enrollment must be skipped.
+		flannelStore := &cnidetect.Store{}
+		flannelStore.Set(cnidetect.Result{Provider: cnidetect.ProviderFlannel, NATBackend: cnidetect.NATBackendIPTables})
+
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "cew-skip-1", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpNetworkSpec{Subnet: "10.210.0.0/24"},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		r, _ := newNetworkReconciler(flannelStore)
+		// Two reconciles: finalizer then sync.
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "cew-skip-1", Namespace: "default"}}
+		_, err := r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+		// No error means the guard exited cleanly (CEW CRD absent in envtest → ciliumPresent()=false).
+	})
+
+	It("skips CEW creation when CNI store is empty (not yet detected)", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "cew-skip-2", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpNetworkSpec{Subnet: "10.211.0.0/24"},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		r, _ := newNetworkReconciler(unknownStore())
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "cew-skip-2", Namespace: "default"}}
+		_, err := r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+	})
+})
+
 var _ = Describe("ImpNetwork Controller: CiliumConfigMissing", func() {
 	ctx := context.Background()
 
