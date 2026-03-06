@@ -549,6 +549,20 @@ func TestFirecrackerDriver_Snapshot_noVM_returnsError(t *testing.T) {
 	}
 }
 
+func TestFirecrackerDriver_HasMetricsAndNodeNameFields(t *testing.T) {
+	d := &FirecrackerDriver{
+		Metrics:  NewVMMetricsCollector(),
+		NodeName: "node-1",
+		procs:    make(map[string]*fcProc),
+	}
+	if d.Metrics == nil {
+		t.Error("Metrics field must be settable on FirecrackerDriver")
+	}
+	if d.NodeName != "node-1" {
+		t.Errorf("NodeName = %q, want %q", d.NodeName, "node-1")
+	}
+}
+
 func TestFirecrackerDriver_Stop_doesNotCallRemoveNATWhenNotLast(t *testing.T) {
 	stub := &network.StubNetManager{}
 	alloc := network.NewAllocator()

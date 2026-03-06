@@ -37,6 +37,10 @@ import (
 // before force-killing the VMM. Declared as var (not const) so tests can override it.
 var shuttingDownTimeout = 5 * time.Second
 
+// metricsInterval controls how often guest metrics are polled via VSOCK.
+// Declared as var (not const) so tests can override it.
+var metricsInterval = 30 * time.Second
+
 // fcProc holds the runtime state of a running Firecracker microVM process.
 type fcProc struct {
 	machine      *firecracker.Machine
@@ -69,6 +73,11 @@ type FirecrackerDriver struct {
 	// GuestAgentPath is the host path to the guest-agent binary for injection.
 	// Defaults to rootfs.GuestAgentContainerPath when empty.
 	GuestAgentPath string
+	// Metrics collects Prometheus gauges for guest CPU/mem/disk.
+	// When nil, guest metrics polling is skipped.
+	Metrics *VMMetricsCollector
+	// NodeName is the Kubernetes node name, used as a Prometheus label in guest metrics.
+	NodeName string
 
 	// mu guards procs. Must be held for any read or write of the procs map.
 	mu    sync.Mutex

@@ -57,6 +57,8 @@ func main() {
 		os.Exit(1)
 	}
 
+	mc := agent.NewVMMetricsCollector()
+
 	// IMP_STUB_DRIVER=true: StubDriver (CI, test clusters, no KVM needed).
 	// Otherwise: FirecrackerDriver (reads FC_BIN, FC_SOCK_DIR, FC_KERNEL env vars).
 	var driver agent.VMDriver
@@ -66,7 +68,7 @@ func main() {
 		driver = agent.NewStubDriver()
 	} else {
 		var fcErr error
-		driver, prodNet, fcErr = newProductionDriver(mgr.GetClient())
+		driver, prodNet, fcErr = newProductionDriver(mgr.GetClient(), mc, nodeName)
 		if fcErr != nil {
 			log.Error(fcErr, "Unable to create FirecrackerDriver — set FC_KERNEL and ensure FC_BIN is in PATH")
 			os.Exit(1)
@@ -80,7 +82,7 @@ func main() {
 		NodeName: nodeName,
 		NodeIP:   nodeIP,
 		Driver:   driver,
-		Metrics:  agent.NewVMMetricsCollector(),
+		Metrics:  mc,
 		Net:      prodNet,
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "Unable to set up ImpVMReconciler")
