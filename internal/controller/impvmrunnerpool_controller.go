@@ -18,8 +18,10 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -28,18 +30,31 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/runner"
 )
 
 // ImpVMRunnerPoolReconciler reconciles ImpVMRunnerPool objects.
 type ImpVMRunnerPoolReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme        *runtime.Scheme
+	DriverFactory RunnerDriverFactory
 }
+
+type runnerQueueDepthReader interface {
+	QueueDepth(ctx context.Context) (int, error)
+}
+
+type RunnerDriverFactory func(
+	ctx context.Context,
+	c client.Client,
+	pool *impv1alpha1.ImpVMRunnerPool,
+) (runnerQueueDepthReader, error)
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvmrunnerpools,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=imp.dev,resources=impvmrunnerpools/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=imp.dev,resources=impvmtemplates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;create;delete
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get
 
 func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -113,7 +128,15 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		maxConcurrent = pool.Spec.Scaling.MaxConcurrent
 	}
 
-	toCreate := minIdle - activeCount
+	desiredCount := minIdle
+	queueDepth, err := r.queueDepth(ctx, pool)
+	if err != nil {
+		log.Info("could not fetch runner queue depth; falling back to minIdle", "pool", pool.Name, "err", err)
+	} else if int32(queueDepth) > desiredCount {
+		desiredCount = int32(queueDepth)
+	}
+
+	toCreate := desiredCount - activeCount
 	if toCreate < 0 {
 		toCreate = 0
 	}
@@ -153,6 +176,24 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
+func (r *ImpVMRunnerPoolReconciler) queueDepth(ctx context.Context, pool *impv1alpha1.ImpVMRunnerPool) (int, error) {
+	if pool.Spec.JobDetection == nil ||
+		pool.Spec.JobDetection.Polling == nil ||
+		!pool.Spec.JobDetection.Polling.Enabled {
+		return 0, nil
+	}
+
+	factory := r.DriverFactory
+	if factory == nil {
+		factory = defaultRunnerDriverFactory
+	}
+	d, err := factory(ctx, r.Client, pool)
+	if err != nil {
+		return 0, err
+	}
+	return d.QueueDepth(ctx)
+}
+
 func (r *ImpVMRunnerPoolReconciler) createRunnerVM(ctx context.Context, pool *impv1alpha1.ImpVMRunnerPool, tpl *impv1alpha1.ImpVMTemplate) error {
 	classRef := tpl.Spec.ClassRef
 	vm := &impv1alpha1.ImpVM{
@@ -179,6 +220,14 @@ func (r *ImpVMRunnerPoolReconciler) createRunnerVM(ctx context.Context, pool *im
 	if tpl.Spec.NetworkGroup != "" {
 		vm.Spec.NetworkGroup = tpl.Spec.NetworkGroup
 	}
+	if pool.Spec.RunnerLayer != "" {
+		vm.Spec.RunnerLayer = pool.Spec.RunnerLayer
+	} else if tpl.Spec.RunnerLayer != "" {
+		vm.Spec.RunnerLayer = tpl.Spec.RunnerLayer
+	}
+	if tpl.Spec.CiliumLayer != "" {
+		vm.Spec.CiliumLayer = tpl.Spec.CiliumLayer
+	}
 	if err := ctrl.SetControllerReference(pool, vm, r.Scheme); err != nil {
 		return err
 	}
@@ -190,4 +239,77 @@ func (r *ImpVMRunnerPoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&impv1alpha1.ImpVMRunnerPool{}).
 		Owns(&impv1alpha1.ImpVM{}).
 		Complete(r)
+}
+
+func defaultRunnerDriverFactory(
+	ctx context.Context,
+	c client.Client,
+	pool *impv1alpha1.ImpVMRunnerPool,
+) (runnerQueueDepthReader, error) {
+	var creds corev1.Secret
+	if err := c.Get(ctx, client.ObjectKey{
+		Namespace: pool.Namespace,
+		Name:      pool.Spec.Platform.CredentialsSecret,
+	}, &creds); err != nil {
+		return nil, err
+	}
+	token := pickSecretValue(creds.Data, "token")
+	if token == "" {
+		return nil, fmt.Errorf("credentials secret %s/%s has no token value", pool.Namespace, creds.Name)
+	}
+
+	scope, err := platformScope(pool)
+	if err != nil {
+		return nil, err
+	}
+
+	switch pool.Spec.Platform.Type {
+	case "github-actions":
+		return runner.NewGitHubDriver(token, scope, nil)
+	case "forgejo":
+		return runner.NewForgejoDriver(token, pool.Spec.Platform.ServerURL, scope, nil)
+	case "gitlab":
+		return runner.NewGitLabDriver(token, pool.Spec.Platform.ServerURL, scope, nil)
+	default:
+		return nil, fmt.Errorf("unsupported platform type %q", pool.Spec.Platform.Type)
+	}
+}
+
+func platformScope(pool *impv1alpha1.ImpVMRunnerPool) (string, error) {
+	if pool.Spec.Platform.Scope == nil {
+		return "", fmt.Errorf("platform.scope is required")
+	}
+	scope := pool.Spec.Platform.Scope
+	switch pool.Spec.Platform.Type {
+	case "github-actions", "forgejo":
+		if scope.Org != "" {
+			return "org:" + scope.Org, nil
+		}
+		if scope.Repo != "" {
+			return "repo:" + scope.Repo, nil
+		}
+	case "gitlab":
+		if scope.Org != "" {
+			return "group:" + scope.Org, nil
+		}
+		if scope.Repo != "" {
+			return "project:" + scope.Repo, nil
+		}
+	}
+	return "", fmt.Errorf("invalid platform.scope for type %q", pool.Spec.Platform.Type)
+}
+
+func pickSecretValue(m map[string][]byte, preferredKey string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	if v, ok := m[preferredKey]; ok && len(v) > 0 {
+		return string(v)
+	}
+	for _, v := range m {
+		if len(v) > 0 {
+			return string(v)
+		}
+	}
+	return ""
 }

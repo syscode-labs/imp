@@ -50,6 +50,11 @@ type fcProc struct {
 	probeCancel  context.CancelFunc   // non-nil when probe goroutine is running
 }
 
+type rootfsBuilder interface {
+	Build(ctx context.Context, imageRef string, opts ...rootfs.BuildOption) (string, error)
+	BuildComposite(ctx context.Context, baseImage string, extraLayers []string, opts ...rootfs.BuildOption) (string, error)
+}
+
 // FirecrackerDriver is a VMDriver that launches real Firecracker microVMs.
 // It is safe for concurrent use.
 type FirecrackerDriver struct {
@@ -62,7 +67,7 @@ type FirecrackerDriver struct {
 	// KernelArgs is the kernel command-line string.
 	KernelArgs string
 	// Cache builds and caches ext4 rootfs images from OCI images.
-	Cache *rootfs.Builder
+	Cache rootfsBuilder
 	// Client is the controller-runtime Kubernetes client.
 	Client ctrlclient.Client
 	// Net manages host-level networking (bridge, TAP, NAT).
@@ -153,7 +158,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	if gaEnabled {
 		buildOpts = append(buildOpts, rootfs.WithGuestAgent(d.guestAgentPath()))
 	}
-	rootfsPath, err := d.Cache.Build(ctx, vm.Spec.Image, buildOpts...)
+	rootfsPath, err := d.buildRootfs(ctx, vm, buildOpts...)
 	if err != nil {
 		return 0, fmt.Errorf("build rootfs for %s: %w", vm.Spec.Image, err)
 	}
@@ -233,6 +238,22 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	}
 
 	return int64(pid), nil
+}
+
+func (d *FirecrackerDriver) buildRootfs(
+	ctx context.Context, vm *impdevv1alpha1.ImpVM, opts ...rootfs.BuildOption,
+) (string, error) {
+	extraLayers := make([]string, 0, 2)
+	if vm.Spec.RunnerLayer != "" {
+		extraLayers = append(extraLayers, vm.Spec.RunnerLayer)
+	}
+	if vm.Spec.CiliumLayer != "" {
+		extraLayers = append(extraLayers, vm.Spec.CiliumLayer)
+	}
+	if len(extraLayers) == 0 {
+		return d.Cache.Build(ctx, vm.Spec.Image, opts...)
+	}
+	return d.Cache.BuildComposite(ctx, vm.Spec.Image, extraLayers, opts...)
 }
 
 // Stop implements VMDriver. Sends a graceful ACPI shutdown signal, waits up to

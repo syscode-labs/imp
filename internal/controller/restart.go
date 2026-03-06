@@ -142,6 +142,10 @@ func (r *ImpVMReconciler) handleFailed(ctx context.Context, vm *impdevv1alpha1.I
 
 	base := vm.DeepCopy()
 	vm.Status.Phase = impdevv1alpha1.VMPhasePending
+	if policy.Mode == "in-place" || policy.Mode == "" {
+		// In-place restart keeps node ownership and re-enters the node-agent start path.
+		vm.Status.Phase = impdevv1alpha1.VMPhaseScheduled
+	}
 	vm.Status.RestartCount++
 	vm.Status.NextRetryAfter = &nextRetry
 

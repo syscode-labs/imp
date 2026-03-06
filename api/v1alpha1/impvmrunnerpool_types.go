@@ -49,7 +49,7 @@ type RunnerPlatformSpec struct {
 
 // RunnerScopeSpec selects org-level or repo-level runner registration.
 // Exactly one of Org or Repo must be set.
-// +kubebuilder:validation:XValidation:rule="!(size(self.org) > 0 && size(self.repo) > 0)",message="org and repo are mutually exclusive; set exactly one"
+// +kubebuilder:validation:XValidation:rule="(size(self.org) > 0) != (size(self.repo) > 0)",message="set exactly one of org or repo"
 type RunnerScopeSpec struct {
 	// Org registers a runner for the entire organisation.
 	// +optional

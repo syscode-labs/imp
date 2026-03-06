@@ -4,6 +4,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
@@ -20,6 +21,36 @@ import (
 	pb "github.com/syscode-labs/imp/internal/proto/guest"
 )
 
+type fakeRootfsBuilder struct {
+	buildCalled          bool
+	buildCompositeCalled bool
+	lastBaseImage        string
+	lastExtraLayers      []string
+	returnPath           string
+	returnErr            error
+}
+
+func (f *fakeRootfsBuilder) Build(_ context.Context, imageRef string, _ ...rootfs.BuildOption) (string, error) {
+	f.buildCalled = true
+	f.lastBaseImage = imageRef
+	if f.returnErr != nil {
+		return "", f.returnErr
+	}
+	return f.returnPath, nil
+}
+
+func (f *fakeRootfsBuilder) BuildComposite(
+	_ context.Context, baseImage string, extraLayers []string, _ ...rootfs.BuildOption,
+) (string, error) {
+	f.buildCompositeCalled = true
+	f.lastBaseImage = baseImage
+	f.lastExtraLayers = append([]string(nil), extraLayers...)
+	if f.returnErr != nil {
+		return "", f.returnErr
+	}
+	return f.returnPath, nil
+}
+
 // hasFirecrackerBin returns true if the firecracker binary is available.
 func hasFirecrackerBin() bool {
 	_, err := exec.LookPath("firecracker")
@@ -34,6 +65,56 @@ func hasKVM() bool {
 
 func TestFirecrackerDriverPlaceholder(t *testing.T) {
 	t.Log("FirecrackerDriver test file compiles correctly")
+}
+
+func TestFirecrackerDriver_buildRootfs_UsesBuildWhenNoExtraLayers(t *testing.T) {
+	b := &fakeRootfsBuilder{returnPath: "/tmp/base.ext4"}
+	d := &FirecrackerDriver{Cache: b}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Spec.Image = "ghcr.io/example/base:latest"
+
+	path, err := d.buildRootfs(context.Background(), vm)
+	if err != nil {
+		t.Fatalf("buildRootfs: %v", err)
+	}
+	if !b.buildCalled {
+		t.Fatal("expected Build to be called")
+	}
+	if b.buildCompositeCalled {
+		t.Fatal("did not expect BuildComposite to be called")
+	}
+	if path != "/tmp/base.ext4" {
+		t.Fatalf("path = %q, want %q", path, "/tmp/base.ext4")
+	}
+}
+
+func TestFirecrackerDriver_buildRootfs_UsesBuildCompositeWithLayerOrder(t *testing.T) {
+	b := &fakeRootfsBuilder{returnPath: "/tmp/composite.ext4"}
+	d := &FirecrackerDriver{Cache: b}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Spec.Image = "ghcr.io/example/base:latest"
+	vm.Spec.RunnerLayer = "ghcr.io/example/runner:v1"
+	vm.Spec.CiliumLayer = "ghcr.io/example/cilium:v1"
+
+	path, err := d.buildRootfs(context.Background(), vm)
+	if err != nil {
+		t.Fatalf("buildRootfs: %v", err)
+	}
+	if !b.buildCompositeCalled {
+		t.Fatal("expected BuildComposite to be called")
+	}
+	if b.buildCalled {
+		t.Fatal("did not expect Build to be called")
+	}
+	wantLayers := []string{"ghcr.io/example/runner:v1", "ghcr.io/example/cilium:v1"}
+	if fmt.Sprint(b.lastExtraLayers) != fmt.Sprint(wantLayers) {
+		t.Fatalf("extraLayers = %v, want %v", b.lastExtraLayers, wantLayers)
+	}
+	if path != "/tmp/composite.ext4" {
+		t.Fatalf("path = %q, want %q", path, "/tmp/composite.ext4")
+	}
 }
 
 func TestFirecrackerDriver_SocketPath(t *testing.T) {

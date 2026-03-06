@@ -2,6 +2,8 @@ package v1alpha1
 
 import (
 	"encoding/json"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -35,4 +37,15 @@ func TestImpVMRunnerPool_roundTrip(t *testing.T) {
 	assert.Equal(t, "github-actions", out.Spec.Platform.Type)
 	assert.Equal(t, "my-org", out.Spec.Platform.Scope.Org)
 	assert.Equal(t, int32(10), out.Spec.Scaling.MaxConcurrent)
+}
+
+func TestImpVMRunnerPoolCRD_scopeValidationRequiresExactlyOne(t *testing.T) {
+	b, err := os.ReadFile("../../config/crd/bases/imp.dev_impvmrunnerpools.yaml")
+	require.NoError(t, err)
+
+	yaml := string(b)
+	assert.Contains(t, yaml, "set exactly one of org or repo")
+	assert.Contains(t, yaml, "(size(self.org) > 0) != (size(self.repo) > 0)")
+	assert.False(t, strings.Contains(yaml, "!(size(self.org) > 0 && size(self.repo) > 0)"),
+		"scope validation should require at least one of org or repo, not only mutual exclusion")
 }

@@ -17,11 +17,17 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
@@ -109,4 +115,53 @@ func TestShouldCoolDownReset(t *testing.T) {
 
 	// empty period → defaults to 1h; exhausted 2h ago → reset
 	assert.True(t, shouldCoolDownReset("", &exhausted))
+}
+
+func TestHandleFailed_InPlaceTransitionsToScheduled(t *testing.T) {
+	scheme := runtime.NewScheme()
+	assert.NoError(t, clientgoscheme.AddToScheme(scheme))
+	assert.NoError(t, impdevv1alpha1.AddToScheme(scheme))
+
+	vm := &impdevv1alpha1.ImpVM{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "vm-inplace",
+			Namespace: "default",
+		},
+		Spec: impdevv1alpha1.ImpVMSpec{
+			NodeName: "node-a",
+			RestartPolicy: &impdevv1alpha1.RestartPolicy{
+				Mode: "in-place",
+				Backoff: impdevv1alpha1.RestartBackoff{
+					MaxRetries: 3,
+				},
+			},
+		},
+		Status: impdevv1alpha1.ImpVMStatus{
+			Phase:        impdevv1alpha1.VMPhaseFailed,
+			RestartCount: 0,
+		},
+	}
+
+	c := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(vm).
+		WithStatusSubresource(&impdevv1alpha1.ImpVM{}).
+		Build()
+	vmWithStatus := vm.DeepCopy()
+	assert.NoError(t, c.Status().Update(context.Background(), vmWithStatus))
+
+	r := &ImpVMReconciler{
+		Client:   c,
+		Scheme:   scheme,
+		Recorder: record.NewFakeRecorder(8),
+	}
+
+	_, err := r.handleFailed(context.Background(), vmWithStatus)
+	assert.NoError(t, err)
+
+	updated := &impdevv1alpha1.ImpVM{}
+	assert.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(vm), updated))
+	assert.Equal(t, impdevv1alpha1.VMPhaseScheduled, updated.Status.Phase)
+	assert.Equal(t, "node-a", updated.Spec.NodeName)
+	assert.Equal(t, int32(1), updated.Status.RestartCount)
 }
