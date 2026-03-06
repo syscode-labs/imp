@@ -1,18 +1,32 @@
 # syntax=docker/dockerfile:1
-FROM golang:1.23-alpine AS builder
+
+FROM golang:1.23-alpine AS agent-builder
 WORKDIR /workspace
-
 COPY go.mod go.sum ./
-RUN go mod download
-
+RUN --mount=type=cache,target=/root/go/pkg/mod go mod download
 COPY api/ api/
 COPY cmd/agent/ cmd/agent/
 COPY internal/ internal/
+ARG TARGETARCH
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -a -o agent ./cmd/agent
 
-RUN CGO_ENABLED=0 GOOS=linux go build -a -o agent ./cmd/agent
+FROM golang:1.23-alpine AS guest-agent-builder
+WORKDIR /workspace
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/root/go/pkg/mod go mod download
+COPY api/ api/
+COPY cmd/guest-agent/ cmd/guest-agent/
+COPY internal/ internal/
+ARG TARGETARCH
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -a -o guest-agent ./cmd/guest-agent
 
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
-COPY --from=builder /workspace/agent .
+COPY --from=agent-builder /workspace/agent .
+COPY --from=guest-agent-builder /workspace/guest-agent /opt/imp/guest-agent
 USER 65532:65532
 ENTRYPOINT ["/agent"]
