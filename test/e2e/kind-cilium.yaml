@@ -1,0 +1,15 @@
+# Kind cluster configuration for Cilium e2e tests.
+# Usage: kind create cluster --name imp-cilium --config test/e2e/kind-cilium.yaml
+# After creation: cilium install (requires Cilium CLI)
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+# Disable the default CNI so Cilium can be installed instead.
+networking:
+  disableDefaultCNI: true
+  # Pod subnet that Cilium will manage.
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/12"
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker
