@@ -44,7 +44,15 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		Namespace: snap.Spec.SourceVMNamespace,
 		Name:      snap.Spec.SourceVMName,
 	}, vm); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if client.IgnoreNotFound(err) != nil {
+			return ctrl.Result{}, err
+		}
+		// VM deleted — terminal failure, unblock next execution.
+		now := metav1.Now()
+		base := snap.DeepCopy()
+		snap.Status.Phase = "Failed"
+		snap.Status.TerminatedAt = &now
+		return ctrl.Result{}, r.Status().Patch(ctx, snap, client.MergeFrom(base))
 	}
 	if vm.Spec.NodeName != r.NodeName {
 		return ctrl.Result{}, nil
