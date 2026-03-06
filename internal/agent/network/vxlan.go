@@ -21,10 +21,9 @@ func (m *LinuxNetManager) EnsureVXLAN(_ context.Context, vni uint32, ifaceName, 
 		return fmt.Errorf("invalid nodeIP %q", nodeIP)
 	}
 
-	_, err := netlink.LinkByName(ifaceName)
+	link, err := netlink.LinkByName(ifaceName)
 	if err == nil {
 		// Interface already exists — ensure it is up.
-		link, _ := netlink.LinkByName(ifaceName)
 		return netlink.LinkSetUp(link)
 	}
 
