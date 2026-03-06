@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -112,6 +111,9 @@ func (r *ImpWarmPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Create missing VMs to reach spec.size.
 	toCreate := pool.Spec.Size - activeCount
+	if toCreate < 0 {
+		toCreate = 0
+	}
 	for i := int32(0); i < toCreate; i++ {
 		if err := r.createPoolMember(ctx, pool, tpl, baseSnapshot); err != nil {
 			return ctrl.Result{}, err
@@ -138,8 +140,6 @@ func (r *ImpWarmPoolReconciler) createPoolMember(
 	tpl *impv1alpha1.ImpVMTemplate,
 	baseSnapshot string,
 ) error {
-	vmName := fmt.Sprintf("%s-%s", pool.Name, time.Now().UTC().Format("20060102-150405-000000"))
-
 	vm := &impv1alpha1.ImpVM{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: pool.Name + "-",
@@ -154,8 +154,6 @@ func (r *ImpWarmPoolReconciler) createPoolMember(
 			SnapshotRef: baseSnapshot,
 		},
 	}
-	_ = vmName // GenerateName is used instead; vmName would conflict on fast loops
-
 	if tpl.Spec.NetworkRef != nil {
 		vm.Spec.NetworkRef = tpl.Spec.NetworkRef
 	}
