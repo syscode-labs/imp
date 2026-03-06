@@ -152,6 +152,14 @@ spec:
                 description: SelectedNode is the node chosen by the scheduler (when
                   TargetNode was empty).
                 type: string
+              snapshotRef:
+                description: SnapshotRef names the child ImpVMSnapshot created for
+                  this migration.
+                type: string
+              targetVMName:
+                description: TargetVMName is the name of the ImpVM created on the
+                  target node.
+                type: string
             type: object
         type: object
     served: true

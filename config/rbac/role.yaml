@@ -25,6 +25,7 @@ rules:
   resources:
   - clusterimpconfigs
   - clusterimpnodeprofiles
+  - impvmtemplates
   verbs:
   - get
   - list
@@ -33,7 +34,10 @@ rules:
   - imp.dev
   resources:
   - impnetworks
+  - impvmmigrations
   - impvms
+  - impvmsnapshots
+  - impwarmpools
   verbs:
   - create
   - delete
@@ -46,14 +50,20 @@ rules:
   - imp.dev
   resources:
   - impnetworks/finalizers
+  - impvmmigrations/finalizers
   - impvms/finalizers
+  - impvmsnapshots/finalizers
+  - impwarmpools/finalizers
   verbs:
   - update
 - apiGroups:
   - imp.dev
   resources:
   - impnetworks/status
+  - impvmmigrations/status
   - impvms/status
+  - impvmsnapshots/status
+  - impwarmpools/status
   verbs:
   - get
   - patch
