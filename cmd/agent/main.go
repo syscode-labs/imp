@@ -79,6 +79,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := (&agent.ImpVMSnapshotReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		NodeName: nodeName,
+		Driver:   driver,
+	}).SetupWithManager(mgr); err != nil {
+		log.Error(err, "unable to create controller", "controller", "ImpVMSnapshot")
+		os.Exit(1)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		log.Error(err, "Unable to set up health check")
 		os.Exit(1)
