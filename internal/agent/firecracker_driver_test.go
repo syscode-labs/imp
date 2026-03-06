@@ -458,6 +458,17 @@ func TestFirecrackerDriver_Stop_callsRemoveNATOnLastVM(t *testing.T) {
 	}
 }
 
+func TestFirecrackerDriver_Snapshot_noVM_returnsError(t *testing.T) {
+	d := &FirecrackerDriver{procs: make(map[string]*fcProc)}
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace, vm.Name = "ns", "missing"
+
+	_, err := d.Snapshot(context.Background(), vm, t.TempDir())
+	if err == nil {
+		t.Error("expected error for non-running VM")
+	}
+}
+
 func TestFirecrackerDriver_Stop_doesNotCallRemoveNATWhenNotLast(t *testing.T) {
 	stub := &network.StubNetManager{}
 	alloc := network.NewAllocator()

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	firecracker "github.com/firecracker-microvm/firecracker-go-sdk"
+	fcclientops "github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -491,9 +492,44 @@ func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha
 	runner.Run(ctx)
 }
 
-// Snapshot implements VMDriver. Full implementation in a follow-up commit.
-func (d *FirecrackerDriver) Snapshot(_ context.Context, vm *impdevv1alpha1.ImpVM, _ string) (SnapshotResult, error) {
-	return SnapshotResult{}, fmt.Errorf("snapshot not yet implemented for %s/%s", vm.Namespace, vm.Name)
+// Snapshot pauses the VM, writes state+memory files to destDir, then resumes it.
+// The VM is always resumed before returning, even on error (enforced via defer).
+// destDir must exist; files are named vm.state and vm.mem.
+func (d *FirecrackerDriver) Snapshot(ctx context.Context, vm *impdevv1alpha1.ImpVM, destDir string) (SnapshotResult, error) {
+	key := vmKey(vm)
+	d.mu.Lock()
+	proc, ok := d.procs[key]
+	d.mu.Unlock()
+	if !ok {
+		return SnapshotResult{}, fmt.Errorf("VM %s is not running on this node", key)
+	}
+
+	log := logf.FromContext(ctx).WithValues("vm", key)
+
+	// Pause the VM. Always resume via defer — VM must never be left paused.
+	if err := proc.machine.PauseVM(ctx); err != nil {
+		return SnapshotResult{}, fmt.Errorf("pause VM: %w", err)
+	}
+	defer func() {
+		if err := proc.machine.ResumeVM(ctx); err != nil {
+			log.Error(err, "ResumeVM failed after snapshot — VM may be paused")
+		}
+	}()
+
+	statePath := filepath.Join(destDir, "vm.state")
+	memPath := filepath.Join(destDir, "vm.mem")
+
+	fullSnapshotOpt := firecracker.CreateSnapshotOpt(func(p *fcclientops.CreateSnapshotParams) {
+		if p.Body != nil {
+			p.Body.SnapshotType = models.SnapshotCreateParamsSnapshotTypeFull
+		}
+	})
+	if err := proc.machine.CreateSnapshot(ctx, memPath, statePath, fullSnapshotOpt); err != nil {
+		return SnapshotResult{}, fmt.Errorf("CreateSnapshot: %w", err)
+	}
+
+	log.Info("snapshot captured", "statePath", statePath, "memPath", memPath)
+	return SnapshotResult{StatePath: statePath, MemPath: memPath}, nil
 }
 
 // compile-time interface check.
