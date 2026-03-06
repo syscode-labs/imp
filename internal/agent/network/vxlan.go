@@ -42,7 +42,7 @@ func (m *LinuxNetManager) EnsureVXLAN(_ context.Context, vni uint32, ifaceName, 
 		return fmt.Errorf("create vxlan %s (vni %d): %w", ifaceName, vni, err)
 	}
 
-	link, err := netlink.LinkByName(ifaceName)
+	link, err = netlink.LinkByName(ifaceName)
 	if err != nil {
 		return fmt.Errorf("fetch vxlan %s after create: %w", ifaceName, err)
 	}
