@@ -168,6 +168,13 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	// 5. Build Firecracker config.
 	cfg := d.buildConfig(&class, rootfsPath, sockPath, netInfo, gaEnabled)
 
+	// 5a. Apply snapshot-based boot if requested.
+	if vm.Spec.SnapshotRef != "" {
+		if err := d.applySnapshotBoot(ctx, vm, &cfg); err != nil {
+			return 0, fmt.Errorf("apply snapshot boot: %w", err)
+		}
+	}
+
 	// 6. Build the VMM command.
 	cmd := exec.CommandContext(ctx, d.BinPath, "--api-sock", sockPath) //nolint:gosec // G204: BinPath validated in NewFirecrackerDriver
 
@@ -530,6 +537,34 @@ func (d *FirecrackerDriver) Snapshot(ctx context.Context, vm *impdevv1alpha1.Imp
 
 	log.Info("snapshot captured", "statePath", statePath, "memPath", memPath)
 	return SnapshotResult{StatePath: statePath, MemPath: memPath}, nil
+}
+
+// applySnapshotBoot looks up the ImpVMSnapshot named by vm.Spec.SnapshotRef,
+// reads its node-local SnapshotPath, and configures cfg.Snapshot for
+// snapshot-based boot. The Firecracker SDK activates LoadSnapshotHandler
+// automatically when cfg.hasSnapshot() returns true (i.e. SnapshotPath != "").
+// If the snapshot has no node-local path yet (e.g. still being created), the
+// function returns nil without modifying cfg — the VM will do a cold boot.
+func (d *FirecrackerDriver) applySnapshotBoot(ctx context.Context, vm *impdevv1alpha1.ImpVM, cfg *firecracker.Config) error {
+	log := logf.FromContext(ctx)
+	snap := &impdevv1alpha1.ImpVMSnapshot{}
+	if err := d.Client.Get(ctx, ctrlclient.ObjectKey{
+		Namespace: vm.Namespace,
+		Name:      vm.Spec.SnapshotRef,
+	}, snap); err != nil {
+		return fmt.Errorf("get snapshot %q: %w", vm.Spec.SnapshotRef, err)
+	}
+	if snap.Status.SnapshotPath == "" {
+		log.Info("snapshot has no node-local path, skipping snapshot boot", "snapshot", snap.Name)
+		return nil
+	}
+	cfg.Snapshot = firecracker.SnapshotConfig{
+		SnapshotPath: filepath.Join(snap.Status.SnapshotPath, "vm.state"),
+		MemFilePath:  filepath.Join(snap.Status.SnapshotPath, "vm.mem"),
+		ResumeVM:     true,
+	}
+	log.Info("configured snapshot-based boot", "snapshotPath", cfg.Snapshot.SnapshotPath)
+	return nil
 }
 
 // compile-time interface check.
