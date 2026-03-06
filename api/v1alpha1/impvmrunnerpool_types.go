@@ -48,6 +48,8 @@ type RunnerPlatformSpec struct {
 }
 
 // RunnerScopeSpec selects org-level or repo-level runner registration.
+// Exactly one of Org or Repo must be set.
+// +kubebuilder:validation:XValidation:rule="!(size(self.org) > 0 && size(self.repo) > 0)",message="org and repo are mutually exclusive; set exactly one"
 type RunnerScopeSpec struct {
 	// Org registers a runner for the entire organisation.
 	// +optional
@@ -62,14 +64,17 @@ type RunnerScopeSpec struct {
 type RunnerScalingSpec struct {
 	// MinIdle is the number of pre-registered idle runner VMs to keep available.
 	// 0 means pure on-demand — no idle VMs sit waiting.
+	// +optional
 	// +kubebuilder:default=0
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=3
 	MinIdle int32 `json:"minIdle,omitempty"`
 
 	// MaxConcurrent is the hard cap on simultaneous runner VMs.
+	// +optional
 	// +kubebuilder:default=10
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100
 	MaxConcurrent int32 `json:"maxConcurrent,omitempty"`
 }
 
@@ -87,7 +92,8 @@ type RunnerJobDetectionSpec struct {
 // RunnerWebhookSpec configures the inbound webhook listener.
 type RunnerWebhookSpec struct {
 	// Enabled turns on webhook-based job detection.
-	Enabled bool `json:"enabled,omitempty"`
+	// +optional
+	Enabled bool `json:"enabled"`
 
 	// SecretRef names a Secret containing the HMAC webhook secret.
 	// +optional
@@ -97,7 +103,8 @@ type RunnerWebhookSpec struct {
 // RunnerPollingSpec configures periodic API polling.
 type RunnerPollingSpec struct {
 	// Enabled turns on polling-based job detection.
-	Enabled bool `json:"enabled,omitempty"`
+	// +optional
+	Enabled bool `json:"enabled"`
 
 	// IntervalSeconds is how often the operator polls the platform API.
 	// +kubebuilder:default=30
