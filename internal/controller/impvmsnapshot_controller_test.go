@@ -168,7 +168,7 @@ var _ = Describe("ImpVMSnapshot controller", func() {
 			names[i] = c.Name
 		}
 		Expect(names).NotTo(ContainElement(fmt.Sprintf("%s-exec-0", parentName)))
-		Expect(len(children.Items)).To(BeNumerically("<=", 3))
+		Expect(len(children.Items)).To(BeNumerically("<=", 2))
 	})
 
 	It("TestOperatorSnapshotReconciler_skipsIfActiveChild — does not create when active child exists", func() {
