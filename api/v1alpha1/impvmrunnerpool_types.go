@@ -21,10 +21,12 @@ type ImpVMRunnerPoolSpec struct {
 	Labels []string `json:"labels,omitempty"`
 
 	// Scaling controls how many runner VMs are maintained.
-	Scaling RunnerScalingSpec `json:"scaling,omitempty"`
+	// +optional
+	Scaling *RunnerScalingSpec `json:"scaling,omitempty"`
 
 	// JobDetection configures how the operator discovers queued jobs.
-	JobDetection RunnerJobDetectionSpec `json:"jobDetection,omitempty"`
+	// +optional
+	JobDetection *RunnerJobDetectionSpec `json:"jobDetection,omitempty"`
 }
 
 // RunnerPlatformSpec identifies the CI platform and credentials.
@@ -38,7 +40,8 @@ type RunnerPlatformSpec struct {
 	ServerURL string `json:"serverURL,omitempty"`
 
 	// Scope configures the registration scope (org or repo).
-	Scope RunnerScopeSpec `json:"scope,omitempty"`
+	// +optional
+	Scope *RunnerScopeSpec `json:"scope,omitempty"`
 
 	// CredentialsSecret names a Secret containing the registration token or PAT.
 	CredentialsSecret string `json:"credentialsSecret"`
@@ -74,11 +77,11 @@ type RunnerScalingSpec struct {
 type RunnerJobDetectionSpec struct {
 	// Webhook enables platform-push job events.
 	// +optional
-	Webhook RunnerWebhookSpec `json:"webhook,omitempty"`
+	Webhook *RunnerWebhookSpec `json:"webhook,omitempty"`
 
 	// Polling enables periodic API polling as a fallback.
 	// +optional
-	Polling RunnerPollingSpec `json:"polling,omitempty"`
+	Polling *RunnerPollingSpec `json:"polling,omitempty"`
 }
 
 // RunnerWebhookSpec configures the inbound webhook listener.

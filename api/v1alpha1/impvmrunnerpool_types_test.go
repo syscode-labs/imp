@@ -16,14 +16,14 @@ func TestImpVMRunnerPool_roundTrip(t *testing.T) {
 		Platform: RunnerPlatformSpec{
 			Type:              "github-actions",
 			CredentialsSecret: "gh-creds",
-			Scope:             RunnerScopeSpec{Org: "my-org"},
+			Scope:             &RunnerScopeSpec{Org: "my-org"},
 		},
 		RunnerLayer: "ghcr.io/syscode-labs/imp-runners/github-actions:v2.317",
 		Labels:      []string{"self-hosted", "linux"},
-		Scaling:     RunnerScalingSpec{MinIdle: 0, MaxConcurrent: 10},
-		JobDetection: RunnerJobDetectionSpec{
-			Webhook: RunnerWebhookSpec{Enabled: true, SecretRef: "gh-webhook"},
-			Polling: RunnerPollingSpec{Enabled: true, IntervalSeconds: 30},
+		Scaling:     &RunnerScalingSpec{MinIdle: 0, MaxConcurrent: 10},
+		JobDetection: &RunnerJobDetectionSpec{
+			Webhook: &RunnerWebhookSpec{Enabled: true, SecretRef: "gh-webhook"},
+			Polling: &RunnerPollingSpec{Enabled: true, IntervalSeconds: 30},
 		},
 	}
 
