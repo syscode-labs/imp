@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 
@@ -88,4 +90,24 @@ func (d *StubDriver) Inspect(_ context.Context, vm *impdevv1alpha1.ImpVM) (VMSta
 		return VMState{Running: false}, nil
 	}
 	return VMState{Running: true, IP: s.ip, PID: s.pid}, nil
+}
+
+// Snapshot writes placeholder files to destDir and returns their paths.
+// Returns an error if the VM is not currently running.
+func (d *StubDriver) Snapshot(_ context.Context, vm *impdevv1alpha1.ImpVM, destDir string) (SnapshotResult, error) {
+	d.mu.Lock()
+	_, ok := d.states[vmKey(vm)]
+	d.mu.Unlock()
+	if !ok {
+		return SnapshotResult{}, fmt.Errorf("VM %s/%s is not running", vm.Namespace, vm.Name)
+	}
+	statePath := filepath.Join(destDir, "vm.state")
+	memPath := filepath.Join(destDir, "vm.mem")
+	if err := os.WriteFile(statePath, []byte("stub-state"), 0o600); err != nil {
+		return SnapshotResult{}, err
+	}
+	if err := os.WriteFile(memPath, []byte("stub-mem"), 0o600); err != nil {
+		return SnapshotResult{}, err
+	}
+	return SnapshotResult{StatePath: statePath, MemPath: memPath}, nil
 }

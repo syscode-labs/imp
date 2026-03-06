@@ -16,6 +16,14 @@ type VMState struct {
 	PID int64
 }
 
+// SnapshotResult holds the paths of the two files produced by a Firecracker snapshot.
+type SnapshotResult struct {
+	// StatePath is the path to the VM state file (CPU registers, device state).
+	StatePath string
+	// MemPath is the path to the memory dump file.
+	MemPath string
+}
+
 // VMDriver abstracts the VM runtime backend.
 // Implementations: StubDriver (testing/CI), FirecrackerDriver (production, Phase 1).
 type VMDriver interface {
@@ -28,4 +36,9 @@ type VMDriver interface {
 	// Inspect returns the current runtime state of the VM.
 	// Called every reconcile to detect unexpected exits.
 	Inspect(ctx context.Context, vm *impdevv1alpha1.ImpVM) (VMState, error)
+
+	// Snapshot pauses the VM, writes state+memory files to destDir, then resumes it.
+	// The VM is always resumed before Snapshot returns, even on error.
+	// destDir must exist and be writable.
+	Snapshot(ctx context.Context, vm *impdevv1alpha1.ImpVM, destDir string) (SnapshotResult, error)
 }
