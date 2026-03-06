@@ -129,4 +129,16 @@ func TestSnapshotReconciler_skipsAlreadyTerminated(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	_ = res // no-op
+
+	// Verify the snapshot was not mutated.
+	fetched := &impdevv1alpha1.ImpVMSnapshot{}
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "snap-child", Namespace: "default"}, fetched); err != nil {
+		t.Fatalf("get snap: %v", err)
+	}
+	if fetched.Status.Phase != "Succeeded" {
+		t.Errorf("expected phase=Succeeded, got %q", fetched.Status.Phase)
+	}
+	if fetched.Status.TerminatedAt == nil {
+		t.Error("expected TerminatedAt to remain set")
+	}
 }
