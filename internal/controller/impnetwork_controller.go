@@ -20,6 +20,8 @@ import (
 	"github.com/syscode-labs/imp/internal/cnidetect"
 )
 
+// +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch
+
 const finalizerImpNetwork = "imp/network-finalizer"
 
 // ImpNetworkReconciler reconciles ImpNetwork objects.
@@ -87,6 +89,11 @@ func (r *ImpNetworkReconciler) sync(ctx context.Context, net *impdevv1alpha1.Imp
 		}
 	}
 
+	// GC stale VTEP entries (VMs that are no longer Running on this network).
+	if err := r.reconcileVTEPTable(ctx, net); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Update status: set Ready condition.
 	base := net.DeepCopy()
 	setNetworkReady(net)
@@ -94,6 +101,52 @@ func (r *ImpNetworkReconciler) sync(ctx context.Context, net *impdevv1alpha1.Imp
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+// reconcileVTEPTable removes stale entries from ImpNetwork.status.vtepTable.
+// An entry is stale if no Running ImpVM with that IP exists in this namespace
+// referencing this network. The agent is responsible for adding entries.
+func (r *ImpNetworkReconciler) reconcileVTEPTable(ctx context.Context, net *impdevv1alpha1.ImpNetwork) error {
+	if len(net.Status.VTEPTable) == 0 {
+		return nil
+	}
+
+	// List all ImpVMs in the same namespace that reference this network.
+	var vmList impdevv1alpha1.ImpVMList
+	if err := r.List(ctx, &vmList, client.InNamespace(net.Namespace)); err != nil {
+		return err
+	}
+
+	// Build a set of IPs for Running VMs that reference this network.
+	activeIPs := make(map[string]struct{})
+	for i := range vmList.Items {
+		vm := &vmList.Items[i]
+		if vm.Spec.NetworkRef == nil || vm.Spec.NetworkRef.Name != net.Name {
+			continue
+		}
+		if vm.Status.Phase == impdevv1alpha1.VMPhaseRunning && vm.Status.IP != "" {
+			activeIPs[vm.Status.IP] = struct{}{}
+		}
+	}
+
+	// Filter vtepTable to only active entries.
+	filtered := net.Status.VTEPTable[:0]
+	for _, entry := range net.Status.VTEPTable {
+		if _, ok := activeIPs[entry.VMIP]; ok {
+			filtered = append(filtered, entry)
+		}
+	}
+
+	if len(filtered) == len(net.Status.VTEPTable) {
+		return nil // no change
+	}
+
+	logf.FromContext(ctx).Info("GCing stale VTEP entries",
+		"network", net.Name, "before", len(net.Status.VTEPTable), "after", len(filtered))
+
+	base := net.DeepCopy()
+	net.Status.VTEPTable = filtered
+	return r.Status().Patch(ctx, net, client.MergeFrom(base))
 }
 
 // hasCiliumMasqConfig returns true if the ip-masq-agent ConfigMap in kube-system

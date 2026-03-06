@@ -15,6 +15,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/agent/network"
 )
 
 // ImpVMReconciler watches ImpVM objects and drives VM lifecycle on this node.
@@ -23,8 +24,13 @@ type ImpVMReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	NodeName string
-	Driver   VMDriver
-	Metrics  *VMMetricsCollector
+	// NodeIP is the node's InternalIP used for VTEP registration and VXLAN setup.
+	// Sourced from NODE_IP env var (downward API fieldRef status.hostIP).
+	NodeIP  string
+	Driver  VMDriver
+	Metrics *VMMetricsCollector
+	// Net is optional. When non-nil, used for VXLAN/FDB operations after VTEP sync.
+	Net network.NetManager
 }
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;update;patch
@@ -101,6 +107,19 @@ func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha
 		r.Metrics.SetVMState(vm.Namespace+"/"+vm.Name, "Running", r.NodeName)
 	}
 
+	// Register VTEP entry so the operator and other nodes know where this VM lives.
+	if vm.Spec.NetworkRef != nil && state.IP != "" && r.NodeIP != "" {
+		macAddr := network.MACAddr(vm.Namespace + "/" + vm.Name)
+		if err := r.registerVTEP(ctx, vm, state.IP, macAddr); err != nil {
+			log.Error(err, "registerVTEP failed — FDB sync may be incomplete")
+		} else {
+			// Sync local FDB now that this node has a VTEP entry.
+			if err := r.syncFDB(ctx, vm); err != nil {
+				log.Error(err, "syncFDB after registerVTEP failed")
+			}
+		}
+	}
+
 	log.Info("VM started", "pid", pid, "ip", state.IP)
 	return ctrl.Result{}, nil
 }
@@ -135,6 +154,13 @@ func (r *ImpVMReconciler) handleTerminating(ctx context.Context, vm *impdevv1alp
 
 	if r.Metrics != nil {
 		r.Metrics.ClearVM(vm.Namespace + "/" + vm.Name)
+	}
+
+	// Deregister VTEP entry so other nodes stop routing to this (now stopped) VM.
+	if vm.Spec.NetworkRef != nil && vm.Status.IP != "" {
+		if err := r.deregisterVTEP(ctx, vm); err != nil {
+			log.Error(err, "deregisterVTEP failed — stale entry will be GC'd by operator")
+		}
 	}
 
 	return r.clearOwnership(ctx, vm)
@@ -218,4 +244,109 @@ func (r *ImpVMReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&impdevv1alpha1.ImpVM{}).
 		Named("agent-impvm").
 		Complete(r)
+}
+
+// registerVTEP adds or updates the VTEPEntry for vm in ImpNetwork.status.vtepTable.
+func (r *ImpVMReconciler) registerVTEP(ctx context.Context, vm *impdevv1alpha1.ImpVM, vmIP, vmMAC string) error {
+	var impNet impdevv1alpha1.ImpNetwork
+	if err := r.Get(ctx, client.ObjectKey{
+		Namespace: vm.Namespace,
+		Name:      vm.Spec.NetworkRef.Name,
+	}, &impNet); err != nil {
+		return err
+	}
+
+	// Check if an up-to-date entry already exists.
+	for _, e := range impNet.Status.VTEPTable {
+		if e.VMIP == vmIP && e.VMMAC == vmMAC && e.NodeIP == r.NodeIP {
+			return nil // already registered
+		}
+	}
+
+	base := impNet.DeepCopy()
+
+	// Replace or append entry for this VM IP.
+	found := false
+	for i, e := range impNet.Status.VTEPTable {
+		if e.VMIP == vmIP {
+			impNet.Status.VTEPTable[i] = impdevv1alpha1.VTEPEntry{
+				NodeIP: r.NodeIP,
+				VMIP:   vmIP,
+				VMMAC:  vmMAC,
+			}
+			found = true
+			break
+		}
+	}
+	if !found {
+		impNet.Status.VTEPTable = append(impNet.Status.VTEPTable, impdevv1alpha1.VTEPEntry{
+			NodeIP: r.NodeIP,
+			VMIP:   vmIP,
+			VMMAC:  vmMAC,
+		})
+	}
+
+	return r.Status().Patch(ctx, &impNet, client.MergeFrom(base))
+}
+
+// deregisterVTEP removes the VTEPEntry for vm.Status.IP from ImpNetwork.status.vtepTable.
+func (r *ImpVMReconciler) deregisterVTEP(ctx context.Context, vm *impdevv1alpha1.ImpVM) error {
+	var impNet impdevv1alpha1.ImpNetwork
+	if err := r.Get(ctx, client.ObjectKey{
+		Namespace: vm.Namespace,
+		Name:      vm.Spec.NetworkRef.Name,
+	}, &impNet); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+
+	// Filter out the entry for this VM.
+	filtered := impNet.Status.VTEPTable[:0]
+	for _, e := range impNet.Status.VTEPTable {
+		if e.VMIP != vm.Status.IP {
+			filtered = append(filtered, e)
+		}
+	}
+	if len(filtered) == len(impNet.Status.VTEPTable) {
+		return nil // nothing to remove
+	}
+
+	base := impNet.DeepCopy()
+	impNet.Status.VTEPTable = filtered
+	return r.Status().Patch(ctx, &impNet, client.MergeFrom(base))
+}
+
+// syncFDB fetches the ImpNetwork for vm and reconciles the local VXLAN FDB.
+// Only remote entries (not on this node) are passed to SyncFDB.
+func (r *ImpVMReconciler) syncFDB(ctx context.Context, vm *impdevv1alpha1.ImpVM) error {
+	if r.Net == nil || r.NodeIP == "" {
+		return nil
+	}
+
+	var impNet impdevv1alpha1.ImpNetwork
+	if err := r.Get(ctx, client.ObjectKey{
+		Namespace: vm.Namespace,
+		Name:      vm.Spec.NetworkRef.Name,
+	}, &impNet); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+
+	vni, ifaceName := network.VXLANParams(string(impNet.UID))
+
+	if err := r.Net.EnsureVXLAN(ctx, vni, ifaceName, r.NodeIP); err != nil {
+		return err
+	}
+
+	// Collect remote entries (not on this node).
+	var remoteEntries []network.FDBEntry
+	for _, e := range impNet.Status.VTEPTable {
+		if e.NodeIP == r.NodeIP {
+			continue // skip local entries
+		}
+		remoteEntries = append(remoteEntries, network.FDBEntry{
+			MAC:   e.VMMAC,
+			DstIP: e.NodeIP,
+		})
+	}
+
+	return r.Net.SyncFDB(ctx, ifaceName, remoteEntries)
 }

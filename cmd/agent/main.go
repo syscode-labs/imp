@@ -16,6 +16,7 @@ import (
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent"
+	"github.com/syscode-labs/imp/internal/agent/network"
 )
 
 func main() {
@@ -31,6 +32,10 @@ func main() {
 		log.Error(nil, "NODE_NAME env var not set — run as DaemonSet with fieldRef downward API")
 		os.Exit(1)
 	}
+
+	// NODE_IP is optional: sourced from status.hostIP downward API field.
+	// When set, enables VTEP registration and VXLAN FDB sync for cross-node networking.
+	nodeIP := os.Getenv("NODE_IP")
 
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -55,25 +60,28 @@ func main() {
 	// IMP_STUB_DRIVER=true: StubDriver (CI, test clusters, no KVM needed).
 	// Otherwise: FirecrackerDriver (reads FC_BIN, FC_SOCK_DIR, FC_KERNEL env vars).
 	var driver agent.VMDriver
+	var prodNet network.NetManager
 	if os.Getenv("IMP_STUB_DRIVER") == "true" {
 		log.Info("Using StubDriver (IMP_STUB_DRIVER=true)")
 		driver = agent.NewStubDriver()
 	} else {
-		fc, err := newProductionDriver(mgr.GetClient())
-		if err != nil {
-			log.Error(err, "Unable to create FirecrackerDriver — set FC_KERNEL and ensure FC_BIN is in PATH")
+		var fcErr error
+		driver, prodNet, fcErr = newProductionDriver(mgr.GetClient())
+		if fcErr != nil {
+			log.Error(fcErr, "Unable to create FirecrackerDriver — set FC_KERNEL and ensure FC_BIN is in PATH")
 			os.Exit(1)
 		}
 		log.Info("Using FirecrackerDriver")
-		driver = fc
 	}
 
 	if err := (&agent.ImpVMReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
 		NodeName: nodeName,
+		NodeIP:   nodeIP,
 		Driver:   driver,
 		Metrics:  agent.NewVMMetricsCollector(),
+		Net:      prodNet,
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "Unable to set up ImpVMReconciler")
 		os.Exit(1)
