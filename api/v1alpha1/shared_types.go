@@ -1,5 +1,11 @@
 package v1alpha1
 
+const (
+	// LabelSnapshotParent is the label key on child ImpVMSnapshot execution objects
+	// that identifies their parent ImpVMSnapshot (the schedule/config object).
+	LabelSnapshotParent = "imp.dev/snapshot-parent"
+)
+
 // LocalObjectRef is a reference to an object in the same namespace.
 type LocalObjectRef struct {
 	Name string `json:"name"`
