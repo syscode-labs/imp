@@ -39,11 +39,11 @@ func (b *Builder) Build(ctx context.Context, imageRef string, opts ...BuildOptio
 
 // BuildComposite fetches baseImage, overlays each image in extraLayers on top
 // (in order), then builds an ext4 rootfs from the resulting composite image.
-// extraLayers is typically [runnerLayer, ciliumLayer] with empty strings
-// filtered out by the caller.
+// Empty strings in extraLayers are filtered out; if none remain the call is
+// equivalent to Build.
 func (b *Builder) BuildComposite(ctx context.Context, baseImage string, extraLayers []string, opts ...BuildOption) (string, error) {
-	// Filter empty strings.
-	filtered := extraLayers[:0]
+	// Filter empty strings without aliasing the caller's backing array.
+	filtered := make([]string, 0, len(extraLayers))
 	for _, l := range extraLayers {
 		if l != "" {
 			filtered = append(filtered, l)
