@@ -71,6 +71,9 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Delete terminal VMs — runners are single-use.
 	for i := range vmList.Items {
 		vm := &vmList.Items[i]
+		if vm.DeletionTimestamp != nil {
+			continue // already terminating
+		}
 		switch vm.Status.Phase {
 		case impv1alpha1.VMPhaseSucceeded, impv1alpha1.VMPhaseFailed, impv1alpha1.VMPhaseRetryExhausted:
 			if err := r.Delete(ctx, vm); err != nil && !apierrors.IsNotFound(err) {
@@ -80,7 +83,7 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 
-	// Re-list after deletion.
+	// Re-list: deletion may not yet be reflected in the cache; filter terminal VMs defensively.
 	if err := r.List(ctx, vmList,
 		client.InNamespace(pool.Namespace),
 		client.MatchingLabels{impv1alpha1.LabelRunnerPool: pool.Name},
@@ -100,6 +103,9 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Determine how many VMs to create.
+	// When Scaling is nil, apply conservative defaults: no idle VMs (minIdle=0) and
+	// a maxConcurrent ceiling of 10. With minIdle=0, no VMs are proactively created;
+	// VMs will only be created when a job event triggers a reconcile with toCreate > 0.
 	minIdle := int32(0)
 	maxConcurrent := int32(10)
 	if pool.Spec.Scaling != nil {
@@ -131,7 +137,7 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Patch status.
 	base := pool.DeepCopy()
 	pool.Status.ActiveCount = activeCount
-	pool.Status.IdleCount = activeCount // approximation; per-VM idle tracking is future work
+	pool.Status.IdleCount = 0 // per-VM idle tracking deferred; idleCount cannot be determined without runner state
 	if err := r.Status().Patch(ctx, pool, client.MergeFrom(base)); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -148,6 +154,7 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 }
 
 func (r *ImpVMRunnerPoolReconciler) createRunnerVM(ctx context.Context, pool *impv1alpha1.ImpVMRunnerPool, tpl *impv1alpha1.ImpVMTemplate) error {
+	classRef := tpl.Spec.ClassRef
 	vm := &impv1alpha1.ImpVM{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: pool.Name + "-",
@@ -155,7 +162,7 @@ func (r *ImpVMRunnerPoolReconciler) createRunnerVM(ctx context.Context, pool *im
 			Labels:       map[string]string{impv1alpha1.LabelRunnerPool: pool.Name},
 		},
 		Spec: impv1alpha1.ImpVMSpec{
-			ClassRef:  &tpl.Spec.ClassRef,
+			ClassRef:  &classRef,
 			Image:     tpl.Spec.Image,
 			Lifecycle: impv1alpha1.VMLifecycleEphemeral,
 		},
