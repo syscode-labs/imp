@@ -242,4 +242,56 @@ var _ = Describe("ImpVMSnapshot controller", func() {
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: parentName, Namespace: "default"}, updated)).To(Succeed())
 		Expect(updated.Status.BaseSnapshot).To(Equal(childName))
 	})
+
+	It("TestOperatorSnapshotReconciler_baseSnapshotExemptFromPruning — baseSnapshot child is never pruned", func() {
+		parentName := "snap-parent-exempt"
+		baseChildName := "snap-parent-exec-0"
+		otherChildName := "snap-parent-exec-1"
+		parent := makeParentSnap(parentName, "default", func(s *impv1alpha1.ImpVMSnapshotSpec) {
+			s.Retention = 1
+			s.BaseSnapshot = baseChildName
+		})
+		Expect(k8sClient.Create(ctx, parent)).To(Succeed())
+		DeferCleanup(func() {
+			list := &impv1alpha1.ImpVMSnapshotList{}
+			_ = k8sClient.List(ctx, list, client.InNamespace("default"), client.MatchingLabels{impv1alpha1.LabelSnapshotParent: parentName})
+			for i := range list.Items {
+				_ = k8sClient.Delete(ctx, &list.Items[i])
+			}
+			_ = k8sClient.Delete(ctx, parent)
+		})
+
+		fetched := &impv1alpha1.ImpVMSnapshot{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: parentName, Namespace: "default"}, fetched)).To(Succeed())
+
+		now := metav1.Now()
+		// Create baseSnapshot child (oldest, snap-parent-exec-0).
+		baseChild := makeChildSnap(baseChildName, "default", parentName, fetched.UID)
+		Expect(k8sClient.Create(ctx, baseChild)).To(Succeed())
+		baseChild.Status.Phase = "Succeeded"
+		baseChild.Status.TerminatedAt = &now
+		Expect(k8sClient.Status().Update(ctx, baseChild)).To(Succeed())
+
+		// Create a second terminated child (newer, snap-parent-exec-1).
+		otherChild := makeChildSnap(otherChildName, "default", parentName, fetched.UID)
+		Expect(k8sClient.Create(ctx, otherChild)).To(Succeed())
+		otherChild.Status.Phase = "Succeeded"
+		otherChild.Status.TerminatedAt = &now
+		Expect(k8sClient.Status().Update(ctx, otherChild)).To(Succeed())
+
+		r := newSnapshotReconciler()
+		_, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: parentName, Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		// The elected baseSnapshot child must survive pruning even though it is the oldest.
+		surviving := &impv1alpha1.ImpVMSnapshot{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: baseChildName, Namespace: "default"}, surviving)).To(Succeed())
+
+		// status.baseSnapshot should also be elected.
+		updatedParent := &impv1alpha1.ImpVMSnapshot{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: parentName, Namespace: "default"}, updatedParent)).To(Succeed())
+		Expect(updatedParent.Status.BaseSnapshot).To(Equal(baseChildName))
+	})
 })
