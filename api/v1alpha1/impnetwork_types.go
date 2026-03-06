@@ -100,6 +100,17 @@ type NetworkGroupSpec struct {
 	ExpectedSize int32 `json:"expectedSize,omitempty"`
 }
 
+// VTEPEntry maps a VM's IP and MAC to the node IP that hosts it.
+// Used by the VXLAN FDB to route cross-node VM traffic.
+type VTEPEntry struct {
+	// NodeIP is the IP address of the node hosting the VM.
+	NodeIP string `json:"nodeIP"`
+	// VMIP is the IP address of the VM.
+	VMIP string `json:"vmIP"`
+	// VMMAC is the MAC address of the VM's TAP interface.
+	VMMAC string `json:"vmMAC"`
+}
+
 // ImpNetworkStatus reflects the observed state of an ImpNetwork.
 type ImpNetworkStatus struct {
 	// AllocatedIPs tracks IP addresses currently assigned to ImpVMs on this network.
@@ -111,6 +122,12 @@ type ImpNetworkStatus struct {
 	// +listType=map
 	// +listMapKey=type
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// VTEPTable contains VTEP entries for cross-node VXLAN FDB population.
+	// Each entry maps a VM's IP and MAC to the node IP hosting it.
+	// +optional
+	// +listType=atomic
+	VTEPTable []VTEPEntry `json:"vtepTable,omitempty"`
 }
 
 // +kubebuilder:object:root=true
