@@ -221,7 +221,9 @@ func (r *ImpNetworkReconciler) reconcileCiliumEnrollment(ctx context.Context, ne
 			continue
 		}
 		if vm.Status.Phase == impdevv1alpha1.VMPhaseRunning {
-			runningVMs[vm.Name] = vm
+			// Key by namespace/name so VMs with the same name in different namespaces
+			// are distinct — CEWs are cluster-scoped and names must be globally unique.
+			runningVMs[vm.Namespace+"/"+vm.Name] = vm
 		}
 	}
 
@@ -237,30 +239,34 @@ func (r *ImpNetworkReconciler) reconcileCiliumEnrollment(ctx context.Context, ne
 			"imp.dev/network":   net.Name,
 			"imp.dev/namespace": net.Namespace,
 		},
-	); err != nil && !apierrors.IsNotFound(err) {
+	); err != nil && !apimeta.IsNoMatchError(err) {
 		return err
 	}
 
-	// GC: delete CEWs for VMs that are no longer Running.
-	for i := range cewList.Items {
-		cew := &cewList.Items[i]
-		vmName := cew.GetLabels()["imp.dev/vm"]
-		if _, ok := runningVMs[vmName]; !ok {
-			log.Info("deleting stale CiliumExternalWorkload", "cew", cew.GetName(), "vm", vmName)
-			if err := r.Delete(ctx, cew); err != nil && !apierrors.IsNotFound(err) {
-				return err
-			}
-		}
-	}
-
-	// Create CEWs for Running VMs that don't have one yet.
+	// Build existing-CEW set before GC so the create loop is accurate.
 	existingCEWNames := make(map[string]struct{}, len(cewList.Items))
 	for i := range cewList.Items {
 		existingCEWNames[cewList.Items[i].GetName()] = struct{}{}
 	}
 
+	// GC: delete CEWs for VMs that are no longer Running.
+	for i := range cewList.Items {
+		cew := &cewList.Items[i]
+		vmKey := cew.GetLabels()["imp.dev/vm-key"] // namespace/name
+		if _, ok := runningVMs[vmKey]; !ok {
+			log.Info("deleting stale CiliumExternalWorkload", "cew", cew.GetName(), "vmKey", vmKey)
+			if err := r.Delete(ctx, cew); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+			delete(existingCEWNames, cew.GetName())
+		}
+	}
+
+	// Create CEWs for Running VMs that don't have one yet.
 	for _, vm := range runningVMs {
-		cewName := "vm-" + vm.Name
+		// Include namespace in the name to avoid collisions across namespaces
+		// (CiliumExternalWorkload is cluster-scoped).
+		cewName := "vm-" + vm.Namespace + "-" + vm.Name
 		if _, exists := existingCEWNames[cewName]; exists {
 			continue
 		}
@@ -273,6 +279,7 @@ func (r *ImpNetworkReconciler) reconcileCiliumEnrollment(ctx context.Context, ne
 		})
 		cew.SetName(cewName)
 		cew.SetLabels(map[string]string{
+			"imp.dev/vm-key":    vm.Namespace + "/" + vm.Name,
 			"imp.dev/vm":        vm.Name,
 			"imp.dev/namespace": vm.Namespace,
 			"imp.dev/network":   net.Name,
