@@ -639,6 +639,9 @@ func TestFirecrackerDriver_PollMetrics(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("pollMetrics never called Metrics RPC within timeout")
 	}
+	// SetGuestMetrics is called with the values from metricsResp after the RPC returns.
+	// Deeper assertion would require a mock collector; coverage of SetGuestMetrics
+	// itself is in TestVMMetricsCollector (metrics_test.go).
 }
 
 // fakeGuestAgentClient implements pb.GuestAgentClient for testing.
