@@ -248,6 +248,53 @@ func TestRunnerPoolReconciler_scalesFromQueueDepth(t *testing.T) {
 	}
 }
 
+func TestRunnerPoolReconciler_scalesFromWebhookDemandAnnotation(t *testing.T) {
+	pool := &impv1alpha1.ImpVMRunnerPool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ci-pool",
+			Namespace: "ci",
+			Annotations: map[string]string{
+				AnnotationRunnerDemand: "2",
+			},
+		},
+		Spec: impv1alpha1.ImpVMRunnerPoolSpec{
+			TemplateName: "ubuntu-runner",
+			Platform: impv1alpha1.RunnerPlatformSpec{
+				Type:              "github-actions",
+				CredentialsSecret: "gh-creds",
+			},
+			Scaling: &impv1alpha1.RunnerScalingSpec{MinIdle: 0, MaxConcurrent: 5},
+			JobDetection: &impv1alpha1.RunnerJobDetectionSpec{
+				Webhook: &impv1alpha1.RunnerWebhookSpec{Enabled: true},
+			},
+		},
+	}
+	tpl := &impv1alpha1.ImpVMTemplate{
+		ObjectMeta: metav1.ObjectMeta{Name: "ubuntu-runner", Namespace: "ci"},
+		Spec:       impv1alpha1.ImpVMTemplateSpec{ClassRef: impv1alpha1.ClusterObjectRef{Name: "standard"}, Image: "ubuntu:22.04"},
+	}
+
+	scheme := newRunnerPoolTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
+	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "ci-pool", Namespace: "ci"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	vmList := &impv1alpha1.ImpVMList{}
+	_ = c.List(context.Background(), vmList,
+		client.InNamespace("ci"),
+		client.MatchingLabels{impv1alpha1.LabelRunnerPool: "ci-pool"})
+	if len(vmList.Items) != 2 {
+		t.Fatalf("expected 2 webhook-demand VMs, got %d", len(vmList.Items))
+	}
+}
+
 type stubRunnerQueueDepthReader struct {
 	queueDepth int
 	err        error

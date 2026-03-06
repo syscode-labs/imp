@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -49,6 +50,12 @@ type RunnerDriverFactory func(
 	c client.Client,
 	pool *impv1alpha1.ImpVMRunnerPool,
 ) (runnerQueueDepthReader, error)
+
+const (
+	// AnnotationRunnerDemand is an optional immediate demand signal set by a webhook
+	// handler or external controller. Value is desired queued jobs as an int.
+	AnnotationRunnerDemand = "imp.dev/runner-demand"
+)
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvmrunnerpools,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=imp.dev,resources=impvmrunnerpools/status,verbs=get;update;patch
@@ -134,6 +141,9 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		log.Info("could not fetch runner queue depth; falling back to minIdle", "pool", pool.Name, "err", err)
 	} else if int32(queueDepth) > desiredCount {
 		desiredCount = int32(queueDepth)
+	}
+	if webhookDemand := runnerDemandFromAnnotation(pool); webhookDemand > desiredCount {
+		desiredCount = webhookDemand
 	}
 
 	toCreate := desiredCount - activeCount
@@ -312,4 +322,21 @@ func pickSecretValue(m map[string][]byte, preferredKey string) string {
 		}
 	}
 	return ""
+}
+
+func runnerDemandFromAnnotation(pool *impv1alpha1.ImpVMRunnerPool) int32 {
+	if pool.Spec.JobDetection == nil ||
+		pool.Spec.JobDetection.Webhook == nil ||
+		!pool.Spec.JobDetection.Webhook.Enabled {
+		return 0
+	}
+	raw := pool.Annotations[AnnotationRunnerDemand]
+	if raw == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return int32(n)
 }
