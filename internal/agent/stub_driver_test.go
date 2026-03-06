@@ -67,6 +67,32 @@ func TestStubDriver_StartInspectStop(t *testing.T) {
 	}
 }
 
+func TestStubDriver_Snapshot_success(t *testing.T) {
+	d := agent.NewStubDriver()
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace, vm.Name = "ns", "vm1"
+	_, _ = d.Start(context.Background(), vm)
+
+	res, err := d.Snapshot(context.Background(), vm, t.TempDir())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.StatePath == "" || res.MemPath == "" {
+		t.Errorf("expected non-empty paths, got %+v", res)
+	}
+}
+
+func TestStubDriver_Snapshot_notRunning(t *testing.T) {
+	d := agent.NewStubDriver()
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace, vm.Name = "ns", "vm-missing"
+
+	_, err := d.Snapshot(context.Background(), vm, t.TempDir())
+	if err == nil {
+		t.Error("expected error for non-running VM")
+	}
+}
+
 func TestStubDriver_ConcurrentSafe(t *testing.T) {
 	ctx := context.Background()
 	d := agent.NewStubDriver()

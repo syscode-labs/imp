@@ -491,5 +491,10 @@ func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha
 	runner.Run(ctx)
 }
 
+// Snapshot implements VMDriver. Full implementation in a follow-up commit.
+func (d *FirecrackerDriver) Snapshot(_ context.Context, vm *impdevv1alpha1.ImpVM, _ string) (SnapshotResult, error) {
+	return SnapshotResult{}, fmt.Errorf("snapshot not yet implemented for %s/%s", vm.Namespace, vm.Name)
+}
+
 // compile-time interface check.
 var _ VMDriver = (*FirecrackerDriver)(nil)
