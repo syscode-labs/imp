@@ -7,14 +7,17 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	firecracker "github.com/firecracker-microvm/firecracker-go-sdk"
+	"google.golang.org/grpc"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent/network"
 	"github.com/syscode-labs/imp/internal/agent/rootfs"
+	pb "github.com/syscode-labs/imp/internal/proto/guest"
 )
 
 // hasFirecrackerBin returns true if the firecracker binary is available.
@@ -600,4 +603,55 @@ func TestFirecrackerDriver_Stop_doesNotCallRemoveNATWhenNotLast(t *testing.T) {
 	if len(stub.RemoveNATCalls) != 0 {
 		t.Errorf("expected RemoveNAT NOT called, but got calls: %v", stub.RemoveNATCalls)
 	}
+}
+
+func TestFirecrackerDriver_PollMetrics(t *testing.T) {
+	// Override interval so test completes in milliseconds.
+	old := metricsInterval
+	metricsInterval = 1 * time.Millisecond
+	defer func() { metricsInterval = old }()
+
+	mc := NewVMMetricsCollector()
+	d := &FirecrackerDriver{
+		Metrics:  mc,
+		NodeName: "node-1",
+		procs:    make(map[string]*fcProc),
+	}
+
+	called := make(chan struct{}, 1)
+	fakeClient := &fakeGuestAgentClient{
+		metricsResp: &pb.MetricsResponse{
+			CpuUsageRatio:   0.5,
+			MemoryUsedBytes: 1024,
+			DiskUsedBytes:   2048,
+		},
+		onMetrics: func() { select { case called <- struct{}{}: default: } },
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	go d.pollMetrics(ctx, fakeClient, "default/vm1", "small")
+
+	select {
+	case <-called:
+		// success — Metrics RPC was called
+	case <-ctx.Done():
+		t.Fatal("pollMetrics never called Metrics RPC within timeout")
+	}
+}
+
+// fakeGuestAgentClient implements pb.GuestAgentClient for testing.
+// Embed pb.GuestAgentClient (interface) so unimplemented methods panic rather than silently no-op.
+type fakeGuestAgentClient struct {
+	pb.GuestAgentClient
+	metricsResp *pb.MetricsResponse
+	onMetrics   func()
+}
+
+func (f *fakeGuestAgentClient) Metrics(_ context.Context, _ *pb.MetricsRequest, _ ...grpc.CallOption) (*pb.MetricsResponse, error) {
+	if f.onMetrics != nil {
+		f.onMetrics()
+	}
+	return f.metricsResp, nil
 }

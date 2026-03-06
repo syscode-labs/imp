@@ -207,15 +207,16 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 
 	proc := &fcProc{machine: m, pid: int64(pid), socket: sockPath, netInfo: netInfo}
 
-	// Capture probe arguments before goroutine launch to avoid data race on vm.
+	// Capture goroutine args before launch to avoid data race on vm.
 	var probeCtx context.Context
 	var probes *impdevv1alpha1.ProbeSpec
-	var vsockPath, vmNamespace, vmName string
-	if gaEnabled && vm.Spec.Probes != nil {
+	var vsockPath, vmNamespace, vmName, className string
+	if gaEnabled {
 		vsockPath = strings.TrimSuffix(sockPath, ".sock") + ".vsock"
-		probes = vm.Spec.Probes
+		probes = vm.Spec.Probes // may be nil — runProbes handles nil probes
 		vmNamespace = vm.Namespace
 		vmName = vm.Name
+		className = vm.Spec.ClassRef.Name // safe: checked non-nil at top of Start
 		var probeCancel context.CancelFunc
 		probeCtx, probeCancel = context.WithCancel(context.Background())
 		proc.probeCancel = probeCancel
@@ -228,7 +229,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	d.mu.Unlock()
 
 	if probeCtx != nil {
-		go d.runProbes(probeCtx, probes, vsockPath, vmNamespace, vmName)
+		go d.runProbes(probeCtx, probes, vsockPath, vmNamespace, vmName, className)
 	}
 
 	return int64(pid), nil
@@ -476,9 +477,10 @@ func (d *FirecrackerDriver) guestAgentPath() string {
 }
 
 // runProbes dials the guest VSOCK and runs probe polling until ctx is cancelled.
-// Called in a goroutine after the VM reaches Running. probes must not be nil.
+// Called in a goroutine after the VM reaches Running. probes may be nil — when
+// nil, runProbes keeps the VSOCK connection open for metrics until ctx is done.
 // vmNamespace and vmName identify the ImpVM to patch conditions onto.
-func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha1.ProbeSpec, vsockPath, vmNamespace, vmName string) {
+func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha1.ProbeSpec, vsockPath, vmNamespace, vmName, className string) {
 	conn, err := agentvsock.Dial(ctx, vsockPath, 10000)
 	if err != nil {
 		logf.Log.Error(err, "runProbes: VSOCK dial failed", "vsock", vsockPath)
@@ -486,6 +488,17 @@ func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha
 	}
 	defer conn.Close() //nolint:errcheck
 	client := pb.NewGuestAgentClient(conn)
+
+	// Always poll metrics when collector is set.
+	if d.Metrics != nil {
+		go d.pollMetrics(ctx, client, vmNamespace+"/"+vmName, className)
+	}
+
+	if probes == nil {
+		<-ctx.Done() // keep connection open for metrics until VM stops
+		return
+	}
+
 	runner := probe.NewRunner(client, probes, func(conds []metav1.Condition) {
 		if d.Client == nil {
 			logf.Log.Error(nil, "probe patcher: client is nil, skipping condition patch", "vm", vmNamespace+"/"+vmName)
@@ -506,6 +519,28 @@ func (d *FirecrackerDriver) runProbes(ctx context.Context, probes *impdevv1alpha
 		}
 	})
 	runner.Run(ctx)
+}
+
+// pollMetrics calls the guest Metrics RPC on every metricsInterval tick and
+// forwards results to the Metrics collector. Errors are logged at V(1) and
+// skipped — the guest may be unavailable during startup or shutdown.
+// Runs until ctx is cancelled.
+func (d *FirecrackerDriver) pollMetrics(ctx context.Context, client pb.GuestAgentClient, vmKey, className string) {
+	ticker := time.NewTicker(metricsInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			resp, err := client.Metrics(ctx, &pb.MetricsRequest{})
+			if err != nil {
+				logf.Log.V(1).Info("pollMetrics: guest agent unavailable", "vm", vmKey, "err", err)
+				continue
+			}
+			d.Metrics.SetGuestMetrics(vmKey, d.NodeName, className, resp.CpuUsageRatio, resp.MemoryUsedBytes, resp.DiskUsedBytes)
+		}
+	}
 }
 
 // Snapshot pauses the VM, writes state+memory files to destDir, then resumes it.
