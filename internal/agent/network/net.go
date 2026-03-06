@@ -2,6 +2,12 @@ package network
 
 import "context"
 
+// FDBEntry is a MAC→VTEP mapping for the VXLAN FDB.
+type FDBEntry struct {
+	MAC   string
+	DstIP string
+}
+
 // NetworkInfo holds all networking state for a running VM.
 type NetworkInfo struct {
 	TAPName         string   // e.g. "imptap-a1b2c3d4"
@@ -38,6 +44,15 @@ type NetManager interface {
 	// Idempotent — no error if the rule does not exist.
 	// If egressIface is empty, the default-route interface is used.
 	RemoveNAT(ctx context.Context, subnet, egressIface string) error
+
+	// EnsureVXLAN creates or reconciles the VXLAN interface for the given network.
+	// vni is the VXLAN Network Identifier. ifaceName is the interface name to use.
+	// nodeIP is the local node's IP for VTEP termination.
+	EnsureVXLAN(ctx context.Context, vni uint32, ifaceName, nodeIP string) error
+
+	// SyncFDB reconciles the local FDB (forwarding database) on the VXLAN interface
+	// to match the provided entries. Entries not in the list are removed.
+	SyncFDB(ctx context.Context, ifaceName string, entries []FDBEntry) error
 }
 
 // StubNetManager is a no-op NetManager for tests.
@@ -48,12 +63,16 @@ type StubNetManager struct {
 	TeardownVMCalls    []string // tapName
 	EnsureNATCalls     []string // subnet
 	RemoveNATCalls     []string // subnet
+	EnsureVXLANCalls   []string // ifaceName
+	SyncFDBCalls       []string // ifaceName
 
 	EnsureNetworkErr error
 	SetupVMErr       error
 	TeardownVMErr    error
 	EnsureNATErr     error
 	RemoveNATErr     error
+	EnsureVXLANErr   error
+	SyncFDBErr       error
 }
 
 func (s *StubNetManager) EnsureNetwork(_ context.Context, bridgeName, _ string, _ int) error {
@@ -79,6 +98,16 @@ func (s *StubNetManager) EnsureNAT(_ context.Context, subnet, _ string) error {
 func (s *StubNetManager) RemoveNAT(_ context.Context, subnet, _ string) error {
 	s.RemoveNATCalls = append(s.RemoveNATCalls, subnet)
 	return s.RemoveNATErr
+}
+
+func (s *StubNetManager) EnsureVXLAN(_ context.Context, _ uint32, ifaceName, _ string) error {
+	s.EnsureVXLANCalls = append(s.EnsureVXLANCalls, ifaceName)
+	return s.EnsureVXLANErr
+}
+
+func (s *StubNetManager) SyncFDB(_ context.Context, ifaceName string, _ []FDBEntry) error {
+	s.SyncFDBCalls = append(s.SyncFDBCalls, ifaceName)
+	return s.SyncFDBErr
 }
 
 // compile-time assertion

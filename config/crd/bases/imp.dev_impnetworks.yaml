@@ -231,6 +231,32 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              vtepTable:
+                description: |-
+                  VTEPTable contains VTEP entries for cross-node VXLAN FDB population.
+                  Each entry maps a VM's IP and MAC to the node IP hosting it.
+                items:
+                  description: |-
+                    VTEPEntry maps a VM's IP and MAC to the node IP that hosts it.
+                    Used by the VXLAN FDB to route cross-node VM traffic.
+                  properties:
+                    nodeIP:
+                      description: NodeIP is the IP address of the node hosting the
+                        VM.
+                      type: string
+                    vmIP:
+                      description: VMIP is the IP address of the VM.
+                      type: string
+                    vmMAC:
+                      description: VMMAC is the MAC address of the VM's TAP interface.
+                      type: string
+                  required:
+                  - nodeIP
+                  - vmIP
+                  - vmMAC
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
             type: object
         type: object
     served: true
