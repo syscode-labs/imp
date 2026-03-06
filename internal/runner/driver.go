@@ -23,5 +23,11 @@ type PlatformDriver interface {
 
 	// ValidateWebhook verifies the HMAC signature of an inbound webhook payload
 	// and returns the number of queued jobs mentioned in the event (0 if not a job event).
+	//
+	// The expected format of signature varies by platform:
+	//   - GitHub Actions / Forgejo: "sha256=<hex>" (the raw value of X-Hub-Signature-256 header)
+	//   - GitLab: bare "<hex>" (the raw value of X-Gitlab-Token header when HMAC mode is used)
+	//
+	// Pass the raw header value for the platform; do not strip or add prefixes.
 	ValidateWebhook(payload []byte, signature string) (int, error)
 }

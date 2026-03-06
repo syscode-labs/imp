@@ -47,6 +47,12 @@ func NewGitLabDriver(token, serverURL, scope string, hmacSecret []byte) (*GitLab
 	return d, nil
 }
 
+// GetJITConfig registers a new runner with GitLab and returns its token.
+// NOTE: GitLab does not provide a true JIT (single-use) runner token equivalent
+// to GitHub Actions' JIT config. This creates a persistent runner registration.
+// Caller is responsible for deregistering the runner after the VM terminates
+// by calling the GitLab DELETE /api/v4/runners endpoint with the runner token.
+// Accumulated stale registrations can be cleaned up via the GitLab UI or API.
 func (d *GitLabDriver) GetJITConfig(ctx context.Context) (*JITConfig, error) {
 	opts := &gitlab.RegisterNewRunnerOptions{
 		Token:       gitlab.Ptr(d.registrationToken),
@@ -69,6 +75,8 @@ func (d *GitLabDriver) QueueDepth(_ context.Context) (int, error) {
 	return 0, nil
 }
 
+// ValidateWebhook verifies the payload against the HMAC secret.
+// signature must be the raw hex string from X-Gitlab-Token (no "sha256=" prefix).
 func (d *GitLabDriver) ValidateWebhook(payload []byte, signature string) (int, error) {
 	if len(d.hmacSecret) > 0 {
 		mac := hmac.New(sha256.New, d.hmacSecret)

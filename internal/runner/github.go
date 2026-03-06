@@ -29,6 +29,9 @@ type GitHubDriver struct {
 // token is a PAT with actions:write scope.
 // scope must be "org:<org>" or "repo:<owner>/<repo>".
 func NewGitHubDriver(token, scope string, hmacSecret []byte) (*GitHubDriver, error) {
+	// context.Background() is used here intentionally: the token source is created
+	// once at startup and holds a static PAT (no refresh flow). Per-request contexts
+	// are applied via the ctx parameter passed to each method call.
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	client := github.NewClient(oauth2.NewClient(context.Background(), ts))
 	return newGitHubDriverWithClient(client, scope, hmacSecret)
@@ -37,6 +40,9 @@ func NewGitHubDriver(token, scope string, hmacSecret []byte) (*GitHubDriver, err
 // NewForgejoDriver creates a driver for a Forgejo instance.
 // Forgejo implements the GitHub Actions runner API; serverURL is the Forgejo base URL.
 func NewForgejoDriver(token, serverURL, scope string, hmacSecret []byte) (*GitHubDriver, error) {
+	// context.Background() is used here intentionally: the token source is created
+	// once at startup and holds a static PAT (no refresh flow). Per-request contexts
+	// are applied via the ctx parameter passed to each method call.
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	client := github.NewClient(oauth2.NewClient(context.Background(), ts))
 	baseURL := strings.TrimRight(serverURL, "/") + "/api/v1/"
