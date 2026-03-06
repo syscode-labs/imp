@@ -159,6 +159,43 @@ func TestMigrationReconciler_snapshotFailed_setsFailedPhase(t *testing.T) {
 	assert.Equal(t, "Failed", updated.Status.Phase)
 }
 
+func TestMigrationReconciler_requeueWhenSourceVMUnscheduled(t *testing.T) {
+	// Source VM has no NodeName yet → should requeue, not fail
+	mig := &impv1alpha1.ImpVMMigration{}
+	mig.Name, mig.Namespace = "mig-unsched", "default"
+	mig.Spec.SourceVMName = "vm-unsched"
+	mig.Spec.SourceVMNamespace = "default"
+	mig.Status.Phase = "Pending"
+
+	vm := &impv1alpha1.ImpVM{}
+	vm.Name, vm.Namespace = "vm-unsched", "default"
+	// NodeName is empty — VM not yet scheduled
+
+	scheme := newMigrationTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(mig, vm).WithStatusSubresource(mig).Build()
+	// Push status into the fake store.
+	migWithStatus := mig.DeepCopy()
+	require.NoError(t, c.Status().Update(context.Background(), migWithStatus))
+
+	r := &ImpVMMigrationReconciler{Client: c, Scheme: scheme}
+
+	res, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "mig-unsched", Namespace: "default"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.RequeueAfter == 0 && !res.Requeue {
+		t.Error("expected requeue when source VM has no NodeName")
+	}
+
+	var updated impv1alpha1.ImpVMMigration
+	_ = c.Get(context.Background(), types.NamespacedName{Name: "mig-unsched", Namespace: "default"}, &updated)
+	if updated.Status.Phase == "Failed" {
+		t.Error("migration should not be Failed when source VM is simply unscheduled")
+	}
+}
+
 func newMigrationReconciler() *ImpVMMigrationReconciler {
 	return &ImpVMMigrationReconciler{
 		Client: k8sClient,

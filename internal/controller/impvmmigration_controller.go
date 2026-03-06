@@ -95,6 +95,10 @@ func (r *ImpVMMigrationReconciler) handlePending(ctx context.Context, mig *impv1
 				return ctrl.Result{}, selErr
 			}
 			if selectedNode == "" {
+				if vm.Spec.NodeName == "" {
+					// Source VM not yet scheduled; wait for placement.
+					return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+				}
 				return r.failMigration(ctx, mig, "no CPU-compatible node available (NoCPUCompatibleNode)")
 			}
 			base := mig.DeepCopy()
@@ -136,6 +140,10 @@ func (r *ImpVMMigrationReconciler) handlePending(ctx context.Context, mig *impv1
 // On success it creates the target VM and advances to "Restoring".
 // On failure it sets Phase="Failed".
 func (r *ImpVMMigrationReconciler) handleSnapshotting(ctx context.Context, mig *impv1alpha1.ImpVMMigration) (ctrl.Result, error) {
+	if mig.Status.SnapshotRef == "" {
+		return r.failMigration(ctx, mig, "internal error: Snapshotting phase without SnapshotRef")
+	}
+
 	snap := &impv1alpha1.ImpVMSnapshot{}
 	if err := r.Get(ctx, client.ObjectKey{
 		Namespace: mig.Namespace,
