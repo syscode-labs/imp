@@ -153,6 +153,11 @@ type ImpVMStatus struct {
 	// +optional
 	ExhaustedAt *metav1.Time `json:"exhaustedAt,omitempty"`
 
+	// CiliumEndpointID is set once the VM is enrolled in Cilium as an external workload.
+	// Empty if Cilium is absent or the VM has no network.
+	// +optional
+	CiliumEndpointID int64 `json:"ciliumEndpointID,omitempty"`
+
 	// Conditions follow the standard k8s condition convention.
 	// +optional
 	// +listType=map

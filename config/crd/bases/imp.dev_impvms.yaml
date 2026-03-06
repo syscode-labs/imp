@@ -591,6 +591,12 @@ spec:
           status:
             description: ImpVMStatus reflects the observed state of an ImpVM.
             properties:
+              ciliumEndpointID:
+                description: |-
+                  CiliumEndpointID is set once the VM is enrolled in Cilium as an external workload.
+                  Empty if Cilium is absent or the VM has no network.
+                format: int64
+                type: integer
               conditions:
                 description: Conditions follow the standard k8s condition convention.
                 items:
