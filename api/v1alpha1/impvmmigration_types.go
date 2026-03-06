@@ -30,6 +30,14 @@ type ImpVMMigrationStatus struct {
 	// +optional
 	SelectedNode string `json:"selectedNode,omitempty"`
 
+	// SnapshotRef names the child ImpVMSnapshot created for this migration.
+	// +optional
+	SnapshotRef string `json:"snapshotRef,omitempty"`
+
+	// TargetVMName is the name of the ImpVM created on the target node.
+	// +optional
+	TargetVMName string `json:"targetVMName,omitempty"`
+
 	// CompletedAt is the time migration completed or failed.
 	// +optional
 	CompletedAt *metav1.Time `json:"completedAt,omitempty"`

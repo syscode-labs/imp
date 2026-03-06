@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -35,47 +36,234 @@ func (r *ImpVMMigrationReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	if mig.Status.Phase != "" {
-		return ctrl.Result{}, nil // already initialised
+	switch mig.Status.Phase {
+	case "":
+		return r.handleEmpty(ctx, mig)
+	case "Pending":
+		return r.handlePending(ctx, mig)
+	case "Snapshotting":
+		return r.handleSnapshotting(ctx, mig)
+	case "Restoring":
+		return r.handleRestoring(ctx, mig)
+	case "Succeeded", "Failed":
+		return ctrl.Result{}, nil
+	default:
+		log.Info("unknown migration phase, ignoring", "phase", mig.Status.Phase)
+		return ctrl.Result{}, nil
 	}
+}
 
+// handleEmpty transitions Phase="" → "Pending" and requeues.
+func (r *ImpVMMigrationReconciler) handleEmpty(ctx context.Context, mig *impv1alpha1.ImpVMMigration) (ctrl.Result, error) {
 	base := mig.DeepCopy()
 	mig.Status.Phase = "Pending"
-
-	// Validate source VM exists
-	vm := &impv1alpha1.ImpVM{}
-	err := r.Get(ctx, client.ObjectKey{
-		Namespace: mig.Spec.SourceVMNamespace, Name: mig.Spec.SourceVMName,
-	}, vm)
-	if apierrors.IsNotFound(err) {
-		mig.Status.Phase = "Failed"
-		mig.Status.Message = "source VM not found"
-	} else if err != nil {
-		return ctrl.Result{}, err
-	} else if mig.Spec.TargetNode != "" {
-		mig.Status.SelectedNode = mig.Spec.TargetNode
-	} else {
-		// CPU-compatible node selection
-		selectedNode, selErr := r.selectMigrationTarget(ctx, vm)
-		if selErr != nil {
-			return ctrl.Result{}, selErr
-		}
-		if selectedNode == "" {
-			mig.Status.Phase = "Failed"
-			mig.Status.Message = "no CPU-compatible node available (NoCPUCompatibleNode)"
-		} else {
-			mig.Status.SelectedNode = selectedNode
-		}
-	}
-
 	if err := r.Status().Patch(ctx, mig, client.MergeFrom(base)); err != nil {
 		return ctrl.Result{}, err
 	}
-	log.Info("ImpVMMigration initialised", "name", mig.Name, "phase", mig.Status.Phase,
-		"targetNode", mig.Status.SelectedNode)
+	return ctrl.Result{Requeue: true}, nil
+}
 
-	// TODO: Phase 2 impl: pause VM → snapshot → restore on target → delete source.
+// handlePending validates the source VM, selects a target node, creates a child
+// ImpVMSnapshot, then advances to Phase="Snapshotting".
+func (r *ImpVMMigrationReconciler) handlePending(ctx context.Context, mig *impv1alpha1.ImpVMMigration) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
 
+	// Validate source VM exists.
+	vm := &impv1alpha1.ImpVM{}
+	err := r.Get(ctx, client.ObjectKey{
+		Namespace: mig.Spec.SourceVMNamespace,
+		Name:      mig.Spec.SourceVMName,
+	}, vm)
+	if apierrors.IsNotFound(err) {
+		return r.failMigration(ctx, mig, "source VM not found")
+	}
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Select target node.
+	if mig.Status.SelectedNode == "" {
+		if mig.Spec.TargetNode != "" {
+			base := mig.DeepCopy()
+			mig.Status.SelectedNode = mig.Spec.TargetNode
+			if err := r.Status().Patch(ctx, mig, client.MergeFrom(base)); err != nil {
+				return ctrl.Result{}, err
+			}
+		} else {
+			selectedNode, selErr := r.selectMigrationTarget(ctx, vm)
+			if selErr != nil {
+				return ctrl.Result{}, selErr
+			}
+			if selectedNode == "" {
+				return r.failMigration(ctx, mig, "no CPU-compatible node available (NoCPUCompatibleNode)")
+			}
+			base := mig.DeepCopy()
+			mig.Status.SelectedNode = selectedNode
+			if err := r.Status().Patch(ctx, mig, client.MergeFrom(base)); err != nil {
+				return ctrl.Result{}, err
+			}
+		}
+	}
+
+	// Create child ImpVMSnapshot.
+	snap := &impv1alpha1.ImpVMSnapshot{}
+	snap.Namespace = mig.Namespace
+	snap.Name = "mig-" + mig.Name
+	snap.Spec = impv1alpha1.ImpVMSnapshotSpec{
+		SourceVMName:      mig.Spec.SourceVMName,
+		SourceVMNamespace: mig.Spec.SourceVMNamespace,
+		Storage:           impv1alpha1.SnapshotStorageSpec{Type: "node-local"},
+	}
+	if err := ctrl.SetControllerReference(mig, snap, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.Create(ctx, snap); err != nil && !apierrors.IsAlreadyExists(err) {
+		return ctrl.Result{}, err
+	}
+
+	base := mig.DeepCopy()
+	mig.Status.Phase = "Snapshotting"
+	mig.Status.SnapshotRef = snap.Name
+	if err := r.Status().Patch(ctx, mig, client.MergeFrom(base)); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	log.Info("ImpVMMigration snapshotting", "name", mig.Name, "snapshot", snap.Name, "targetNode", mig.Status.SelectedNode)
+	return ctrl.Result{}, nil
+}
+
+// handleSnapshotting waits for the child snapshot to reach a terminal state.
+// On success it creates the target VM and advances to "Restoring".
+// On failure it sets Phase="Failed".
+func (r *ImpVMMigrationReconciler) handleSnapshotting(ctx context.Context, mig *impv1alpha1.ImpVMMigration) (ctrl.Result, error) {
+	snap := &impv1alpha1.ImpVMSnapshot{}
+	if err := r.Get(ctx, client.ObjectKey{
+		Namespace: mig.Namespace,
+		Name:      mig.Status.SnapshotRef,
+	}, snap); err != nil {
+		if apierrors.IsNotFound(err) {
+			// Snapshot was deleted; requeue and wait.
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	if snap.Status.TerminatedAt == nil {
+		// Snapshot still in progress.
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
+	if snap.Status.Phase != "Succeeded" {
+		return r.failMigration(ctx, mig, "snapshot failed: phase="+snap.Status.Phase)
+	}
+
+	// Determine the execution reference to pass to the target VM.
+	var executionRef string
+	if snap.Status.LastExecutionRef != nil {
+		executionRef = snap.Status.LastExecutionRef.Name
+	} else {
+		executionRef = snap.Name // fallback: use the snapshot itself
+	}
+
+	return r.createTargetVM(ctx, mig, executionRef)
+}
+
+// createTargetVM copies the source VM spec to a new ImpVM on the selected node,
+// wiring in the snapshot execution reference, then advances to "Restoring".
+func (r *ImpVMMigrationReconciler) createTargetVM(ctx context.Context, mig *impv1alpha1.ImpVMMigration, executionRef string) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	srcVM := &impv1alpha1.ImpVM{}
+	if err := r.Get(ctx, client.ObjectKey{
+		Namespace: mig.Spec.SourceVMNamespace,
+		Name:      mig.Spec.SourceVMName,
+	}, srcVM); err != nil {
+		if apierrors.IsNotFound(err) {
+			return r.failMigration(ctx, mig, "source VM disappeared before target could be created")
+		}
+		return ctrl.Result{}, err
+	}
+
+	targetVM := &impv1alpha1.ImpVM{}
+	targetVM.Namespace = srcVM.Namespace
+	targetVM.Name = "mig-" + mig.Name + "-target"
+	targetVM.Spec = *srcVM.Spec.DeepCopy()
+	targetVM.Spec.NodeName = mig.Status.SelectedNode
+	targetVM.Spec.SnapshotRef = executionRef
+
+	if err := ctrl.SetControllerReference(mig, targetVM, r.Scheme); err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.Create(ctx, targetVM); err != nil && !apierrors.IsAlreadyExists(err) {
+		return ctrl.Result{}, err
+	}
+
+	base := mig.DeepCopy()
+	mig.Status.Phase = "Restoring"
+	mig.Status.TargetVMName = targetVM.Name
+	if err := r.Status().Patch(ctx, mig, client.MergeFrom(base)); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	log.Info("ImpVMMigration restoring", "name", mig.Name, "targetVM", targetVM.Name)
+	return ctrl.Result{}, nil
+}
+
+// handleRestoring waits for the target VM to reach Running, then deletes the source
+// VM and marks the migration Succeeded.
+func (r *ImpVMMigrationReconciler) handleRestoring(ctx context.Context, mig *impv1alpha1.ImpVMMigration) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+
+	targetVM := &impv1alpha1.ImpVM{}
+	if err := r.Get(ctx, client.ObjectKey{
+		Namespace: mig.Spec.SourceVMNamespace,
+		Name:      mig.Status.TargetVMName,
+	}, targetVM); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	if targetVM.Status.Phase != impv1alpha1.VMPhaseRunning {
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+	}
+
+	// Delete source VM.
+	srcVM := &impv1alpha1.ImpVM{}
+	if err := r.Get(ctx, client.ObjectKey{
+		Namespace: mig.Spec.SourceVMNamespace,
+		Name:      mig.Spec.SourceVMName,
+	}, srcVM); err == nil {
+		if delErr := r.Delete(ctx, srcVM); delErr != nil && !apierrors.IsNotFound(delErr) {
+			return ctrl.Result{}, delErr
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return ctrl.Result{}, err
+	}
+
+	now := metav1.Now()
+	base := mig.DeepCopy()
+	mig.Status.Phase = "Succeeded"
+	mig.Status.CompletedAt = &now
+	if err := r.Status().Patch(ctx, mig, client.MergeFrom(base)); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	log.Info("ImpVMMigration succeeded", "name", mig.Name)
+	return ctrl.Result{}, nil
+}
+
+// failMigration patches the migration to Phase="Failed" with the given message.
+func (r *ImpVMMigrationReconciler) failMigration(ctx context.Context, mig *impv1alpha1.ImpVMMigration, msg string) (ctrl.Result, error) {
+	now := metav1.Now()
+	base := mig.DeepCopy()
+	mig.Status.Phase = "Failed"
+	mig.Status.Message = msg
+	mig.Status.CompletedAt = &now
+	if err := r.Status().Patch(ctx, mig, client.MergeFrom(base)); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
