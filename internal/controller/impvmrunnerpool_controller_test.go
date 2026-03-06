@@ -142,7 +142,7 @@ func TestRunnerPoolReconciler_respectsMaxConcurrent(t *testing.T) {
 	_ = c.List(context.Background(), vmList,
 		client.InNamespace("ci"),
 		client.MatchingLabels{impv1alpha1.LabelRunnerPool: "ci-pool"})
-	if len(vmList.Items) > 2 {
-		t.Errorf("expected ≤2 VMs (maxConcurrent=2), got %d", len(vmList.Items))
+	if len(vmList.Items) != 2 {
+		t.Errorf("expected exactly 2 VMs (maxConcurrent=2, minIdle=3), got %d", len(vmList.Items))
 	}
 }
