@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"testing"
 
+	firecracker "github.com/firecracker-microvm/firecracker-go-sdk"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -455,6 +456,72 @@ func TestFirecrackerDriver_Stop_callsRemoveNATOnLastVM(t *testing.T) {
 
 	if len(stub.RemoveNATCalls) != 1 || stub.RemoveNATCalls[0] != "10.0.0.0/24" {
 		t.Errorf("expected RemoveNAT called with %q, got %v", "10.0.0.0/24", stub.RemoveNATCalls)
+	}
+}
+
+func TestFirecrackerDriver_applySnapshotBoot_noPath(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+
+	snap := &impdevv1alpha1.ImpVMSnapshot{}
+	snap.Namespace = "default"
+	snap.Name = "snap-nopath"
+	// snap.Status.SnapshotPath is empty — snapshot not yet written to disk.
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(snap).Build()
+
+	d := &FirecrackerDriver{Client: fakeClient}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "vm-nopath"
+	vm.Spec.SnapshotRef = "snap-nopath"
+
+	cfg := firecracker.Config{}
+	if err := d.applySnapshotBoot(context.Background(), vm, &cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Snapshot.SnapshotPath != "" {
+		t.Errorf("SnapshotPath = %q, want empty (cold boot)", cfg.Snapshot.SnapshotPath)
+	}
+}
+
+func TestFirecrackerDriver_applySnapshotBoot_withPath(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+
+	snap := &impdevv1alpha1.ImpVMSnapshot{}
+	snap.Namespace = "default"
+	snap.Name = "snap-ready"
+	snap.Status.SnapshotPath = "/mnt/snaps/default/p/c"
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(snap).Build()
+
+	d := &FirecrackerDriver{Client: fakeClient}
+
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "vm-withpath"
+	vm.Spec.SnapshotRef = "snap-ready"
+
+	cfg := firecracker.Config{}
+	if err := d.applySnapshotBoot(context.Background(), vm, &cfg); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	wantState := "/mnt/snaps/default/p/c/vm.state"
+	if cfg.Snapshot.SnapshotPath != wantState {
+		t.Errorf("SnapshotPath = %q, want %q", cfg.Snapshot.SnapshotPath, wantState)
+	}
+	wantMem := "/mnt/snaps/default/p/c/vm.mem"
+	if cfg.Snapshot.MemFilePath != wantMem {
+		t.Errorf("MemFilePath = %q, want %q", cfg.Snapshot.MemFilePath, wantMem)
+	}
+	if !cfg.Snapshot.ResumeVM {
+		t.Error("ResumeVM = false, want true")
 	}
 }
 
