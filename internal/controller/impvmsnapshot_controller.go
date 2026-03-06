@@ -122,7 +122,7 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Design rule 3 & 4: decide whether to create a new child.
 	if snap.Spec.Schedule == "" {
 		// One-shot: create child only if no children exist at all.
-		if len(childList.Items) == 0 {
+		if len(children) == 0 {
 			if err := r.createChild(ctx, snap); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -147,7 +147,8 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			return ctrl.Result{}, err
 		}
 		// Requeue after the next scheduled slot.
-		next = sched.Next(time.Now())
+		now = time.Now()
+		next = sched.Next(now)
 		untilNext = time.Until(next)
 	}
 
@@ -168,7 +169,7 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 func (r *ImpVMSnapshotReconciler) createChild(ctx context.Context, parent *impv1alpha1.ImpVMSnapshot) error {
 	log := logf.FromContext(ctx)
 
-	childName := parent.Name + "-" + time.Now().UTC().Format("20060102-1504")
+	childName := parent.Name + "-" + time.Now().UTC().Format("20060102-150405")
 
 	childSpec := parent.Spec.DeepCopy()
 	childSpec.Schedule = "" // clear schedule on child
@@ -207,5 +208,6 @@ func (r *ImpVMSnapshotReconciler) createChild(ctx context.Context, parent *impv1
 func (r *ImpVMSnapshotReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&impv1alpha1.ImpVMSnapshot{}).
+		Owns(&impv1alpha1.ImpVMSnapshot{}).
 		Complete(r)
 }
