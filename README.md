@@ -110,6 +110,19 @@ the '--force' flag and manually ensure that any custom configuration
 previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
 is manually re-applied afterwards.
 
+## CNI Support
+
+Imp provides first-class integration with **Cilium**. When Cilium is detected:
+
+- VMs are enrolled as `CiliumExternalWorkload` objects and become full Cilium mesh participants
+- `NetworkPolicy` rules apply to VMs identically to pods
+- VM traffic is visible in Hubble (`hubble observe`)
+- VMs can reach `ClusterIP` services via kube-dns
+
+Other CNIs (Flannel, Calico, Weave, etc.) work for basic node-local networking. Cross-node VM connectivity uses an automatic VXLAN overlay managed by Imp, without Cilium NetworkPolicy or Hubble visibility.
+
+> **Support policy:** Cilium is the only officially supported CNI for cross-node networking and NetworkPolicy enforcement. Other CNIs receive best-effort support via the VXLAN fallback. External contributions adding CNI-specific integrations are welcome and will be reviewed.
+
 ## Contributing
 // TODO(user): Add detailed information on how you would like others to contribute to this project
 
