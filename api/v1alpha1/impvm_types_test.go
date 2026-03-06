@@ -76,6 +76,20 @@ func TestImpVMStatus_exhaustedAt(t *testing.T) {
 	assert.Equal(t, int32(5), out2.RestartCount)
 }
 
+func TestImpVM_snapshotRef_roundTrip(t *testing.T) {
+	vm := ImpVM{
+		Spec: ImpVMSpec{
+			Image:       "busybox:latest",
+			SnapshotRef: "snap-parent-20260306-120105",
+		},
+	}
+	b, err := json.Marshal(vm)
+	require.NoError(t, err)
+	var out ImpVM
+	require.NoError(t, json.Unmarshal(b, &out))
+	assert.Equal(t, "snap-parent-20260306-120105", out.Spec.SnapshotRef)
+}
+
 func TestRestartPolicy_roundTrip(t *testing.T) {
 	rp := RestartPolicy{
 		Mode:           "reschedule",
