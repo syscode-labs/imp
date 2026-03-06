@@ -300,7 +300,8 @@ func (r *ImpVMReconciler) deregisterVTEP(ctx context.Context, vm *impdevv1alpha1
 	}
 
 	// Filter out the entry for this VM.
-	filtered := impNet.Status.VTEPTable[:0]
+	base := impNet.DeepCopy()
+	filtered := make([]impdevv1alpha1.VTEPEntry, 0, len(impNet.Status.VTEPTable))
 	for _, e := range impNet.Status.VTEPTable {
 		if e.VMIP != vm.Status.IP {
 			filtered = append(filtered, e)
@@ -310,7 +311,6 @@ func (r *ImpVMReconciler) deregisterVTEP(ctx context.Context, vm *impdevv1alpha1
 		return nil // nothing to remove
 	}
 
-	base := impNet.DeepCopy()
 	impNet.Status.VTEPTable = filtered
 	return r.Status().Patch(ctx, &impNet, client.MergeFrom(base))
 }

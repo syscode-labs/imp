@@ -130,7 +130,8 @@ func (r *ImpNetworkReconciler) reconcileVTEPTable(ctx context.Context, net *impd
 	}
 
 	// Filter vtepTable to only active entries.
-	filtered := net.Status.VTEPTable[:0]
+	base := net.DeepCopy()
+	filtered := make([]impdevv1alpha1.VTEPEntry, 0, len(net.Status.VTEPTable))
 	for _, entry := range net.Status.VTEPTable {
 		if _, ok := activeIPs[entry.VMIP]; ok {
 			filtered = append(filtered, entry)
@@ -144,7 +145,6 @@ func (r *ImpNetworkReconciler) reconcileVTEPTable(ctx context.Context, net *impd
 	logf.FromContext(ctx).Info("GCing stale VTEP entries",
 		"network", net.Name, "before", len(net.Status.VTEPTable), "after", len(filtered))
 
-	base := net.DeepCopy()
 	net.Status.VTEPTable = filtered
 	return r.Status().Patch(ctx, net, client.MergeFrom(base))
 }
