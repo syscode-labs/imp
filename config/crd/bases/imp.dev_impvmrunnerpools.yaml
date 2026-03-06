@@ -117,8 +117,8 @@ spec:
                         type: string
                     type: object
                     x-kubernetes-validations:
-                    - message: org and repo are mutually exclusive; set exactly one
-                      rule: '!(size(self.org) > 0 && size(self.repo) > 0)'
+                    - message: set exactly one of org or repo
+                      rule: (size(self.org) > 0) != (size(self.repo) > 0)
                   serverURL:
                     description: ServerURL is required for GitLab and Forgejo. Leave
                       empty for github.com.

@@ -146,3 +146,113 @@ func TestRunnerPoolReconciler_respectsMaxConcurrent(t *testing.T) {
 		t.Errorf("expected exactly 2 VMs (maxConcurrent=2, minIdle=3), got %d", len(vmList.Items))
 	}
 }
+
+func TestRunnerPoolReconciler_propagatesCompositeLayers(t *testing.T) {
+	minIdle := int32(1)
+	pool := &impv1alpha1.ImpVMRunnerPool{
+		ObjectMeta: metav1.ObjectMeta{Name: "ci-pool", Namespace: "ci"},
+		Spec: impv1alpha1.ImpVMRunnerPoolSpec{
+			TemplateName: "ubuntu-runner",
+			Platform: impv1alpha1.RunnerPlatformSpec{
+				Type:              "github-actions",
+				CredentialsSecret: "gh-creds",
+			},
+			RunnerLayer: "ghcr.io/syscode-labs/imp-runners/github-actions:v1",
+			Scaling:     &impv1alpha1.RunnerScalingSpec{MinIdle: minIdle, MaxConcurrent: 5},
+		},
+	}
+	tpl := &impv1alpha1.ImpVMTemplate{
+		ObjectMeta: metav1.ObjectMeta{Name: "ubuntu-runner", Namespace: "ci"},
+		Spec: impv1alpha1.ImpVMTemplateSpec{
+			ClassRef:    impv1alpha1.ClusterObjectRef{Name: "standard"},
+			Image:       "ubuntu:22.04",
+			CiliumLayer: "ghcr.io/syscode-labs/imp-layers/cilium:v1",
+		},
+	}
+
+	scheme := newRunnerPoolTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
+	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "ci-pool", Namespace: "ci"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	vmList := &impv1alpha1.ImpVMList{}
+	_ = c.List(context.Background(), vmList,
+		client.InNamespace("ci"),
+		client.MatchingLabels{impv1alpha1.LabelRunnerPool: "ci-pool"})
+	if len(vmList.Items) != 1 {
+		t.Fatalf("expected 1 VM, got %d", len(vmList.Items))
+	}
+	got := vmList.Items[0].Spec
+	if got.RunnerLayer != "ghcr.io/syscode-labs/imp-runners/github-actions:v1" {
+		t.Fatalf("runnerLayer = %q", got.RunnerLayer)
+	}
+	if got.CiliumLayer != "ghcr.io/syscode-labs/imp-layers/cilium:v1" {
+		t.Fatalf("ciliumLayer = %q", got.CiliumLayer)
+	}
+}
+
+func TestRunnerPoolReconciler_scalesFromQueueDepth(t *testing.T) {
+	pool := &impv1alpha1.ImpVMRunnerPool{
+		ObjectMeta: metav1.ObjectMeta{Name: "ci-pool", Namespace: "ci"},
+		Spec: impv1alpha1.ImpVMRunnerPoolSpec{
+			TemplateName: "ubuntu-runner",
+			Platform: impv1alpha1.RunnerPlatformSpec{
+				Type:              "github-actions",
+				CredentialsSecret: "gh-creds",
+			},
+			Scaling: &impv1alpha1.RunnerScalingSpec{MinIdle: 0, MaxConcurrent: 5},
+			JobDetection: &impv1alpha1.RunnerJobDetectionSpec{
+				Polling: &impv1alpha1.RunnerPollingSpec{Enabled: true, IntervalSeconds: 30},
+			},
+		},
+	}
+	tpl := &impv1alpha1.ImpVMTemplate{
+		ObjectMeta: metav1.ObjectMeta{Name: "ubuntu-runner", Namespace: "ci"},
+		Spec:       impv1alpha1.ImpVMTemplateSpec{ClassRef: impv1alpha1.ClusterObjectRef{Name: "standard"}, Image: "ubuntu:22.04"},
+	}
+
+	scheme := newRunnerPoolTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
+
+	r := &ImpVMRunnerPoolReconciler{
+		Client: c,
+		Scheme: scheme,
+		DriverFactory: func(
+			_ context.Context, _ client.Client, _ *impv1alpha1.ImpVMRunnerPool,
+		) (runnerQueueDepthReader, error) {
+			return &stubRunnerQueueDepthReader{queueDepth: 3}, nil
+		},
+	}
+
+	_, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "ci-pool", Namespace: "ci"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	vmList := &impv1alpha1.ImpVMList{}
+	_ = c.List(context.Background(), vmList,
+		client.InNamespace("ci"),
+		client.MatchingLabels{impv1alpha1.LabelRunnerPool: "ci-pool"})
+	if len(vmList.Items) != 3 {
+		t.Fatalf("expected 3 queued-demand VMs, got %d", len(vmList.Items))
+	}
+}
+
+type stubRunnerQueueDepthReader struct {
+	queueDepth int
+	err        error
+}
+
+func (s *stubRunnerQueueDepthReader) QueueDepth(_ context.Context) (int, error) {
+	return s.queueDepth, s.err
+}
