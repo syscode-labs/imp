@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
@@ -133,6 +134,125 @@ var _ = Describe("ImpNetwork Controller: core", func() {
 		if err == nil {
 			Expect(updated.Finalizers).NotTo(ContainElement(finalizerImpNetwork))
 		}
+	})
+})
+
+var _ = Describe("ImpNetwork Controller: reconcileVTEPTable", func() {
+	ctx := context.Background()
+
+	reconcileTwiceVTEP := func(r *ImpNetworkReconciler, name string) {
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: name, Namespace: "default"}}
+		_, err := r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+	}
+
+	It("removes stale VTEP entries for VMs that are no longer Running", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "vtep-gc-1", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpNetworkSpec{Subnet: "10.200.1.0/24"},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		// Inject a stale VTEP entry (no corresponding Running VM).
+		base := net.DeepCopy()
+		net.Status.VTEPTable = []impdevv1alpha1.VTEPEntry{
+			{NodeIP: "192.168.1.10", VMIP: "10.200.1.5", VMMAC: "02:aa:bb:cc:dd:ee"},
+		}
+		Expect(k8sClient.Status().Patch(ctx, net, client.MergeFrom(base))).To(Succeed())
+
+		r, _ := newNetworkReconciler(ciliumStore())
+		reconcileTwiceVTEP(r, "vtep-gc-1")
+
+		updated := &impdevv1alpha1.ImpNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "vtep-gc-1", Namespace: "default"}, updated)).To(Succeed())
+		// Stale entry should be removed (no Running VM with IP 10.200.1.5 exists).
+		Expect(updated.Status.VTEPTable).To(BeEmpty())
+	})
+
+	It("keeps VTEP entries for Running VMs that reference this network", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "vtep-keep-1", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpNetworkSpec{Subnet: "10.200.2.0/24"},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		// Create a Running ImpVM that references the network.
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "vtep-vm-1", Namespace: "default"},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				NetworkRef: &impdevv1alpha1.LocalObjectRef{Name: "vtep-keep-1"},
+				Image:      "ghcr.io/test/rootfs:latest",
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		vmBase := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+		vm.Status.IP = "10.200.2.5"
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(vmBase))).To(Succeed())
+
+		// Inject a VTEP entry for the Running VM.
+		netBase := net.DeepCopy()
+		net.Status.VTEPTable = []impdevv1alpha1.VTEPEntry{
+			{NodeIP: "192.168.1.10", VMIP: "10.200.2.5", VMMAC: "02:aa:bb:cc:dd:ee"},
+		}
+		Expect(k8sClient.Status().Patch(ctx, net, client.MergeFrom(netBase))).To(Succeed())
+
+		r, _ := newNetworkReconciler(ciliumStore())
+		reconcileTwiceVTEP(r, "vtep-keep-1")
+
+		updated := &impdevv1alpha1.ImpNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "vtep-keep-1", Namespace: "default"}, updated)).To(Succeed())
+		// Entry for the Running VM must be preserved.
+		Expect(updated.Status.VTEPTable).To(HaveLen(1))
+		Expect(updated.Status.VTEPTable[0].VMIP).To(Equal("10.200.2.5"))
+	})
+
+	It("removes entries for Stopped VMs but keeps entries for Running VMs", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "vtep-mixed-1", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpNetworkSpec{Subnet: "10.200.3.0/24"},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		// Create a Running ImpVM.
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "vtep-vm-running", Namespace: "default"},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				NetworkRef: &impdevv1alpha1.LocalObjectRef{Name: "vtep-mixed-1"},
+				Image:      "ghcr.io/test/rootfs:latest",
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		vmBase := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+		vm.Status.IP = "10.200.3.5"
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(vmBase))).To(Succeed())
+
+		// Inject two VTEP entries: one for the Running VM, one stale.
+		netBase := net.DeepCopy()
+		net.Status.VTEPTable = []impdevv1alpha1.VTEPEntry{
+			{NodeIP: "192.168.1.10", VMIP: "10.200.3.5", VMMAC: "02:aa:bb:cc:dd:01"},
+			{NodeIP: "192.168.1.11", VMIP: "10.200.3.99", VMMAC: "02:aa:bb:cc:dd:02"},
+		}
+		Expect(k8sClient.Status().Patch(ctx, net, client.MergeFrom(netBase))).To(Succeed())
+
+		r, _ := newNetworkReconciler(ciliumStore())
+		reconcileTwiceVTEP(r, "vtep-mixed-1")
+
+		updated := &impdevv1alpha1.ImpNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "vtep-mixed-1", Namespace: "default"}, updated)).To(Succeed())
+		// Only the Running VM's entry should remain.
+		Expect(updated.Status.VTEPTable).To(HaveLen(1))
+		Expect(updated.Status.VTEPTable[0].VMIP).To(Equal("10.200.3.5"))
 	})
 })
 
