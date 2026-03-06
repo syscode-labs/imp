@@ -7,6 +7,10 @@ const (
 
 	// LabelWarmPool is the label key applied to ImpVM objects that belong to a warm pool.
 	LabelWarmPool = "imp.dev/warm-pool"
+
+	// LabelRunnerPool marks an ImpVM as belonging to an ImpVMRunnerPool.
+	// Value is the pool name.
+	LabelRunnerPool = "imp.dev/runner-pool"
 )
 
 // LocalObjectRef is a reference to an object in the same namespace.
