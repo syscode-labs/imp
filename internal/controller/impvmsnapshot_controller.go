@@ -89,18 +89,23 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 			log.Info("pruned old child", "parent", snap.Name, "child", toDelete[i].Name)
 		}
-		// Refresh children slice after pruning (rebuild from remaining).
-		remaining := children[len(children)-retention:]
-		// If baseSnapshot was skipped in toDelete, add it back if it was in toDelete range.
-		children = remaining
+		// Re-list from API server to get an accurate post-prune view (accounts for
+		// baseSnapshot children that were skipped during deletion).
+		postPrune := &impv1alpha1.ImpVMSnapshotList{}
+		if err := r.List(ctx, postPrune,
+			client.InNamespace(snap.Namespace),
+			client.MatchingLabels{impv1alpha1.LabelSnapshotParent: snap.Name},
+		); err != nil {
+			return ctrl.Result{}, err
+		}
+		children = postPrune.Items
 	}
 
 	// Design rule 6: BaseSnapshot validation.
 	if snap.Spec.BaseSnapshot != "" {
 		for i := range children {
 			if children[i].Name == snap.Spec.BaseSnapshot &&
-				children[i].Status.Phase == "Succeeded" &&
-				children[i].Status.TerminatedAt != nil {
+				children[i].Status.Phase == "Succeeded" {
 				if snap.Status.BaseSnapshot != snap.Spec.BaseSnapshot {
 					base := snap.DeepCopy()
 					snap.Status.BaseSnapshot = snap.Spec.BaseSnapshot
