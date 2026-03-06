@@ -469,6 +469,8 @@ func TestFirecrackerDriver_applySnapshotBoot_noPath(t *testing.T) {
 	snap.Namespace = "default"
 	snap.Name = "snap-nopath"
 	// snap.Status.SnapshotPath is empty — snapshot not yet written to disk.
+	// WithStatusSubresource is intentionally omitted: the zero-value status
+	// needs no separate status write and the empty path is what we are testing.
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(snap).Build()
 
@@ -497,9 +499,20 @@ func TestFirecrackerDriver_applySnapshotBoot_withPath(t *testing.T) {
 	snap := &impdevv1alpha1.ImpVMSnapshot{}
 	snap.Namespace = "default"
 	snap.Name = "snap-ready"
-	snap.Status.SnapshotPath = "/mnt/snaps/default/p/c"
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(snap).Build()
+	// Register snap with WithStatusSubresource so that the fake client enforces
+	// the status subresource boundary (mirrors real API server semantics).
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(snap).
+		WithStatusSubresource(snap).
+		Build()
+
+	// Write status through the status subresource, as a real controller would.
+	snap.Status.SnapshotPath = "/mnt/snaps/default/p/c"
+	if err := fakeClient.Status().Update(context.Background(), snap); err != nil {
+		t.Fatalf("status update: %v", err)
+	}
 
 	d := &FirecrackerDriver{Client: fakeClient}
 
