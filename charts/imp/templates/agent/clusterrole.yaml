@@ -20,7 +20,11 @@ rules:
 - apiGroups: ["imp.dev"]
   resources:
     - impnetworks
-  verbs: [get]
+  verbs: [get, list, watch]
+- apiGroups: ["imp.dev"]
+  resources:
+    - impnetworks/status
+  verbs: [get, update, patch]
 - apiGroups: [""]
   resources:
     - events
