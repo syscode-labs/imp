@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"fmt"
 	"math"
+	"math/big"
 	"os"
 	"strconv"
 	"strings"
@@ -109,9 +110,14 @@ func diskUsedBytes(path string) (int64, error) {
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return 0, err
 	}
-	usedBlocks := stat.Blocks - stat.Bavail
-	if usedBlocks > math.MaxInt64/uint64(stat.Bsize) {
+	if stat.Bsize <= 0 {
+		return 0, fmt.Errorf("invalid filesystem block size %d", stat.Bsize)
+	}
+
+	usedBlocks := new(big.Int).SetUint64(stat.Blocks - stat.Bavail)
+	usedBytes := new(big.Int).Mul(usedBlocks, big.NewInt(stat.Bsize))
+	if usedBytes.BitLen() > 63 {
 		return math.MaxInt64, nil
 	}
-	return int64(usedBlocks * uint64(stat.Bsize)), nil
+	return usedBytes.Int64(), nil
 }

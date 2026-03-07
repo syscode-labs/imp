@@ -336,7 +336,7 @@ func (d *FirecrackerDriver) Inspect(_ context.Context, vm *impdevv1alpha1.ImpVM)
 		return VMState{Running: false}, nil
 	}
 	if err := p.Signal(syscall.Signal(0)); err != nil {
-		if errors.Is(err, syscall.ESRCH) {
+		if errors.Is(err, syscall.ESRCH) || errors.Is(err, os.ErrProcessDone) {
 			// Process no longer exists — clean up.
 			d.mu.Lock()
 			delete(d.procs, key)
