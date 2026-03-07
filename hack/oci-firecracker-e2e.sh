@@ -29,6 +29,7 @@
 #   FREE_TIER_MAX_MICRO      Default: 2
 #   ALLOW_PAID_SHAPE         Default: false (must be true to use non-free-tier shape)
 #   OCI_AUTO_BUILD_GOLDEN_IMAGE Default: true (build minimal OCI custom image when OCI_IMAGE_OCID is missing)
+#   OCI_GOLDEN_BUILD_DRIVER     Default: packer (packer|native-oci)
 #
 # Usage:
 #   IMP_OCI_PROFILE=syscode-api IMP_OCI_COMPARTMENT_NAME=homelab IMP_OCI_DOMAIN_NAME=homelab \
@@ -197,14 +198,33 @@ ensure_image_ocid() {
   local env_file
   env_file="$(mktemp /tmp/imp-golden-env-XXXXXX)"
   log "OCI_IMAGE_OCID missing; building minimal golden image first"
-  OCI_COMPARTMENT_OCID="${OCI_COMPARTMENT_OCID:-}" \
-  OCI_AVAILABILITY_DOMAIN="${OCI_AVAILABILITY_DOMAIN:-}" \
-  OCI_SUBNET_OCID="${OCI_SUBNET_OCID:-}" \
-  OCI_SSH_PUBLIC_KEY_FILE="$OCI_SSH_PUBLIC_KEY_FILE" \
-  OCI_SSH_PRIVATE_KEY_FILE="$OCI_SSH_PRIVATE_KEY_FILE" \
-  FIRECRACKER_VERSION="$FIRECRACKER_VERSION" \
-  OCI_OUTPUT_ENV_FILE="$env_file" \
-  "$REPO_ROOT/hack/oci-build-golden-image.sh"
+  local build_driver
+  build_driver="${OCI_GOLDEN_BUILD_DRIVER:-packer}"
+
+  case "$build_driver" in
+    packer)
+      OCI_COMPARTMENT_OCID="${OCI_COMPARTMENT_OCID:-}" \
+      OCI_AVAILABILITY_DOMAIN="${OCI_AVAILABILITY_DOMAIN:-}" \
+      OCI_SUBNET_OCID="${OCI_SUBNET_OCID:-}" \
+      FIRECRACKER_VERSION="$FIRECRACKER_VERSION" \
+      OCI_OUTPUT_ENV_FILE="$env_file" \
+      "$REPO_ROOT/hack/packer-build-golden-image.sh"
+      ;;
+    native-oci)
+      OCI_COMPARTMENT_OCID="${OCI_COMPARTMENT_OCID:-}" \
+      OCI_AVAILABILITY_DOMAIN="${OCI_AVAILABILITY_DOMAIN:-}" \
+      OCI_SUBNET_OCID="${OCI_SUBNET_OCID:-}" \
+      OCI_SSH_PUBLIC_KEY_FILE="$OCI_SSH_PUBLIC_KEY_FILE" \
+      OCI_SSH_PRIVATE_KEY_FILE="$OCI_SSH_PRIVATE_KEY_FILE" \
+      FIRECRACKER_VERSION="$FIRECRACKER_VERSION" \
+      OCI_OUTPUT_ENV_FILE="$env_file" \
+      "$REPO_ROOT/hack/oci-build-golden-image.sh"
+      ;;
+    *)
+      echo "unsupported OCI_GOLDEN_BUILD_DRIVER=$build_driver (expected: packer|native-oci)" >&2
+      exit 2
+      ;;
+  esac
 
   # shellcheck disable=SC1090
   source "$env_file"

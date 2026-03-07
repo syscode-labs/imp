@@ -131,7 +131,7 @@ make test-e2e
 The repository includes IaC scripts under `hack/`:
 
 - `hack/oci-build-golden-image.sh`
-- `hack/packer-build-golden-image.sh` (native Packer OCI builder with script preflight/sanitization)
+- `hack/packer-build-golden-image.sh` (default build driver: native Packer OCI builder with script preflight/sanitization)
 - `hack/oci-firecracker-e2e.sh`
 
 `hack/oci-build-golden-image.sh` is idempotent for missing OCI inputs:
@@ -139,6 +139,11 @@ The repository includes IaC scripts under `hack/`:
 - auto-detects compartment and AD for `VM.Standard.E2.1.Micro`
 - reuses existing public subnet or creates a minimal public VCN/subnet stack
 - prunes oldest `imp-fc-golden-*` images when custom-image quota is full
+
+`hack/packer-build-golden-image.sh` (recommended) now also performs post-build retention cleanup of old prefixed custom images:
+
+- `OCI_POST_BUILD_PRUNE_OLD_IMAGES` (default `true`)
+- `OCI_POST_BUILD_KEEP_IMAGES` (default `1`)
 
 Build a minimal golden image:
 
@@ -169,6 +174,7 @@ source "$HOME/.config/imp/oci-golden.env"
 IMP_OCI_PROFILE=syscode-api \
 IMP_OCI_COMPARTMENT_NAME=homelab \
 IMP_OCI_DOMAIN_NAME=homelab \
+OCI_GOLDEN_BUILD_DRIVER=packer \
 OCI_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/builder.pub" \
 OCI_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/builder" \
 OCI_IMAGE_OCID="$OCI_IMAGE_OCID" \
@@ -181,6 +187,7 @@ Notes:
 - Golden image max size is controlled by `OCI_GOLDEN_MAX_GB` (default `50` GiB).
 - Optional `OCI_GOLDEN_ZERO_FILL=true` can reduce sparse image footprint but is slower.
 - For automation, use an unencrypted SSH key or load passphrase keys in `ssh-agent`.
+- e2e auto-build defaults to `OCI_GOLDEN_BUILD_DRIVER=packer`; set `native-oci` only if needed.
 
 ## Networking Support
 
