@@ -113,6 +113,19 @@ func TestAllocator_release_unknown_key(t *testing.T) {
 	}
 }
 
+func TestAllocator_reserve_idempotent(t *testing.T) {
+	a := network.NewAllocator()
+	// Calling Reserve twice for the same IP (e.g. two agent restarts) must not
+	// inflate vmCount. A single Release should return wasLast=true.
+	a.Reserve("ns/net", "10.0.0.2")
+	a.Reserve("ns/net", "10.0.0.2") // duplicate — idempotent
+
+	wasLast := a.Release("ns/net", "10.0.0.2")
+	if !wasLast {
+		t.Error("expected wasLast=true: duplicate Reserve must not inflate vmCount")
+	}
+}
+
 func TestAllocator_reserve_countsForWasLast(t *testing.T) {
 	a := network.NewAllocator()
 	// Reserve two IPs as if recovering running VMs on restart.

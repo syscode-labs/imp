@@ -93,8 +93,10 @@ func (a *Allocator) Reserve(netKey, ip string) {
 	if a.allocated[netKey] == nil {
 		a.allocated[netKey] = make(map[string]struct{})
 	}
-	a.allocated[netKey][ip] = struct{}{}
-	a.vmCount[netKey]++
+	if _, alreadyReserved := a.allocated[netKey][ip]; !alreadyReserved {
+		a.allocated[netKey][ip] = struct{}{}
+		a.vmCount[netKey]++
+	}
 }
 
 // sizeToCIDRPrefix returns the smallest CIDR prefix length that accommodates n hosts.
