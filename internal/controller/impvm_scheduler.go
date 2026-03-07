@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"sort"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -74,30 +75,43 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 		return "", nil
 	}
 
-	// 2b. Filter out unready / unschedulable nodes
+	// 3. Filter out unready / unschedulable nodes
 	eligible = filterSchedulable(eligible)
 	if len(eligible) == 0 {
 		return "", nil
 	}
 
-	// 3. Count running VMs per node
+	// 4. Resolve VM class spec once (best-effort: tolerations + capacity)
+	var classSpec *impdevv1alpha1.ImpVMClassSpec
+	if cs, err := resolveClassSpec(ctx, r.Client, vm); err != nil {
+		log.V(1).Info("could not resolve class spec; using VM-only tolerations and skipping capacity check",
+			"vm", vm.Name, "err", err)
+	} else {
+		classSpec = cs
+	}
+
+	// 5. Filter by taint tolerations
+	tolerations := resolveTolerations(vm, classSpec)
+	eligible = filterByTolerations(eligible, tolerations)
+	if len(eligible) == 0 {
+		return "", nil
+	}
+
+	// 6. Count running VMs per node
 	allVMs := &impdevv1alpha1.ImpVMList{}
 	if err := r.List(ctx, allVMs); err != nil {
 		return "", err
 	}
 	runningPerNode := countRunningVMs(allVMs.Items)
 
-	// 4. Resolve VM compute class (best-effort: skip capacity check if unresolvable)
+	// 7. Extract compute requirements
 	var vmVCPU, vmMemMiB int32
-	if classSpec, err := resolveClassSpec(ctx, r.Client, vm); err != nil {
-		log.V(1).Info("could not resolve class spec for capacity check; skipping compute limit",
-			"vm", vm.Name, "err", err)
-	} else {
+	if classSpec != nil {
 		vmVCPU = classSpec.VCPU
 		vmMemMiB = classSpec.MemoryMiB
 	}
 
-	// 5a. Explicit-capacity scheduling: use Schedule() for nodes that have VCPUCapacity set on profile.
+	// 8a. Explicit-capacity scheduling
 	usedResources := sumUsedResources(ctx, r.Client, allVMs.Items)
 	var explicitNodes []NodeInfo
 	for _, node := range eligible {
@@ -119,18 +133,17 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 		if err == nil {
 			return chosen, nil
 		}
-		// ErrUnschedulable from explicit-capacity nodes — fall through to fraction-based
-		// logic for any nodes without explicit profiles.
+		// ErrUnschedulable from explicit-capacity nodes — fall through to fraction-based.
 	}
 
-	// 5. Fetch global default fraction from ClusterImpConfig (best-effort)
+	// 8. Fetch global default fraction from ClusterImpConfig (best-effort)
 	globalFraction := 0.9
 	cfg := &impdevv1alpha1.ClusterImpConfig{}
 	if err := r.Get(ctx, client.ObjectKey{Name: "cluster"}, cfg); err == nil {
 		globalFraction = parseFraction(cfg.Spec.Capacity.DefaultFraction)
 	}
 
-	// 6. Apply capacity caps
+	// 9. Apply capacity caps
 	type candidate struct {
 		name    string
 		running int
@@ -139,19 +152,16 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 	for _, node := range eligible {
 		running := runningPerNode[node.Name]
 
-		// Fetch per-node profile (may be absent)
 		profile := &impdevv1alpha1.ClusterImpNodeProfile{}
 		err := r.Get(ctx, client.ObjectKey{Name: node.Name}, profile)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return "", err
 		}
 
-		// Hard count cap from profile.
 		if err == nil && profile.Spec.MaxImpVMs > 0 && int32(running) >= profile.Spec.MaxImpVMs { //nolint:gosec
 			continue
 		}
 
-		// Compute-based cap (only when class was resolved and node has allocatable).
 		if vmVCPU > 0 {
 			fraction := globalFraction
 			if err == nil && profile.Spec.CapacityFraction != "" {
@@ -172,7 +182,7 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 		return "", nil
 	}
 
-	// 7. Least-loaded first; alphabetical tie-break
+	// 10. Least-loaded first; alphabetical tie-break
 	sort.Slice(candidates, func(i, j int) bool {
 		if candidates[i].running != candidates[j].running {
 			return candidates[i].running < candidates[j].running
@@ -180,6 +190,71 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 		return candidates[i].name < candidates[j].name
 	})
 	return candidates[0].name, nil
+}
+
+// tolerationMatchesTaint checks whether a single toleration covers a taint.
+func tolerationMatchesTaint(t corev1.Toleration, taint corev1.Taint) bool {
+	// Effect must match, unless toleration effect is empty (matches all effects).
+	if t.Effect != "" && t.Effect != taint.Effect {
+		return false
+	}
+	if t.Operator == corev1.TolerationOpExists {
+		// Empty key = wildcard; matches any taint key.
+		return t.Key == "" || t.Key == taint.Key
+	}
+	// TolerationOpEqual (default)
+	return t.Key == taint.Key && t.Value == taint.Value
+}
+
+// toleratesTaint returns true if any toleration in the list covers the taint.
+func toleratesTaint(taint corev1.Taint, tolerations []corev1.Toleration) bool {
+	for _, t := range tolerations {
+		if tolerationMatchesTaint(t, taint) {
+			return true
+		}
+	}
+	return false
+}
+
+// nodeToleratedBy returns true when all NoSchedule and NoExecute taints on
+// the node are covered by tolerations. PreferNoSchedule is always allowed.
+// System node-lifecycle taints (node.kubernetes.io/*) are skipped because
+// their corresponding conditions are already enforced by filterSchedulable.
+func nodeToleratedBy(node corev1.Node, tolerations []corev1.Toleration) bool {
+	for _, taint := range node.Spec.Taints {
+		if taint.Effect == corev1.TaintEffectPreferNoSchedule {
+			continue
+		}
+		// Skip well-known system taints managed by the node lifecycle controller;
+		// filterSchedulable already gates on the underlying node conditions.
+		if strings.HasPrefix(taint.Key, "node.kubernetes.io/") {
+			continue
+		}
+		if !toleratesTaint(taint, tolerations) {
+			return false
+		}
+	}
+	return true
+}
+
+func filterByTolerations(nodes []corev1.Node, tolerations []corev1.Toleration) []corev1.Node {
+	var result []corev1.Node
+	for _, n := range nodes {
+		if nodeToleratedBy(n, tolerations) {
+			result = append(result, n)
+		}
+	}
+	return result
+}
+
+// resolveTolerations returns the additive union of class-level and VM-level tolerations.
+func resolveTolerations(vm *impdevv1alpha1.ImpVM, classSpec *impdevv1alpha1.ImpVMClassSpec) []corev1.Toleration {
+	var result []corev1.Toleration
+	if classSpec != nil {
+		result = append(result, classSpec.Tolerations...)
+	}
+	result = append(result, vm.Spec.Tolerations...)
+	return result
 }
 
 func filterByNodeSelector(nodes []corev1.Node, selector map[string]string) []corev1.Node {

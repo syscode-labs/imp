@@ -722,6 +722,128 @@ var _ = Describe("filterSchedulable", func() {
 	})
 })
 
+// ─── taint/toleration helpers ────────────────────────────────────────────────
+
+var _ = Describe("tolerationMatchesTaint", func() {
+	It("matches Equal operator with correct key+value+effect", func() {
+		tol := corev1.Toleration{Key: "env", Operator: corev1.TolerationOpEqual, Value: "prod", Effect: corev1.TaintEffectNoSchedule}
+		tai := corev1.Taint{Key: "env", Value: "prod", Effect: corev1.TaintEffectNoSchedule}
+		Expect(tolerationMatchesTaint(tol, tai)).To(BeTrue())
+	})
+
+	It("does not match Equal operator with wrong value", func() {
+		tol := corev1.Toleration{Key: "env", Operator: corev1.TolerationOpEqual, Value: "staging", Effect: corev1.TaintEffectNoSchedule}
+		tai := corev1.Taint{Key: "env", Value: "prod", Effect: corev1.TaintEffectNoSchedule}
+		Expect(tolerationMatchesTaint(tol, tai)).To(BeFalse())
+	})
+
+	It("matches Exists operator regardless of value", func() {
+		tol := corev1.Toleration{Key: "env", Operator: corev1.TolerationOpExists, Effect: corev1.TaintEffectNoSchedule}
+		tai := corev1.Taint{Key: "env", Value: "anything", Effect: corev1.TaintEffectNoSchedule}
+		Expect(tolerationMatchesTaint(tol, tai)).To(BeTrue())
+	})
+
+	It("matches Exists with empty key (wildcard)", func() {
+		tol := corev1.Toleration{Operator: corev1.TolerationOpExists}
+		tai := corev1.Taint{Key: "any-key", Value: "any-value", Effect: corev1.TaintEffectNoExecute}
+		Expect(tolerationMatchesTaint(tol, tai)).To(BeTrue())
+	})
+
+	It("does not match when effect differs", func() {
+		tol := corev1.Toleration{Key: "env", Operator: corev1.TolerationOpEqual, Value: "prod", Effect: corev1.TaintEffectNoExecute}
+		tai := corev1.Taint{Key: "env", Value: "prod", Effect: corev1.TaintEffectNoSchedule}
+		Expect(tolerationMatchesTaint(tol, tai)).To(BeFalse())
+	})
+
+	It("matches when toleration effect is empty (tolerates all effects)", func() {
+		tol := corev1.Toleration{Key: "env", Operator: corev1.TolerationOpEqual, Value: "prod"}
+		tai := corev1.Taint{Key: "env", Value: "prod", Effect: corev1.TaintEffectNoSchedule}
+		Expect(tolerationMatchesTaint(tol, tai)).To(BeTrue())
+	})
+})
+
+var _ = Describe("nodeToleratedBy", func() {
+	It("returns true when node has no taints", func() {
+		n := corev1.Node{}
+		Expect(nodeToleratedBy(n, nil)).To(BeTrue())
+	})
+
+	It("returns true when NoSchedule taint is tolerated", func() {
+		n := corev1.Node{Spec: corev1.NodeSpec{Taints: []corev1.Taint{
+			{Key: "key", Value: "val", Effect: corev1.TaintEffectNoSchedule},
+		}}}
+		tols := []corev1.Toleration{{Key: "key", Operator: corev1.TolerationOpEqual, Value: "val", Effect: corev1.TaintEffectNoSchedule}}
+		Expect(nodeToleratedBy(n, tols)).To(BeTrue())
+	})
+
+	It("returns false when NoSchedule taint is not tolerated", func() {
+		n := corev1.Node{Spec: corev1.NodeSpec{Taints: []corev1.Taint{
+			{Key: "key", Value: "val", Effect: corev1.TaintEffectNoSchedule},
+		}}}
+		Expect(nodeToleratedBy(n, nil)).To(BeFalse())
+	})
+
+	It("returns true when only PreferNoSchedule taint is present (always allowed)", func() {
+		n := corev1.Node{Spec: corev1.NodeSpec{Taints: []corev1.Taint{
+			{Key: "key", Value: "val", Effect: corev1.TaintEffectPreferNoSchedule},
+		}}}
+		Expect(nodeToleratedBy(n, nil)).To(BeTrue())
+	})
+
+	It("returns false when NoExecute taint is not tolerated", func() {
+		n := corev1.Node{Spec: corev1.NodeSpec{Taints: []corev1.Taint{
+			{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoExecute},
+		}}}
+		Expect(nodeToleratedBy(n, nil)).To(BeFalse())
+	})
+
+	It("returns true when only system node.kubernetes.io/* taints are present (handled by filterSchedulable)", func() {
+		n := corev1.Node{Spec: corev1.NodeSpec{Taints: []corev1.Taint{
+			{Key: "node.kubernetes.io/not-ready", Effect: corev1.TaintEffectNoSchedule},
+		}}}
+		Expect(nodeToleratedBy(n, nil)).To(BeTrue())
+	})
+})
+
+var _ = Describe("filterByTolerations", func() {
+	It("returns only nodes whose taints are fully tolerated", func() {
+		tols := []corev1.Toleration{{Key: "zone", Operator: corev1.TolerationOpEqual, Value: "us-east", Effect: corev1.TaintEffectNoSchedule}}
+		nodes := []corev1.Node{
+			{ObjectMeta: metav1.ObjectMeta{Name: "ok"}, Spec: corev1.NodeSpec{Taints: []corev1.Taint{
+				{Key: "zone", Value: "us-east", Effect: corev1.TaintEffectNoSchedule},
+			}}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "blocked"}, Spec: corev1.NodeSpec{Taints: []corev1.Taint{
+				{Key: "zone", Value: "eu-west", Effect: corev1.TaintEffectNoSchedule},
+			}}},
+			{ObjectMeta: metav1.ObjectMeta{Name: "clean"}},
+		}
+		result := filterByTolerations(nodes, tols)
+		Expect(result).To(HaveLen(2))
+		names := []string{result[0].Name, result[1].Name}
+		Expect(names).To(ConsistOf("ok", "clean"))
+	})
+})
+
+var _ = Describe("resolveTolerations", func() {
+	It("returns VM tolerations when classSpec is nil", func() {
+		vm := &impdevv1alpha1.ImpVM{}
+		vm.Spec.Tolerations = []corev1.Toleration{
+			{Key: "k", Operator: corev1.TolerationOpEqual, Value: "v"},
+		}
+		Expect(resolveTolerations(vm, nil)).To(HaveLen(1))
+	})
+
+	It("merges class and VM tolerations additively", func() {
+		vm := &impdevv1alpha1.ImpVM{}
+		vm.Spec.Tolerations = []corev1.Toleration{{Key: "vm-key"}}
+		classSpec := &impdevv1alpha1.ImpVMClassSpec{
+			Tolerations: []corev1.Toleration{{Key: "class-key"}},
+		}
+		result := resolveTolerations(vm, classSpec)
+		Expect(result).To(HaveLen(2))
+	})
+})
+
 // ─── syncStatus: node healthy path ───────────────────────────────────────────
 
 var _ = Describe("ImpVM syncStatus: node healthy", func() {
