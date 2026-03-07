@@ -41,6 +41,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
         - name: FC_KERNEL
           value: {{ .Values.agent.env.kernelPath | required "agent.env.kernelPath is required" | quote }}
         ports:

@@ -35,6 +35,8 @@ type ImpVMReconciler struct {
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=imp.dev,resources=impnetworks,verbs=get;list;watch
+// +kubebuilder:rbac:groups=imp.dev,resources=impnetworks/status,verbs=get;update;patch
 
 func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx).WithValues("node", r.NodeName)

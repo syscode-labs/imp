@@ -44,7 +44,13 @@ tests:
           content:
             apiGroups: ["imp.dev"]
             resources: [impnetworks]
-            verbs: [get]
+            verbs: [get, list, watch]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["imp.dev"]
+            resources: [impnetworks/status]
+            verbs: [get, update, patch]
       - contains:
           path: rules
           content:
