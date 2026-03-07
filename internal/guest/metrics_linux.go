@@ -55,6 +55,8 @@ func readCPUStat() (cpuStat, error) {
 
 // cpuAndIOWaitUsage samples /proc/stat twice 100ms apart and returns both
 // the CPU usage ratio and the iowait ratio (both 0.0–1.0).
+// cpuRatio is (total - idle) / total where idle excludes iowait, so cpuRatio
+// already includes iowait time; iowaitRatio is the iowait fraction of total time.
 func cpuAndIOWaitUsage() (cpuRatio, iowaitRatio float64, err error) {
 	s1, err := readCPUStat()
 	if err != nil {
@@ -64,6 +66,9 @@ func cpuAndIOWaitUsage() (cpuRatio, iowaitRatio float64, err error) {
 	s2, err := readCPUStat()
 	if err != nil {
 		return
+	}
+	if s2.total < s1.total || s2.idle < s1.idle || s2.iowait < s1.iowait {
+		return 0, 0, nil
 	}
 	total := float64(s2.total - s1.total)
 	if total == 0 {
