@@ -59,6 +59,13 @@ spec:
               ImpVMSpec defines the desired state of an ImpVM.
               Exactly one of TemplateRef or ClassRef must be set.
             properties:
+              ciliumLayer:
+                description: |-
+                  CiliumLayer is an optional OCI image whose filesystem layers are composited
+                  on top of the base image (after RunnerLayer if also set) before building
+                  the ext4 rootfs. Used to inject the cilium-agent binary for Cilium mesh
+                  enrollment.
+                type: string
               classRef:
                 description: ClassRef references an ImpVMClass directly. Mutually
                   exclusive with TemplateRef.
@@ -273,6 +280,15 @@ spec:
                       x-kubernetes-map-type: atomic
                   type: object
                 type: array
+              guestAgent:
+                description: GuestAgent controls guest agent injection. Overrides
+                  defaults when set.
+                properties:
+                  enabled:
+                    description: Enabled controls guest agent injection. Defaults
+                      to true when omitted.
+                    type: boolean
+                type: object
               image:
                 description: |-
                   Image is the OCI image used as the VM rootfs. CMD/ENTRYPOINT from the
@@ -284,6 +300,11 @@ spec:
                 enum:
                 - ephemeral
                 - persistent
+                type: string
+              networkGroup:
+                description: |-
+                  NetworkGroup places this VM in a named group within its ImpNetwork.
+                  Members of the same group share a subnet (see ImpNetworkSpec.groups).
                 type: string
               networkRef:
                 description: NetworkRef references the ImpNetwork to attach this VM
@@ -473,6 +494,74 @@ spec:
                         type: integer
                     type: object
                 type: object
+              restartPolicy:
+                description: |-
+                  RestartPolicy overrides restart policy for this specific VM.
+                  Resolved inheritance: class → template → VM (VM wins).
+                properties:
+                  backoff:
+                    description: Backoff configures exponential backoff between restart
+                      attempts.
+                    properties:
+                      initialDelay:
+                        default: 10s
+                        description: InitialDelay is the delay before the first restart
+                          attempt.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
+                        type: string
+                      maxDelay:
+                        default: 5m
+                        description: MaxDelay caps the exponential backoff.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
+                        type: string
+                      maxRetries:
+                        default: 5
+                        description: MaxRetries is the maximum number of restart attempts
+                          before OnExhaustion applies.
+                        format: int32
+                        type: integer
+                    type: object
+                  coolDownPeriod:
+                    default: 1h
+                    description: |-
+                      CoolDownPeriod is the duration before the retry counter resets automatically.
+                      Only used when OnExhaustion is "cool-down".
+                    pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
+                    type: string
+                  mode:
+                    default: in-place
+                    description: |-
+                      Mode controls where the VM restarts after failure.
+                      "in-place" restarts on the same node. "reschedule" re-runs the scheduler.
+                    enum:
+                    - in-place
+                    - reschedule
+                    type: string
+                  onExhaustion:
+                    default: fail
+                    description: OnExhaustion controls behaviour once Backoff.MaxRetries
+                      is exhausted.
+                    enum:
+                    - fail
+                    - manual-reset
+                    - cool-down
+                    type: string
+                type: object
+              runnerLayer:
+                description: |-
+                  RunnerLayer is an optional OCI image whose filesystem layers are composited
+                  on top of the base image before building the ext4 rootfs. Used to inject
+                  CI runner binaries (GitHub Actions runner, gitlab-runner, etc.) without
+                  modifying the base image.
+                type: string
+              snapshotRef:
+                description: |-
+                  SnapshotRef names the child ImpVMSnapshot execution to restore this VM from.
+                  When set, the agent configures Firecracker to boot from the snapshot files
+                  rather than a fresh image. The snapshot must be in the same namespace as the VM.
+                  Used by ImpWarmPool (pool members boot from elected base snapshot) and
+                  ImpVMMigration (target VM restores source VM state).
+                type: string
               templateRef:
                 description: TemplateRef references an ImpVMTemplate. Mutually exclusive
                   with ClassRef.
@@ -503,6 +592,12 @@ spec:
           status:
             description: ImpVMStatus reflects the observed state of an ImpVM.
             properties:
+              ciliumEndpointID:
+                description: |-
+                  CiliumEndpointID is set once the VM is enrolled in Cilium as an external workload.
+                  Empty if Cilium is absent or the VM has no network.
+                format: int64
+                type: integer
               conditions:
                 description: Conditions follow the standard k8s condition convention.
                 items:
@@ -563,8 +658,18 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              exhaustedAt:
+                description: ExhaustedAt is the time restart retries were exhausted
+                  (informational).
+                format: date-time
+                type: string
               ip:
                 description: IP is the IP address assigned to the VM by the ImpNetwork.
+                type: string
+              nextRetryAfter:
+                description: NextRetryAfter is the earliest time the controller will
+                  attempt the next restart.
+                format: date-time
                 type: string
               nodeName:
                 description: NodeName is the node where the VM is running.
@@ -579,12 +684,27 @@ spec:
                 - Terminating
                 - Succeeded
                 - Failed
+                - RetryExhausted
+                type: string
+              restartCount:
+                description: RestartCount is the cumulative number of times this VM
+                  has been restarted.
+                format: int32
+                type: integer
+              runningAt:
+                description: RunningAt is the time the VM first reached Running phase.
+                format: date-time
                 type: string
               runtimePID:
                 description: RuntimePID is the PID of the VM runtime process on the
                   node (informational).
                 format: int64
                 type: integer
+              scheduledAt:
+                description: ScheduledAt is the time the VM was first assigned to
+                  a node.
+                format: date-time
+                type: string
             type: object
         type: object
     served: true
