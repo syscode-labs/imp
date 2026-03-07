@@ -63,7 +63,7 @@ func TestVMMetrics_clearVMRemovesState(t *testing.T) {
 
 func TestVMMetrics_guestMetricsAppear(t *testing.T) {
 	mc, h := newTestCollector(t)
-	mc.SetGuestMetrics("default/test-vm", "test-node", "small", 0.5, 512*1024*1024, 1024*1024*1024)
+	mc.SetGuestMetrics("default/test-vm", "test-node", "small", 0.5, 0.1, 512*1024*1024, 1024*1024*1024)
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 	w := httptest.NewRecorder()
@@ -72,6 +72,7 @@ func TestVMMetrics_guestMetricsAppear(t *testing.T) {
 	body := w.Body.String()
 	for _, metric := range []string{
 		"imp_vm_guest_cpu_usage_ratio",
+		"imp_vm_guest_cpu_iowait_ratio",
 		"imp_vm_guest_memory_used_bytes",
 		"imp_vm_guest_disk_used_bytes",
 	} {

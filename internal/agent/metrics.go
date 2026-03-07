@@ -22,11 +22,12 @@ type vmStateEntry struct {
 }
 
 type guestData struct {
-	cpu   float64
-	mem   float64
-	disk  float64
-	node  string
-	class string
+	cpu    float64
+	iowait float64
+	mem    float64
+	disk   float64
+	node   string
+	class  string
 }
 
 // VMMetricsCollector holds per-VM metric state for the node agent.
@@ -86,6 +87,25 @@ func NewVMMetricsCollector(meter metric.Meter, gatherer prometheus.Gatherer) *VM
 	)
 
 	_, _ = meter.Float64ObservableGauge(
+		"imp_vm_guest_cpu_iowait_ratio",
+		metric.WithDescription("Guest VM CPU iowait ratio (0.0–1.0)."),
+		metric.WithFloat64Callback(func(_ context.Context, o metric.Float64Observer) error {
+			c.mu.RLock()
+			defer c.mu.RUnlock()
+			for key, d := range c.guestMetrics {
+				ns, name := splitKey(key)
+				o.Observe(d.iowait, metric.WithAttributes(
+					attribute.String("impvm", name),
+					attribute.String("namespace", ns),
+					attribute.String("node", d.node),
+					attribute.String("impvmclass", d.class),
+				))
+			}
+			return nil
+		}),
+	)
+
+	_, _ = meter.Float64ObservableGauge(
 		"imp_vm_guest_memory_used_bytes",
 		metric.WithDescription("Guest VM memory used bytes."),
 		metric.WithFloat64Callback(func(_ context.Context, o metric.Float64Observer) error {
@@ -134,15 +154,16 @@ func (c *VMMetricsCollector) SetVMState(key, state, node string) {
 }
 
 // SetGuestMetrics updates guest agent metrics for a VM.
-func (c *VMMetricsCollector) SetGuestMetrics(key, node, impvmclass string, cpu float64, mem, disk int64) {
+func (c *VMMetricsCollector) SetGuestMetrics(key, node, impvmclass string, cpu, iowait float64, mem, disk int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.guestMetrics[key] = &guestData{
-		cpu:   cpu,
-		mem:   float64(mem),
-		disk:  float64(disk),
-		node:  node,
-		class: impvmclass,
+		cpu:    cpu,
+		iowait: iowait,
+		mem:    float64(mem),
+		disk:   float64(disk),
+		node:   node,
+		class:  impvmclass,
 	}
 }
 
