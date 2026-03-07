@@ -332,9 +332,11 @@ func (r *ImpVMReconciler) syncFDB(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		return client.IgnoreNotFound(err)
 	}
 
+	netKey := impNet.Namespace + "/" + impNet.Name
+	bridgeName := network.BridgeName(netKey)
 	vni, ifaceName := network.VXLANParams(string(impNet.UID))
 
-	if err := r.Net.EnsureVXLAN(ctx, vni, ifaceName, r.NodeIP); err != nil {
+	if err := r.Net.EnsureVXLAN(ctx, vni, ifaceName, r.NodeIP, bridgeName); err != nil {
 		return err
 	}
 

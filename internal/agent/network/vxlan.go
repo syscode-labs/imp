@@ -11,11 +11,10 @@ import (
 	"github.com/vishvananda/netlink"
 )
 
-// EnsureVXLAN creates or reconciles the VXLAN interface for the given network.
-// vni is the VXLAN Network Identifier, ifaceName is the interface name to use,
-// and nodeIP is the local node's IP for VTEP termination.
-// Idempotent: no-ops if the interface already exists with matching configuration.
-func (m *LinuxNetManager) EnsureVXLAN(_ context.Context, vni uint32, ifaceName, nodeIP string) error {
+// EnsureVXLAN creates or reconciles the VXLAN interface for the given network,
+// attaches it to bridgeName, and brings it up. bridgeName must already exist
+// (call EnsureNetwork first). Idempotent.
+func (m *LinuxNetManager) EnsureVXLAN(_ context.Context, vni uint32, ifaceName, nodeIP, bridgeName string) error {
 	localIP := net.ParseIP(nodeIP)
 	if localIP == nil {
 		return fmt.Errorf("invalid nodeIP %q", nodeIP)
@@ -23,20 +22,23 @@ func (m *LinuxNetManager) EnsureVXLAN(_ context.Context, vni uint32, ifaceName, 
 
 	link, err := netlink.LinkByName(ifaceName)
 	if err == nil {
-		// Interface already exists — ensure it is up.
-		return netlink.LinkSetUp(link)
+		// Interface already exists — ensure it is up and attached to bridge.
+		if err := netlink.LinkSetUp(link); err != nil {
+			return err
+		}
+		return m.attachToBridge(link, bridgeName)
 	}
 
 	vx := &netlink.Vxlan{
 		LinkAttrs: netlink.LinkAttrs{
 			Name: ifaceName,
 		},
-		VxlanId:      int(vni),
-		SrcAddr:      localIP.To4(),
-		Port:         8472,
-		Learning:     false,
-		L2miss:       false,
-		L3miss:       false,
+		VxlanId:  int(vni),
+		SrcAddr:  localIP.To4(),
+		Port:     8472,
+		Learning: false,
+		L2miss:   false,
+		L3miss:   false,
 	}
 	if err := netlink.LinkAdd(vx); err != nil {
 		return fmt.Errorf("create vxlan %s (vni %d): %w", ifaceName, vni, err)
@@ -46,7 +48,27 @@ func (m *LinuxNetManager) EnsureVXLAN(_ context.Context, vni uint32, ifaceName, 
 	if err != nil {
 		return fmt.Errorf("fetch vxlan %s after create: %w", ifaceName, err)
 	}
-	return netlink.LinkSetUp(link)
+	if err := netlink.LinkSetUp(link); err != nil {
+		return err
+	}
+	return m.attachToBridge(link, bridgeName)
+}
+
+// attachToBridge attaches link to the bridge named bridgeName.
+// No-op if link is already a member of that bridge or bridgeName is empty.
+func (m *LinuxNetManager) attachToBridge(link netlink.Link, bridgeName string) error {
+	if bridgeName == "" {
+		return nil
+	}
+	bridge, err := netlink.LinkByName(bridgeName)
+	if err != nil {
+		return fmt.Errorf("get bridge %s: %w", bridgeName, err)
+	}
+	// Already a member?
+	if link.Attrs().MasterIndex == bridge.Attrs().Index {
+		return nil
+	}
+	return netlink.LinkSetMaster(link, bridge)
 }
 
 // SyncFDB reconciles the local FDB (forwarding database) on the VXLAN interface
