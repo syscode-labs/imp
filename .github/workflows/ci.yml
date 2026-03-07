@@ -13,31 +13,33 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: golangci-lint (includes gosec)
+      - name: Run lint checks (golangci-lint + gosec)
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.8.0
 
-      - name: Check generated manifests are up to date
+      - name: Verify generated manifests are committed
         run: |
           make manifests
           git diff --exit-code
 
-      - name: Install gitleaks
+      - name: Install gitleaks CLI
         run: |
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.2/gitleaks_8.24.2_linux_x64.tar.gz -o /tmp/gitleaks.tar.gz
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp
           sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
 
-      - name: Gitleaks secret scan
+      - name: Scan repository for secrets (gitleaks)
         run: gitleaks git --redact --verbose
 
   build:
@@ -47,19 +49,21 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Build operator
+      - name: Build operator binary
         env:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: "0"
         run: go build ./cmd/operator/...
 
-      - name: Build node agent
+      - name: Build node agent binary
         env:
           GOARCH: ${{ matrix.arch }}
           CGO_ENABLED: "0"
@@ -69,23 +73,25 @@ jobs:
     runs-on: ubuntu-latest
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Install setup-envtest
+      - name: Install envtest tooling
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
-      - name: Run tests
+      - name: Run unit/integration tests (non-E2E)
         run: |
           KUBEBUILDER_ASSETS=$(setup-envtest use -p path) \
             go test -race -coverprofile=coverage.out ./...
 
-      - name: Upload coverage
+      - name: Upload coverage report
         uses: codecov/codecov-action@v4
         with:
           files: coverage.out
@@ -95,18 +101,19 @@ jobs:
     runs-on: ${{ vars.E2E_RUNNER_LABEL }}
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Create Talos cluster
+      - name: Create Talos E2E cluster
         run: talosctl cluster create --provisioner docker --name imp-e2e
 
       - name: Apply CRDs
         run: kubectl apply -f config/crd/bases/
 
-      - name: Run E2E tests
+      - name: Run E2E suite
         run: go test -v -tags e2e ./test/e2e/...
 
-      - name: Cleanup
+      - name: Destroy Talos E2E cluster
         if: always()
         run: talosctl cluster destroy --name imp-e2e
 
@@ -115,28 +122,31 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, build]
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - uses: helm/kind-action@v1
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1
         with:
           cluster_name: imp-e2e
 
-      - name: Install Helm
+      - name: Install Helm CLI
         uses: azure/setup-helm@v4
 
-      - name: Build E2E images
+      - name: Build local E2E images
         run: |
           docker build -f Dockerfile.operator -t local/imp-operator:e2e .
           docker build -f Dockerfile.agent -t local/imp-agent:e2e .
 
-      - name: Load E2E images into Kind
+      - name: Load local E2E images into Kind
         run: |
           kind load docker-image local/imp-operator:e2e --name imp-e2e
           kind load docker-image local/imp-agent:e2e --name imp-e2e
 
-      - name: Run E2E tests
+      - name: Run smoke E2E suite
         run: go test -tags e2e ./test/e2e/... -v -timeout 15m -ginkgo.label-filter="smoke"
