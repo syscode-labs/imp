@@ -1,6 +1,9 @@
 package v1alpha1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // ImpVMClassSpec defines compute resources for a class of VMs.
 // All ImpVMs and ImpVMTemplates referencing this class inherit these values.
@@ -35,6 +38,12 @@ type ImpVMClassSpec struct {
 	// RestartPolicy configures automatic restart for persistent VMs using this class.
 	// +optional
 	RestartPolicy *RestartPolicy `json:"restartPolicy,omitempty"`
+
+	// Tolerations specify tolerations inherited by all VMs of this class.
+	// Merged additively with per-VM tolerations at schedule time.
+	// Same semantics as Pod.spec.tolerations.
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 }
 
 // +kubebuilder:object:root=true
