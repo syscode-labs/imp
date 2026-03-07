@@ -12,6 +12,79 @@
 - kubectl version v1.11.3+.
 - Access to a Kubernetes v1.11.3+ cluster.
 
+### OCI Golden Image + Firecracker E2E
+
+The repository includes two standalone IaC scripts:
+
+- `hack/oci-build-golden-image.sh`
+- `hack/oci-firecracker-e2e.sh`
+- `hack/packer-build-golden-image.sh` (Packer wrapper around `oci-build-golden-image.sh`)
+
+`hack/oci-build-golden-image.sh` is idempotent for missing OCI inputs:
+
+- auto-detects compartment and AD for `VM.Standard.E2.1.Micro` from limits
+- reuses an existing public subnet, or creates a minimal public VCN/subnet stack
+- prunes oldest `imp-fc-golden-*` images if custom image quota is full
+
+Build a minimal golden image:
+
+```sh
+IMP_OCI_PROFILE=syscode-api \
+IMP_OCI_COMPARTMENT_NAME=homelab \
+IMP_OCI_DOMAIN_NAME=homelab \
+OCI_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/builder.pub" \
+OCI_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/builder" \
+OCI_OUTPUT_ENV_FILE="$HOME/.config/imp/oci-golden.env" \
+hack/oci-build-golden-image.sh
+```
+
+Build the same golden image through Packer while reusing the script checks:
+
+```sh
+IMP_OCI_PROFILE=syscode-api \
+IMP_OCI_COMPARTMENT_NAME=homelab \
+IMP_OCI_DOMAIN_NAME=homelab \
+OCI_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/builder.pub" \
+OCI_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/builder" \
+OCI_OUTPUT_ENV_FILE="$HOME/.config/imp/oci-golden.env" \
+hack/packer-build-golden-image.sh
+```
+
+Run e2e using the generated image:
+
+```sh
+source "$HOME/.config/imp/oci-golden.env"
+IMP_OCI_PROFILE=syscode-api \
+IMP_OCI_COMPARTMENT_NAME=homelab \
+IMP_OCI_DOMAIN_NAME=homelab \
+OCI_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/builder.pub" \
+OCI_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/builder" \
+OCI_IMAGE_OCID="$OCI_IMAGE_OCID" \
+hack/oci-firecracker-e2e.sh
+```
+
+Or run e2e and let it build a golden image automatically when `OCI_IMAGE_OCID` is unset:
+
+```sh
+IMP_OCI_PROFILE=syscode-api \
+IMP_OCI_COMPARTMENT_NAME=homelab \
+IMP_OCI_DOMAIN_NAME=homelab \
+OCI_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/builder.pub" \
+OCI_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/builder" \
+hack/oci-firecracker-e2e.sh
+```
+
+Notes:
+
+- OCI requires boot volume size `>= 50` GB.
+- Golden image max size is controlled by `OCI_GOLDEN_MAX_GB` (default `50` GiB), and the script will fail/delete oversize images by default.
+- Optional: set `OCI_GOLDEN_ZERO_FILL=true` to zero free space before capture (slower, may reduce resulting image size).
+- If your SSH key is passphrase-protected, use an unencrypted key for automation or set `ALLOW_SSH_AGENT=true` with a loaded agent.
+- Targeting defaults can be set once with:
+  - `IMP_OCI_PROFILE` (recommended `syscode-api`)
+  - `IMP_OCI_COMPARTMENT_NAME` (recommended `homelab`)
+  - `IMP_OCI_DOMAIN_NAME` (recommended `homelab`)
+
 ### To Deploy on the cluster
 **Build and push your image to the location specified by `IMG`:**
 
