@@ -3,6 +3,14 @@
 #
 # hack/oci-build-golden-image.sh is used here only in --sanitize-only mode:
 # profile/env validation, free-tier checks, and OCI input resolution.
+#
+# Optional env:
+#   IMP_OCI_PROFILE              Preferred profile selector (default: syscode-api)
+#   IMP_OCI_COMPARTMENT_NAME     Preferred target compartment name (default: homelab)
+#   IMP_OCI_DOMAIN_NAME          Preferred target domain name (default: homelab; metadata only)
+#   OCI_OUTPUT_ENV_FILE          Output env file (default: $HOME/.config/imp/oci-golden.env)
+#   OCI_POST_BUILD_PRUNE_OLD_IMAGES  Default: true (prune old prefixed custom images after success)
+#   OCI_POST_BUILD_KEEP_IMAGES       Default: 1 (how many newest prefixed images to retain)
 
 set -euo pipefail
 
@@ -14,6 +22,53 @@ require_cmd() {
     echo "missing required command: $1" >&2
     exit 2
   }
+}
+
+log() {
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
+}
+
+prune_old_prefixed_images() {
+  local compartment_ocid="$1"
+  local keep_count="${OCI_POST_BUILD_KEEP_IMAGES:-1}"
+  local prefix="${OCI_IMAGE_NAME_PREFIX:-imp-fc-golden}"
+  local current_image_id="${OCI_IMAGE_OCID_CURRENT:-}"
+  local victims
+
+  if [[ "${OCI_POST_BUILD_PRUNE_OLD_IMAGES:-true}" != "true" ]]; then
+    return 0
+  fi
+  if ! [[ "${keep_count:-}" =~ ^[0-9]+$ ]]; then
+    echo "OCI_POST_BUILD_KEEP_IMAGES must be a non-negative integer" >&2
+    exit 2
+  fi
+
+  victims="$(
+    oci compute image list \
+      --compartment-id "${compartment_ocid}" \
+      --all \
+      --output json \
+      | jq -r --arg p "${prefix}-" --arg keep "${keep_count}" --arg keep_id "${current_image_id}" '
+          .data
+          | map(select(."lifecycle-state"=="AVAILABLE" and ."display-name" != null and (."display-name" | startswith($p))))
+          | sort_by(."time-created")
+          | reverse
+          | map(select((.id != $keep_id) or ($keep_id == "")))
+          | .[$keep|tonumber:]
+          | .[].id
+        '
+  )"
+  if [[ -z "${victims:-}" ]]; then
+    return 0
+  fi
+
+  while IFS= read -r victim; do
+    if [[ -z "${victim:-}" ]]; then
+      continue
+    fi
+    log "Post-build prune: deleting old custom image ${victim}"
+    oci compute image delete --image-id "${victim}" --force >/dev/null
+  done <<<"$victims"
 }
 
 require_cmd packer
@@ -102,6 +157,9 @@ if ! [[ "${IMAGE_SIZE_MBS:-}" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 IMAGE_SIZE_GB=$(( (IMAGE_SIZE_MBS + 1023) / 1024 ))
+OCI_IMAGE_OCID_CURRENT="$IMAGE_OCID"
+
+prune_old_prefixed_images "$OCI_COMPARTMENT_OCID"
 
 cat >"$OUTPUT_ENV_FILE" <<EOF
 OCI_COMPARTMENT_OCID=$OCI_COMPARTMENT_OCID
