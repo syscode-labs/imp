@@ -13,11 +13,13 @@ rules:
     - impnetworks
     - clusterimpconfigs
     - clusterimpnodeprofiles
-  verbs: [get, list, watch, update, patch]
+    - impvmrunnerpools
+  verbs: [get, list, watch, create, update, patch, delete]
 - apiGroups: ["imp.dev"]
   resources:
     - impvms/status
     - impnetworks/status
+    - impvmrunnerpools/status
   verbs: [get, update, patch]
 - apiGroups: ["imp.dev"]
   resources:
@@ -30,6 +32,9 @@ rules:
 - apiGroups: [""]
   resources: [events]
   verbs: [create, patch]
+- apiGroups: [""]
+  resources: [secrets]
+  verbs: [get]
 - apiGroups: ["apiextensions.k8s.io"]
   resources: [customresourcedefinitions]
   verbs: [get, list]

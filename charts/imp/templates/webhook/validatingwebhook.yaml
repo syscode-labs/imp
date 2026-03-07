@@ -14,6 +14,7 @@ webhooks:
     service:
       name: {{ include "imp.fullname" . }}-operator
       namespace: {{ .Release.Namespace }}
+      port: 9443
       path: /validate-imp-dev-v1alpha1-impvm
   rules:
   - apiGroups: ["imp.dev"]
@@ -31,6 +32,7 @@ webhooks:
     service:
       name: {{ include "imp.fullname" . }}-operator
       namespace: {{ .Release.Namespace }}
+      port: 9443
       path: /validate-imp-dev-v1alpha1-impvmclass
   rules:
   - apiGroups: ["imp.dev"]
@@ -48,6 +50,7 @@ webhooks:
     service:
       name: {{ include "imp.fullname" . }}-operator
       namespace: {{ .Release.Namespace }}
+      port: 9443
       path: /validate-imp-dev-v1alpha1-impvmtemplate
   rules:
   - apiGroups: ["imp.dev"]

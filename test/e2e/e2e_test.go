@@ -121,6 +121,75 @@ spec:
 		})
 	})
 
+	Context("RunnerPool demand", func() {
+		const (
+			templateName = "e2e-runner-template"
+			poolName     = "e2e-runner-pool"
+		)
+
+		AfterEach(func() {
+			_, _ = utils.Run(exec.Command("kubectl", "delete", "impvmrunnerpool", poolName, "-n", "default", "--ignore-not-found"))
+			_, _ = utils.Run(exec.Command("kubectl", "delete", "impvmtemplate", templateName, "-n", "default", "--ignore-not-found"))
+		})
+
+		It("scales from webhook demand when minIdle is zero", func() {
+			templateManifest := fmt.Sprintf(`
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMTemplate
+metadata:
+  name: %s
+  namespace: default
+spec:
+  classRef:
+    name: small
+  image: ghcr.io/syscode-labs/test:latest
+`, templateName)
+			tplApply := exec.Command("kubectl", "apply", "-f", "-")
+			tplApply.Stdin = strings.NewReader(templateManifest)
+			_, err := utils.Run(tplApply)
+			Expect(err).NotTo(HaveOccurred())
+
+			poolManifest := fmt.Sprintf(`
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMRunnerPool
+metadata:
+  name: %s
+  namespace: default
+  annotations:
+    imp.dev/runner-demand: "2"
+spec:
+  templateName: %s
+  platform:
+    type: github-actions
+    credentialsSecret: ignored-when-webhook-only
+  scaling:
+    minIdle: 0
+    maxConcurrent: 5
+  jobDetection:
+    webhook:
+      enabled: true
+`, poolName, templateName)
+			poolApply := exec.Command("kubectl", "apply", "-f", "-")
+			poolApply.Stdin = strings.NewReader(poolManifest)
+			_, err = utils.Run(poolApply)
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func(g Gomega) {
+				getCmd := exec.Command("kubectl", "get", "impvms", "-n", "default",
+					"-l", "imp.dev/runner-pool="+poolName,
+					"-o", "jsonpath={.items[*].metadata.name}")
+				out, getErr := utils.Run(getCmd)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				trimmed := strings.TrimSpace(out)
+				if trimmed == "" {
+					g.Expect(0).To(Equal(2))
+					return
+				}
+				g.Expect(len(strings.Fields(trimmed))).To(Equal(2))
+			}).Should(Succeed())
+		})
+	})
+
 	Context("Metrics", func() {
 		It("operator /metrics endpoint responds 200", func() {
 			pf := exec.Command("kubectl", "port-forward",

@@ -59,9 +59,15 @@ var _ = BeforeSuite(func() {
 	By("installing imp chart")
 	impCmd := exec.Command("helm", "install", helmRelease, "charts/imp",
 		"--namespace", namespace,
+		"--set", "operator.image.repository=local/imp-operator",
+		"--set", "operator.image.tag=e2e",
+		"--set", "agent.image.repository=local/imp-agent",
+		"--set", "agent.image.tag=e2e",
+		"--set", "agent.env.kernelPath=/var/lib/imp/vmlinux",
+		"--set-string", "agent.nodeSelector.imp\\.dev/no-agent=true",
 		"--set", "metrics.serviceMonitor.enabled=false",
 		"--set", "metrics.podMonitor.enabled=false",
-		"--wait", "--timeout", "2m")
+		"--wait", "--timeout", "10m")
 	_, err = utils.Run(impCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp failed")
 })
