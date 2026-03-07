@@ -214,4 +214,88 @@ spec:
 			}).Should(Succeed())
 		})
 	})
+
+	Context("Scheduling filter", Ordered, func() {
+		var nodeName string
+
+		BeforeAll(func() {
+			By("getting Kind node name")
+			out, err := utils.Run(exec.Command("kubectl", "get", "nodes",
+				"-o", "jsonpath={.items[0].metadata.name}"))
+			Expect(err).NotTo(HaveOccurred())
+			nodeName = strings.TrimSpace(out)
+			Expect(nodeName).NotTo(BeEmpty())
+
+			By("removing control-plane taint so scheduler can use the node")
+			_, _ = utils.Run(exec.Command("kubectl", "taint", "nodes", nodeName,
+				"node-role.kubernetes.io/control-plane:NoSchedule-"))
+
+			By("labeling node imp/enabled=true")
+			_, err = utils.Run(exec.Command("kubectl", "label", "node", nodeName,
+				"imp/enabled=true", "--overwrite"))
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		AfterAll(func() {
+			By("removing imp/enabled label")
+			_, _ = utils.Run(exec.Command("kubectl", "label", "node", nodeName,
+				"imp/enabled-"))
+		})
+
+		AfterEach(func() {
+			for _, name := range []string{"e2e-sched-cordon", "e2e-sched-notoleration", "e2e-sched-toleration"} {
+				_, _ = utils.Run(exec.Command("kubectl", "delete", "impvm", name,
+					"-n", "default", "--ignore-not-found"))
+			}
+			_, _ = utils.Run(exec.Command("kubectl", "uncordon", nodeName))
+			_, _ = utils.Run(exec.Command("kubectl", "taint", "nodes", nodeName,
+				"e2e-test=blocked:NoSchedule-"))
+		})
+
+		It("keeps VM Pending on cordoned node, schedules after uncordon", func() {
+			By("cordoning the node")
+			_, err := utils.Run(exec.Command("kubectl", "cordon", nodeName))
+			Expect(err).NotTo(HaveOccurred())
+
+			By("creating ImpVM e2e-sched-cordon")
+			manifest := `
+apiVersion: imp.dev/v1alpha1
+kind: ImpVM
+metadata:
+  name: e2e-sched-cordon
+  namespace: default
+spec:
+  classRef:
+    name: small
+  image: ghcr.io/syscode-labs/test:latest
+  lifecycle: ephemeral
+`
+			applyCmd := exec.Command("kubectl", "apply", "-f", "-")
+			applyCmd.Stdin = strings.NewReader(manifest)
+			_, err = utils.Run(applyCmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying VM stays Pending (no nodeName) while node is cordoned")
+			Consistently(func(g Gomega) {
+				getCmd := exec.Command("kubectl", "get", "impvm", "e2e-sched-cordon",
+					"-n", "default", "-o", "jsonpath={.spec.nodeName}")
+				out, getErr := utils.Run(getCmd)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(out)).To(BeEmpty())
+			}, 20*time.Second, time.Second).Should(Succeed())
+
+			By("uncordoning the node")
+			_, err = utils.Run(exec.Command("kubectl", "uncordon", nodeName))
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying VM gets scheduled (nodeName set)")
+			Eventually(func(g Gomega) {
+				getCmd := exec.Command("kubectl", "get", "impvm", "e2e-sched-cordon",
+					"-n", "default", "-o", "jsonpath={.spec.nodeName}")
+				out, getErr := utils.Run(getCmd)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty())
+			}).Should(Succeed())
+		})
+	})
 })
