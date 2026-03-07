@@ -24,9 +24,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
+
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/cnidetect"
 	"github.com/syscode-labs/imp/internal/controller"
+	"github.com/syscode-labs/imp/internal/telemetry"
 	webhookv1alpha1 "github.com/syscode-labs/imp/internal/webhook/v1alpha1"
 )
 
@@ -123,6 +126,14 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	mp, shutdownTelemetry, err := telemetry.SetupMeterProvider(context.Background(), ctrlmetrics.Registry)
+	if err != nil {
+		setupLog.Error(err, "unable to set up telemetry")
+		os.Exit(1)
+	}
+	defer func() { _ = shutdownTelemetry(context.Background()) }()
+	controller.InitMetrics(mp.Meter("imp.controller"))
 
 	cfg := ctrl.GetConfigOrDie()
 	mgr, err := ctrl.NewManager(cfg, ctrl.Options{
