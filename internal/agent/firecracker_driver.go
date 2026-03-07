@@ -559,7 +559,9 @@ func (d *FirecrackerDriver) pollMetrics(ctx context.Context, client pb.GuestAgen
 				logf.Log.V(1).Info("pollMetrics: guest agent unavailable", "vm", vmKey, "err", err)
 				continue
 			}
-			d.Metrics.SetGuestMetrics(vmKey, d.NodeName, className, resp.CpuUsageRatio, resp.MemoryUsedBytes, resp.DiskUsedBytes)
+			d.Metrics.SetGuestMetrics(vmKey, d.NodeName, className,
+				resp.CpuUsageRatio, resp.CpuIowaitRatio,
+				resp.MemoryUsedBytes, resp.DiskUsedBytes)
 		}
 	}
 }
