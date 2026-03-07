@@ -55,7 +55,7 @@ func handleProxyConn(proxy net.Conn, grpcAddr string) {
 	}
 	defer backend.Close()
 	go func() { io.Copy(backend, proxy) }() //nolint:errcheck
-	io.Copy(proxy, backend)                  //nolint:errcheck
+	io.Copy(proxy, backend)                 //nolint:errcheck
 }
 
 func TestVSOCKClient_callsGuestAgent(t *testing.T) {

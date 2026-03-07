@@ -7,9 +7,10 @@ import (
 	"context"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	pb "github.com/syscode-labs/imp/internal/proto/guest"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // ConditionPatcher is called when probe results produce updated conditions.

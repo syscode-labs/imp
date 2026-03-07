@@ -11,10 +11,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent/probe"
 	pb "github.com/syscode-labs/imp/internal/proto/guest"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 type fakeGuestAgent struct {
