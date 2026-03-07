@@ -3,11 +3,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -17,6 +19,7 @@ import (
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent"
 	"github.com/syscode-labs/imp/internal/agent/network"
+	"github.com/syscode-labs/imp/internal/telemetry"
 )
 
 func main() {
@@ -57,7 +60,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	mc := agent.NewVMMetricsCollector()
+	agentReg := prometheus.NewRegistry()
+	agentReg.MustRegister(
+		prometheus.NewGoCollector(),
+		prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
+	)
+	mp, shutdownTelemetry, err := telemetry.SetupMeterProvider(context.Background(), agentReg)
+	if err != nil {
+		log.Error(err, "unable to set up telemetry")
+		os.Exit(1)
+	}
+	defer func() { _ = shutdownTelemetry(context.Background()) }()
+	mc := agent.NewVMMetricsCollector(mp.Meter("imp.agent"), agentReg)
 
 	// IMP_STUB_DRIVER=true: StubDriver (CI, test clusters, no KVM needed).
 	// Otherwise: FirecrackerDriver (reads FC_BIN, FC_SOCK_DIR, FC_KERNEL env vars).
