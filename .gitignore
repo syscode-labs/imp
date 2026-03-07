@@ -33,3 +33,4 @@ dist/
 release/
 /agent
 /operator
+/guest-agent
