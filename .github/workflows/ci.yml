@@ -24,7 +24,7 @@ jobs:
       - name: golangci-lint (includes gosec)
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v2.8.0
 
       - name: Check generated manifests are up to date
         run: |
