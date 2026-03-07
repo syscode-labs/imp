@@ -22,6 +22,8 @@ linters:
         - name: exported
           disabled: true # doc comments not required yet
   exclusions:
+    paths:
+      - test/
     rules:
       - path: _test\.go
         linters:
@@ -37,7 +39,3 @@ formatters:
     goimports:
       local-prefixes:
         - github.com/syscode-labs/imp
-
-issues:
-  exclude-dirs:
-    - test
