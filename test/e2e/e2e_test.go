@@ -37,7 +37,7 @@ var _ = Describe("Imp operator", Ordered, func() {
 	SetDefaultEventuallyPollingInterval(time.Second)
 
 	Context("CRDs", func() {
-		It("installs all six CRDs", func() {
+		It("installs all nine CRDs", func() {
 			crds := []string{
 				"impvms.imp.dev",
 				"impvmclasses.imp.dev",
@@ -45,6 +45,9 @@ var _ = Describe("Imp operator", Ordered, func() {
 				"impnetworks.imp.dev",
 				"clusterimpconfigs.imp.dev",
 				"clusterimpnodeprofiles.imp.dev",
+				"impvmmigrations.imp.dev",
+				"impvmsnapshots.imp.dev",
+				"impvmrunnerpools.imp.dev",
 			}
 			for _, crd := range crds {
 				cmd := exec.Command("kubectl", "get", "crd", crd)
