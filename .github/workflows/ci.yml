@@ -128,5 +128,15 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
+      - name: Build E2E images
+        run: |
+          docker build -f Dockerfile.operator -t local/imp-operator:e2e .
+          docker build -f Dockerfile.agent -t local/imp-agent:e2e .
+
+      - name: Load E2E images into Kind
+        run: |
+          kind load docker-image local/imp-operator:e2e --name imp-e2e
+          kind load docker-image local/imp-agent:e2e --name imp-e2e
+
       - name: Run E2E tests
         run: go test -tags e2e ./test/e2e/... -v -timeout 15m -ginkgo.label-filter="smoke"
