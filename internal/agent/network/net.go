@@ -45,10 +45,10 @@ type NetManager interface {
 	// If egressIface is empty, the default-route interface is used.
 	RemoveNAT(ctx context.Context, subnet, egressIface string) error
 
-	// EnsureVXLAN creates or reconciles the VXLAN interface for the given network.
-	// vni is the VXLAN Network Identifier. ifaceName is the interface name to use.
-	// nodeIP is the local node's IP for VTEP termination.
-	EnsureVXLAN(ctx context.Context, vni uint32, ifaceName, nodeIP string) error
+	// EnsureVXLAN creates or reconciles the VXLAN interface for the given network,
+	// attaches it to bridgeName, and brings it up. bridgeName must already exist
+	// (call EnsureNetwork first). Idempotent.
+	EnsureVXLAN(ctx context.Context, vni uint32, ifaceName, nodeIP, bridgeName string) error
 
 	// SyncFDB reconciles the local FDB (forwarding database) on the VXLAN interface
 	// to match the provided entries. Entries not in the list are removed.
@@ -58,13 +58,14 @@ type NetManager interface {
 // StubNetManager is a no-op NetManager for tests.
 // It records calls so tests can verify interactions.
 type StubNetManager struct {
-	EnsureNetworkCalls []string // bridgeName
-	SetupVMCalls       []string // tapName
-	TeardownVMCalls    []string // tapName
-	EnsureNATCalls     []string // subnet
-	RemoveNATCalls     []string // subnet
-	EnsureVXLANCalls   []string // ifaceName
-	SyncFDBCalls       []string // ifaceName
+	EnsureNetworkCalls     []string // bridgeName
+	SetupVMCalls           []string // tapName
+	TeardownVMCalls        []string // tapName
+	EnsureNATCalls         []string // subnet
+	RemoveNATCalls         []string // subnet
+	EnsureVXLANCalls       []string // ifaceName
+	EnsureVXLANBridgeCalls []string // bridgeName
+	SyncFDBCalls           []string // ifaceName
 
 	EnsureNetworkErr error
 	SetupVMErr       error
@@ -100,8 +101,9 @@ func (s *StubNetManager) RemoveNAT(_ context.Context, subnet, _ string) error {
 	return s.RemoveNATErr
 }
 
-func (s *StubNetManager) EnsureVXLAN(_ context.Context, _ uint32, ifaceName, _ string) error {
+func (s *StubNetManager) EnsureVXLAN(_ context.Context, _ uint32, ifaceName, _, bridgeName string) error {
 	s.EnsureVXLANCalls = append(s.EnsureVXLANCalls, ifaceName)
+	s.EnsureVXLANBridgeCalls = append(s.EnsureVXLANBridgeCalls, bridgeName)
 	return s.EnsureVXLANErr
 }
 

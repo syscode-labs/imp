@@ -1,6 +1,7 @@
 package network_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/syscode-labs/imp/internal/agent/network"
@@ -61,5 +62,19 @@ func TestVXLANParams_distinct(t *testing.T) {
 	_, iface2 := network.VXLANParams("uid-bbb")
 	if iface1 == iface2 {
 		t.Errorf("different UIDs produced same ifaceName %q", iface1)
+	}
+}
+
+func TestStubNetManager_EnsureVXLAN_recordsBridgeName(t *testing.T) {
+	stub := &network.StubNetManager{}
+	_ = stub.EnsureVXLAN(context.Background(), 42, "impvx-abc", "10.0.0.1", "impbr-xyz")
+	if len(stub.EnsureVXLANCalls) != 1 {
+		t.Fatalf("expected 1 EnsureVXLAN call, got %d", len(stub.EnsureVXLANCalls))
+	}
+	if stub.EnsureVXLANCalls[0] != "impvx-abc" {
+		t.Errorf("expected ifaceName impvx-abc, got %q", stub.EnsureVXLANCalls[0])
+	}
+	if stub.EnsureVXLANBridgeCalls[0] != "impbr-xyz" {
+		t.Errorf("expected bridgeName impbr-xyz, got %q", stub.EnsureVXLANBridgeCalls[0])
 	}
 }
