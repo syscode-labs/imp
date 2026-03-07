@@ -64,6 +64,12 @@ type ImpVMSpec struct {
 	// +optional
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
+	// Tolerations allow this VM to be scheduled onto nodes with matching taints.
+	// Class tolerations are merged (additive union) with VM tolerations at schedule time.
+	// Same semantics as Pod.spec.tolerations.
+	// +optional
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+
 	// Env sets environment variables inside the VM via the guest agent.
 	// +optional
 	Env []corev1.EnvVar `json:"env,omitempty"`
