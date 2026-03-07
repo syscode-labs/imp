@@ -36,7 +36,7 @@ var _ = Describe("Imp operator", Ordered, func() {
 	SetDefaultEventuallyTimeout(2 * time.Minute)
 	SetDefaultEventuallyPollingInterval(time.Second)
 
-	Context("CRDs", func() {
+	Context("CRDs", Label("smoke"), func() {
 		It("installs all nine CRDs", func() {
 			crds := []string{
 				"impvms.imp.dev",
@@ -57,7 +57,7 @@ var _ = Describe("Imp operator", Ordered, func() {
 		})
 	})
 
-	Context("Operator", func() {
+	Context("Operator", Label("smoke"), func() {
 		It("starts and passes health checks", func() {
 			Eventually(func(g Gomega) {
 				cmd := exec.Command("kubectl", "get", "pods",
@@ -71,7 +71,7 @@ var _ = Describe("Imp operator", Ordered, func() {
 		})
 	})
 
-	Context("Webhooks", func() {
+	Context("Webhooks", Label("smoke"), func() {
 		It("rejects an ImpVM with missing classRef", func() {
 			manifest := `
 apiVersion: imp.dev/v1alpha1
@@ -89,7 +89,7 @@ spec:
 		})
 	})
 
-	Context("ImpVM CRUD", func() {
+	Context("ImpVM CRUD", Label("smoke"), func() {
 		const vmName = "e2e-smoke"
 		AfterEach(func() {
 			cleanCmd := exec.Command("kubectl", "delete", "impvm", vmName, "-n", "default", "--ignore-not-found")
@@ -124,7 +124,7 @@ spec:
 		})
 	})
 
-	Context("RunnerPool demand", func() {
+	Context("RunnerPool demand", Label("smoke"), func() {
 		const (
 			templateName = "e2e-runner-template"
 			poolName     = "e2e-runner-pool"
@@ -193,7 +193,7 @@ spec:
 		})
 	})
 
-	Context("Cilium IPAM", func() {
+	Context("Cilium IPAM", Label("nightly-cilium"), func() {
 		const (
 			poolName    = "e2e-imp-pool"
 			networkName = "e2e-cilium-ipam-net"
@@ -259,7 +259,7 @@ spec:
 		})
 	})
 
-	Context("Metrics", func() {
+	Context("Metrics", Label("smoke"), func() {
 		It("operator /metrics endpoint responds 200", func() {
 			pf := exec.Command("kubectl", "port-forward",
 				fmt.Sprintf("svc/%s-operator", helmRelease),
@@ -281,7 +281,7 @@ spec:
 		})
 	})
 
-	Context("Scheduling filter", Ordered, func() {
+	Context("Scheduling filter", Label("smoke"), Ordered, func() {
 		var nodeName string
 
 		BeforeAll(func() {

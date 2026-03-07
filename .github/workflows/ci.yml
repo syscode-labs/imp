@@ -125,4 +125,4 @@ jobs:
         uses: azure/setup-helm@v4
 
       - name: Run E2E tests
-        run: go test -tags e2e ./test/e2e/... -v -timeout 15m
+        run: go test -tags e2e ./test/e2e/... -v -timeout 15m -ginkgo.label-filter="smoke"

@@ -53,9 +53,10 @@ jobs:
       - name: Run E2E tests (retry once)
         run: |
           set -euo pipefail
-          if ! go test -tags e2e ./test/e2e/... -v -timeout 45m; then
+          FILTER='smoke || nightly-cilium'
+          if ! go test -tags e2e ./test/e2e/... -v -timeout 45m -ginkgo.label-filter="${FILTER}"; then
             echo "First run failed; retrying once..."
-            go test -tags e2e ./test/e2e/... -v -timeout 45m
+            go test -tags e2e ./test/e2e/... -v -timeout 45m -ginkgo.label-filter="${FILTER}"
           fi
 
       - name: Collect diagnostics on failure
