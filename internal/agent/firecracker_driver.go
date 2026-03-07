@@ -642,12 +642,32 @@ func (d *FirecrackerDriver) applySnapshotBoot(ctx context.Context, vm *impdevv1a
 	return nil
 }
 
-// IsAlive is a placeholder — real implementation in Task 2.
-func (d *FirecrackerDriver) IsAlive(_ int64) bool {
-	return false
+// IsAlive reports whether the process with the given PID is still running.
+// Uses kill(pid, 0) — succeeds if the process exists (even if zombie).
+func (d *FirecrackerDriver) IsAlive(pid int64) bool {
+	p, err := os.FindProcess(int(pid))
+	if err != nil {
+		return false
+	}
+	return p.Signal(syscall.Signal(0)) == nil
 }
 
-// Reattach is a placeholder — real implementation in Task 2.
-func (d *FirecrackerDriver) Reattach(_ context.Context, _ *impdevv1alpha1.ImpVM) error {
-	return fmt.Errorf("not implemented")
+// Reattach re-registers an already-running Firecracker VM into the driver's
+// procs map without launching a new process. Called after an agent restart when
+// the Firecracker process survived but the in-memory procs map was lost.
+// Returns an error if the VM's API socket is not present on disk (which would
+// mean the PID has been reused by a different process).
+func (d *FirecrackerDriver) Reattach(_ context.Context, vm *impdevv1alpha1.ImpVM) error {
+	sock := d.socketPath(vm)
+	if _, err := os.Stat(sock); err != nil {
+		return fmt.Errorf("reattach %s: socket %s not found — PID may be reused: %w",
+			vmKey(vm), sock, err)
+	}
+	d.mu.Lock()
+	d.procs[vmKey(vm)] = &fcProc{
+		pid:    vm.Status.RuntimePID,
+		socket: sock,
+	}
+	d.mu.Unlock()
+	return nil
 }

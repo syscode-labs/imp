@@ -31,6 +31,9 @@ type ImpVMReconciler struct {
 	Metrics *VMMetricsCollector
 	// Net is optional. When non-nil, used for VXLAN/FDB operations after VTEP sync.
 	Net network.NetManager
+	// Alloc is the in-memory IP allocator. When non-nil, Reserve is called during
+	// lazy reattach to restore IP state after agent restart.
+	Alloc *network.Allocator
 }
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;update;patch
@@ -137,6 +140,32 @@ func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.
 
 	if state.Running {
 		return ctrl.Result{}, nil // watch-driven steady state
+	}
+
+	// Inspect returned Running=false. Before declaring the VM dead, check whether
+	// the Firecracker process is still alive (procs map may be empty after an
+	// agent pod restart). If PID is alive, reattach and restore allocator state.
+	if pid := vm.Status.RuntimePID; pid > 0 && r.Driver.IsAlive(pid) {
+		if err := r.Driver.Reattach(ctx, vm); err != nil {
+			log.Error(err, "Reattach failed — treating VM as dead")
+		} else {
+			// Restore in-memory IP allocation so Release works correctly later.
+			if r.Alloc != nil && vm.Spec.NetworkRef != nil && vm.Status.IP != "" {
+				netKey := vm.Namespace + "/" + vm.Spec.NetworkRef.Name
+				r.Alloc.Reserve(netKey, vm.Status.IP)
+			}
+			// Re-publish VTEP entry and sync FDB in case they were lost.
+			if vm.Spec.NetworkRef != nil && vm.Status.IP != "" && r.NodeIP != "" {
+				macAddr := network.MACAddr(vm.Namespace + "/" + vm.Name)
+				if err := r.registerVTEP(ctx, vm, vm.Status.IP, macAddr); err != nil {
+					log.Error(err, "registerVTEP after reattach failed")
+				} else if err := r.syncFDB(ctx, vm); err != nil {
+					log.Error(err, "syncFDB after reattach failed")
+				}
+			}
+			log.Info("VM reattached after agent restart", "pid", pid)
+			return ctrl.Result{}, nil
+		}
 	}
 
 	log.Info("VM process exited", "lifecycle", vm.Spec.Lifecycle)

@@ -97,6 +97,11 @@ func main() {
 		log.Info("Using FirecrackerDriver")
 	}
 
+	var alloc *network.Allocator
+	if fcDrv, ok := driver.(*agent.FirecrackerDriver); ok {
+		alloc = fcDrv.Alloc
+	}
+
 	if err := (&agent.ImpVMReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
@@ -105,6 +110,7 @@ func main() {
 		Driver:   driver,
 		Metrics:  mc,
 		Net:      prodNet,
+		Alloc:    alloc,
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "Unable to set up ImpVMReconciler")
 		os.Exit(1)
