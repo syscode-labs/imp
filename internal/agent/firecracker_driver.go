@@ -586,6 +586,10 @@ func (d *FirecrackerDriver) Snapshot(ctx context.Context, vm *impdevv1alpha1.Imp
 		return SnapshotResult{}, fmt.Errorf("VM %s is not running on this node", key)
 	}
 
+	if proc.machine == nil {
+		return SnapshotResult{}, fmt.Errorf("cannot snapshot VM %s: no machine handle (started by a previous agent process)", key)
+	}
+
 	log := logf.FromContext(ctx).WithValues("vm", key)
 
 	// Pause the VM. Always resume via defer — VM must never be left paused.
@@ -664,6 +668,14 @@ func (d *FirecrackerDriver) Reattach(_ context.Context, vm *impdevv1alpha1.ImpVM
 			vmKey(vm), sock, err)
 	}
 	d.mu.Lock()
+	// Note: the reattached fcProc has nil netInfo and machine.
+	// If the process later dies and Inspect cleans it up, the allocator
+	// entry will not be released via Stop (which checks netInfo). The
+	// reconciler's handleRunning will detect the dead PID via IsAlive=false
+	// on the next reconcile and call finishFailed, which does not release
+	// the allocator either. This is an accepted limitation: the IP remains
+	// reserved until the agent restarts again and the VM is definitively
+	// dead (PID gone and socket absent).
 	d.procs[vmKey(vm)] = &fcProc{
 		pid:    vm.Status.RuntimePID,
 		socket: sock,
