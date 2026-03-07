@@ -11,8 +11,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	pb "github.com/syscode-labs/imp/internal/proto/guest"
 	"github.com/syscode-labs/imp/internal/guest"
+	pb "github.com/syscode-labs/imp/internal/proto/guest"
 )
 
 func startTestServer(t *testing.T) pb.GuestAgentClient {
