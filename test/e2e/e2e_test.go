@@ -297,5 +297,75 @@ spec:
 				g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty())
 			}).Should(Succeed())
 		})
+
+		It("keeps VM Pending with unmatched taint, schedules VM with matching toleration", func() {
+			By("adding custom taint e2e-test=blocked:NoSchedule to node")
+			_, err := utils.Run(exec.Command("kubectl", "taint", "nodes", nodeName,
+				"e2e-test=blocked:NoSchedule"))
+			Expect(err).NotTo(HaveOccurred())
+
+			By("creating ImpVM without toleration")
+			noTolManifest := `
+apiVersion: imp.dev/v1alpha1
+kind: ImpVM
+metadata:
+  name: e2e-sched-notoleration
+  namespace: default
+spec:
+  classRef:
+    name: small
+  image: ghcr.io/syscode-labs/test:latest
+  lifecycle: ephemeral
+`
+			applyCmd := exec.Command("kubectl", "apply", "-f", "-")
+			applyCmd.Stdin = strings.NewReader(noTolManifest)
+			_, err = utils.Run(applyCmd)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying VM without toleration stays Pending")
+			Consistently(func(g Gomega) {
+				getCmd := exec.Command("kubectl", "get", "impvm", "e2e-sched-notoleration",
+					"-n", "default", "-o", "jsonpath={.spec.nodeName}")
+				out, getErr := utils.Run(getCmd)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(out)).To(BeEmpty())
+			}, 20*time.Second, time.Second).Should(Succeed())
+
+			By("deleting VM without toleration")
+			_, _ = utils.Run(exec.Command("kubectl", "delete", "impvm", "e2e-sched-notoleration",
+				"-n", "default", "--ignore-not-found"))
+
+			By("creating ImpVM with matching toleration")
+			tolManifest := `
+apiVersion: imp.dev/v1alpha1
+kind: ImpVM
+metadata:
+  name: e2e-sched-toleration
+  namespace: default
+spec:
+  classRef:
+    name: small
+  image: ghcr.io/syscode-labs/test:latest
+  lifecycle: ephemeral
+  tolerations:
+    - key: e2e-test
+      operator: Equal
+      value: blocked
+      effect: NoSchedule
+`
+			applyCmd2 := exec.Command("kubectl", "apply", "-f", "-")
+			applyCmd2.Stdin = strings.NewReader(tolManifest)
+			_, err = utils.Run(applyCmd2)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying VM with matching toleration gets scheduled")
+			Eventually(func(g Gomega) {
+				getCmd := exec.Command("kubectl", "get", "impvm", "e2e-sched-toleration",
+					"-n", "default", "-o", "jsonpath={.spec.nodeName}")
+				out, getErr := utils.Run(getCmd)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty())
+			}).Should(Succeed())
+		})
 	})
 })
