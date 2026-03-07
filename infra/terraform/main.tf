@@ -47,9 +47,12 @@ resource "oci_identity_user_group_membership" "homelab_api_membership" {
 resource "oci_identity_policy" "homelab_api_read_policy" {
   compartment_id = var.tenancy_ocid
   name           = var.homelab_api_policy_name
-  description    = "Read policy for homelab API user"
+  description    = "Least-privilege policy for homelab API automation"
   statements = [
     "Allow group ${var.homelab_api_group_name} to inspect compartments in tenancy",
-    "Allow group ${var.homelab_api_group_name} to read all-resources in compartment ${var.homelab_compartment_name}",
+    "Allow group ${var.homelab_api_group_name} to inspect limits in tenancy",
+    "Allow group ${var.homelab_api_group_name} to manage instance-family in compartment syscode-labs:${var.homelab_compartment_name}",
+    "Allow group ${var.homelab_api_group_name} to manage virtual-network-family in compartment syscode-labs:${var.homelab_compartment_name}",
+    "Allow group ${var.homelab_api_group_name} to manage volume-family in compartment syscode-labs:${var.homelab_compartment_name}",
   ]
 }

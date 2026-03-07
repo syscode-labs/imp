@@ -10,6 +10,13 @@ This directory captures the OCI IAM/domain setup done manually for `homelab`:
 - Policy: `homelab-api-read-policy`
 - User-group membership for `homelab-api`
 
+Current live policy statements:
+- `Allow group homelab-api-readers to inspect compartments in tenancy`
+- `Allow group homelab-api-readers to inspect limits in tenancy`
+- `Allow group homelab-api-readers to manage instance-family in compartment syscode-labs:homelab`
+- `Allow group homelab-api-readers to manage virtual-network-family in compartment syscode-labs:homelab`
+- `Allow group homelab-api-readers to manage volume-family in compartment syscode-labs:homelab`
+
 ## Prerequisites
 
 - Terraform >= 1.5
@@ -36,10 +43,9 @@ terraform import -var "tenancy_ocid=<your-tenancy-ocid>" \
   oci_identity_compartment.homelab \
   ocid1.compartment.oc1..aaaaaaaao6uhlquzyyxx5t4h3xnduflnughzm6xasuo2pag3o5hiwkqwcpaq
 
-# Replace <domain-ocid> with the domain OCID from OCI Console if needed.
 terraform import -var "tenancy_ocid=<your-tenancy-ocid>" \
   oci_identity_domain.homelab \
-  <domain-ocid>
+  ocid1.domain.oc1..aaaaaaaa3vt4s62f6ozzvbl4dxzro6nfwdwzbd54vrlufg5me7zc7enrheba
 
 terraform import -var "tenancy_ocid=<your-tenancy-ocid>" \
   oci_identity_user.homelab_api \
@@ -49,10 +55,9 @@ terraform import -var "tenancy_ocid=<your-tenancy-ocid>" \
   oci_identity_group.homelab_api_readers \
   ocid1.group.oc1..aaaaaaaav4w5fmoaz5slsmsiihedyaxz42jnkhvcm35ezfqyuc4co4p42ecq
 
-# Replace with policy OCID once created/imported.
 terraform import -var "tenancy_ocid=<your-tenancy-ocid>" \
   oci_identity_policy.homelab_api_read_policy \
-  <policy-ocid>
+  ocid1.policy.oc1..aaaaaaaa7ysr6kbvussx64mtrh4zvzc4p3x4ecm5t2dle5gx5mmostwayziq
 ```
 
 For `oci_identity_api_key` and `oci_identity_user_group_membership`, import IDs are provider-specific and can be resolved after listing those resources via OCI CLI.

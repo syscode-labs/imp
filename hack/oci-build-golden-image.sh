@@ -11,6 +11,7 @@
 #   OCI_CLI_PROFILE          OCI CLI profile to use (alternative to OCI_PROFILE)
 #   IMP_OCI_COMPARTMENT_NAME Preferred target compartment name (default: homelab)
 #   IMP_OCI_DOMAIN_NAME      Preferred target domain name (default: homelab; metadata only)
+#   OCI_TENANCY_OCID         Tenancy OCID override (auto-detected from OCI profile if omitted)
 #   OCI_COMPARTMENT_OCID      Auto-detected if omitted
 #   OCI_AVAILABILITY_DOMAIN   Auto-detected if omitted
 #   OCI_SUBNET_OCID           Auto-detected/created if omitted
@@ -42,6 +43,9 @@
 #   OCI_COMPARTMENT_OCID=... OCI_AVAILABILITY_DOMAIN=... OCI_SUBNET_OCID=... \
 #   OCI_SSH_PUBLIC_KEY_FILE=~/.ssh/id_ed25519.pub OCI_SSH_PRIVATE_KEY_FILE=~/.ssh/id_ed25519 \
 #   hack/oci-build-golden-image.sh
+#
+#   # Preflight/sanitize mode for packer wrapper
+#   hack/oci-build-golden-image.sh --sanitize-only
 
 set -euo pipefail
 
@@ -157,6 +161,29 @@ resolve_compartment() {
   log "Auto-detected OCI_COMPARTMENT_OCID=$OCI_COMPARTMENT_OCID"
 }
 
+resolve_tenancy_ocid() {
+  if [[ -n "${OCI_TENANCY_OCID:-}" ]]; then
+    return 0
+  fi
+  OCI_TENANCY_OCID="$(
+    awk -v p="$OCI_PROFILE" '
+      BEGIN { in_profile=0 }
+      $0 ~ "^\\[" p "\\]$" { in_profile=1; next }
+      $0 ~ "^\\[" && in_profile { in_profile=0 }
+      in_profile && $0 ~ /^[[:space:]]*tenancy[[:space:]]*=/ {
+        split($0, a, "=")
+        gsub(/[[:space:]]/, "", a[2])
+        print a[2]
+        exit
+      }
+    ' "${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}"
+  )"
+  if [[ -z "${OCI_TENANCY_OCID:-}" ]]; then
+    echo "could not auto-detect OCI_TENANCY_OCID from OCI profile/config" >&2
+    exit 2
+  fi
+}
+
 resolve_availability_domain() {
   if [[ -n "${OCI_AVAILABILITY_DOMAIN:-}" ]]; then
     return 0
@@ -164,9 +191,10 @@ resolve_availability_domain() {
 
   local tenancy_ocid ad_name
   if [[ "${OCI_SHAPE:-VM.Standard.E2.1.Micro}" == "VM.Standard.E2.1.Micro" ]]; then
+    local limits_json
+    limits_json="$(oci limits value list --all --service-name compute --compartment-id "$OCI_TENANCY_OCID" --output json 2>/dev/null || echo '{"data":[]}')"
     ad_name="$(
-      oci limits value list --all --service-name compute --compartment-id "$OCI_COMPARTMENT_OCID" --output json \
-        | jq -r '
+      printf '%s' "$limits_json" | jq -r '
           .data
           | map(select(.name=="vm-standard-e2-1-micro-count" and ((.value // 0) > 0) and ."availability-domain" != null))
           | sort_by(.value)
@@ -395,9 +423,10 @@ enforce_free_tier_guardrails() {
   if ! [[ "${current:-}" =~ ^[0-9]+$ ]]; then
     current=0
   fi
+  local limits_json
+  limits_json="$(oci limits value list --all --service-name compute --compartment-id "$OCI_TENANCY_OCID" --output json 2>/dev/null || echo '{"data":[]}')"
   limit_from_oci="$(
-    oci limits value list --all --service-name compute --compartment-id "$OCI_COMPARTMENT_OCID" --output json \
-      | jq -r --arg ad "$OCI_AVAILABILITY_DOMAIN" '
+    printf '%s' "$limits_json" | jq -r --arg ad "$OCI_AVAILABILITY_DOMAIN" '
         .data
         | map(select(.name=="vm-standard-e2-1-micro-count" and ."availability-domain"==$ad))
         | .[0].value // empty
@@ -488,9 +517,10 @@ prune_custom_images_if_needed() {
   local prefix
   prefix="${OCI_IMAGE_NAME_PREFIX:-imp-fc-golden}"
 
+  local limits_json
+  limits_json="$(oci limits value list --all --service-name compute --compartment-id "$OCI_TENANCY_OCID" --output json 2>/dev/null || echo '{"data":[]}')"
   limit="$(
-    oci limits value list --all --service-name compute --compartment-id "$OCI_COMPARTMENT_OCID" --output json \
-      | jq -r '
+    printf '%s' "$limits_json" | jq -r '
         .data
         | map(select(.name=="custom-image-count"))
         | .[0].value // empty
@@ -600,15 +630,27 @@ resolve_smallest_base_image() {
 }
 
 main() {
+  local sanitize_only=false
+  if [[ "${1:-}" == "--sanitize-only" ]]; then
+    sanitize_only=true
+  elif [[ $# -gt 0 ]]; then
+    echo "unknown argument: $1" >&2
+    exit 2
+  fi
+
   require_cmd oci
   require_cmd jq
-  require_cmd ssh
-  require_cmd ssh-keygen
-  require_cmd curl
+  if [[ "$sanitize_only" != "true" ]]; then
+    require_cmd ssh
+    require_cmd ssh-keygen
+    require_cmd curl
+  fi
   resolve_oci_profile
   resolve_oci_auth_mode
-  require_env OCI_SSH_PUBLIC_KEY_FILE
-  require_env OCI_SSH_PRIVATE_KEY_FILE
+  if [[ "$sanitize_only" != "true" ]]; then
+    require_env OCI_SSH_PUBLIC_KEY_FILE
+    require_env OCI_SSH_PRIVATE_KEY_FILE
+  fi
 
   OCI_SHAPE="${OCI_SHAPE:-VM.Standard.E2.1.Micro}"
   OCI_ASSIGN_PUBLIC_IP="${OCI_ASSIGN_PUBLIC_IP:-true}"
@@ -627,13 +669,15 @@ main() {
   OCI_COMPARTMENT_NAME="${OCI_COMPARTMENT_NAME:-${IMP_OCI_COMPARTMENT_NAME:-homelab}}"
   OCI_DOMAIN_NAME="${OCI_DOMAIN_NAME:-${IMP_OCI_DOMAIN_NAME:-homelab}}"
 
-  if [[ ! -f "$OCI_SSH_PUBLIC_KEY_FILE" ]]; then
-    echo "SSH public key file not found: $OCI_SSH_PUBLIC_KEY_FILE" >&2
-    exit 2
-  fi
-  if [[ ! -f "$OCI_SSH_PRIVATE_KEY_FILE" ]]; then
-    echo "SSH private key file not found: $OCI_SSH_PRIVATE_KEY_FILE" >&2
-    exit 2
+  if [[ "$sanitize_only" != "true" ]]; then
+    if [[ ! -f "$OCI_SSH_PUBLIC_KEY_FILE" ]]; then
+      echo "SSH public key file not found: $OCI_SSH_PUBLIC_KEY_FILE" >&2
+      exit 2
+    fi
+    if [[ ! -f "$OCI_SSH_PRIVATE_KEY_FILE" ]]; then
+      echo "SSH private key file not found: $OCI_SSH_PRIVATE_KEY_FILE" >&2
+      exit 2
+    fi
   fi
   if (( OCI_BOOT_VOLUME_GB < 50 )); then
     echo "OCI_BOOT_VOLUME_GB must be >= 50 for OCI boot volumes" >&2
@@ -641,6 +685,7 @@ main() {
   fi
 
   resolve_compartment
+  resolve_tenancy_ocid
   resolve_availability_domain
   ensure_subnet
   log "Using target domain metadata: OCI_DOMAIN_NAME=$OCI_DOMAIN_NAME"
@@ -649,12 +694,11 @@ main() {
   require_env OCI_AVAILABILITY_DOMAIN
   require_env OCI_SUBNET_OCID
 
-  ensure_noninteractive_ssh_key
   enforce_free_tier_guardrails
-  prune_custom_images_if_needed
-
-  local required_go
-  required_go="$(resolve_required_go)"
+  if [[ "$sanitize_only" != "true" ]]; then
+    ensure_noninteractive_ssh_key
+    prune_custom_images_if_needed
+  fi
 
   local base_id base_name base_size_gb
   local base_line
@@ -672,6 +716,24 @@ main() {
   log "Base image size (reported): ${base_size_gb}GiB"
   log "Builder boot volume target: ${OCI_BOOT_VOLUME_GB}GiB"
   log "Golden image max allowed size: ${OCI_GOLDEN_MAX_GB}GiB"
+
+  if [[ "$sanitize_only" == "true" ]]; then
+    local required_go
+    required_go="$(resolve_required_go)"
+    cat <<EOF
+OCI_COMPARTMENT_OCID=$OCI_COMPARTMENT_OCID
+OCI_AVAILABILITY_DOMAIN=$OCI_AVAILABILITY_DOMAIN
+OCI_SUBNET_OCID=$OCI_SUBNET_OCID
+OCI_BASE_IMAGE_OCID=$base_id
+OCI_BASE_IMAGE_NAME=$base_name
+OCI_BASE_IMAGE_SIZE_GB=$base_size_gb
+OCI_REQUIRED_GO=$required_go
+EOF
+    return 0
+  fi
+
+  local required_go
+  required_go="$(resolve_required_go)"
 
   local launch_deadline
   launch_deadline=$(( $(date +%s) + OCI_WAIT_SECONDS ))
@@ -822,11 +884,16 @@ REMOTE_EOF
     --query 'data.id' \
     --raw-output)"
 
-  local image_size_gb
-  image_size_gb="$(oci compute image get \
+  local image_size_mbs image_size_gb
+  image_size_mbs="$(oci compute image get \
     --image-id "$image_id" \
-    --query '((data."size-in-mbs")/1024)' \
-    --raw-output | awk '{printf "%.0f\n", $1}')"
+    --query 'data."size-in-mbs"' \
+    --raw-output)"
+  if ! [[ "${image_size_mbs:-}" =~ ^[0-9]+$ ]]; then
+    echo "could not parse image size in MiB for image: $image_id" >&2
+    exit 6
+  fi
+  image_size_gb="$(( (image_size_mbs + 1023) / 1024 ))"
 
   log "Golden image OCID: $image_id"
   log "Golden image size (reported): ${image_size_gb}GiB"

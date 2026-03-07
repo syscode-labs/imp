@@ -1,25 +1,53 @@
 packer {
   required_version = ">= 1.9.0"
+  required_plugins {
+    oracle = {
+      source  = "github.com/hashicorp/oracle"
+      version = ">= 1.0.0"
+    }
+  }
 }
 
-variable "output_env_file" {
+variable "compartment_ocid" { type = string }
+variable "availability_domain" { type = string }
+variable "subnet_ocid" { type = string }
+variable "base_image_ocid" { type = string }
+variable "image_name" { type = string }
+variable "shape" {
   type    = string
-  default = "/tmp/imp-golden.env"
+  default = "VM.Standard.E2.1.Micro"
 }
+variable "ssh_username" {
+  type    = string
+  default = "ubuntu"
+}
+variable "firecracker_version" {
+  type    = string
+  default = "v1.9.0"
+}
+variable "required_go" { type = string }
+variable "access_cfg_file" { type = string }
 
-source "null" "oci_golden_image" {
-  communicator = "none"
+source "oracle-oci" "golden" {
+  availability_domain = var.availability_domain
+  access_cfg_file     = var.access_cfg_file
+  base_image_ocid     = var.base_image_ocid
+  compartment_ocid    = var.compartment_ocid
+  image_name          = var.image_name
+  shape               = var.shape
+  ssh_username        = var.ssh_username
+  subnet_ocid         = var.subnet_ocid
 }
 
 build {
-  name    = "oci-golden-image-via-script"
-  sources = ["source.null.oci_golden_image"]
+  name    = "oci-golden-image-native"
+  sources = ["source.oracle-oci.golden"]
 
-  provisioner "shell-local" {
-    inline = [
-      "set -euo pipefail",
-      "OCI_OUTPUT_ENV_FILE='${var.output_env_file}' '${path.root}/oci-build-golden-image.sh'",
-      "echo \"Wrote OCI image metadata to ${var.output_env_file}\"",
+  provisioner "shell" {
+    environment_vars = [
+      "FIRECRACKER_VERSION=${var.firecracker_version}",
+      "REQUIRED_GO=${var.required_go}",
     ]
+    scripts = ["${path.root}/packer-oci-provision.sh"]
   }
 }
