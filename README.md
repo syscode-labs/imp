@@ -1,5 +1,14 @@
 # Imp
 
+```text
+  )\  /(
+ (  \/  )    ╦╔╦╗╔═╗
+ ( ●  ● )~~✦ ║║║║╠═╝
+  \ ‿  /     ╩╩ ╩╚
+  (    )~,
+  /\  /\     v0.1.0 · imp.dev
+```
+
 [![CI](https://github.com/syscode-labs/imp/actions/workflows/ci.yml/badge.svg)](https://github.com/syscode-labs/imp/actions/workflows/ci.yml)
 [![Lint](https://github.com/syscode-labs/imp/actions/workflows/lint.yml/badge.svg)](https://github.com/syscode-labs/imp/actions/workflows/lint.yml)
 [![CodeQL](https://github.com/syscode-labs/imp/actions/workflows/codeql.yml/badge.svg)](https://github.com/syscode-labs/imp/actions/workflows/codeql.yml)
