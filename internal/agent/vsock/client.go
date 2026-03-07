@@ -36,7 +36,7 @@ func dialVSOCK(ctx context.Context, sockPath string, port uint32) (net.Conn, err
 
 	// Send CONNECT handshake
 	if _, err := fmt.Fprintf(conn, "CONNECT %d\n", port); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("vsock CONNECT: %w", err)
 	}
 
@@ -44,12 +44,12 @@ func dialVSOCK(ctx context.Context, sockPath string, port uint32) (net.Conn, err
 	buf := make([]byte, 32)
 	n, err := conn.Read(buf)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("vsock read response: %w", err)
 	}
 	resp := strings.TrimSpace(string(buf[:n]))
 	if !strings.HasPrefix(resp, "OK") {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("vsock handshake failed: %q", resp)
 	}
 	return conn, nil

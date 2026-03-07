@@ -25,7 +25,7 @@ func InjectGuestAgent(guestAgentSrc, ext4Path string) error {
 	defer UmountExt4(mnt) //nolint:errcheck
 
 	impDir := filepath.Join(mnt, ".imp")
-	if err := os.MkdirAll(impDir, 0o755); err != nil {
+	if err := os.MkdirAll(impDir, 0o750); err != nil {
 		return err
 	}
 
