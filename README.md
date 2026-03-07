@@ -16,8 +16,9 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 Imp is a Kubernetes operator and node agent for running Firecracker microVM workloads as first-class Kubernetes resources.
+In plain terms: it gives you lightweight mini-VMs that behave like disposable app sandboxes, so you can run risky or isolated workloads without giving them access to your whole host.
 
-It provides CRDs for VM lifecycle, VM networking, snapshots, migrations, warm pools, and runner pools, with Cilium-first networking support and a VXLAN fallback for non-Cilium CNIs.
+It provides CRDs for VM lifecycle, VM networking, snapshots, migrations, warm pools, and runner pools, with Cilium-first networking support, VXLAN fallback for non-Cilium CNIs, and built-in metrics for VM state, latency, and health.
 
 ## What Imp Manages
 
@@ -31,24 +32,9 @@ It provides CRDs for VM lifecycle, VM networking, snapshots, migrations, warm po
 
 ## Architecture
 
-```mermaid
-flowchart LR
-  subgraph K8s[Kubernetes Control Plane]
-    OP[Imp Operator]
-    CRD[Imp CRDs]
-  end
+![Imp architecture (Excalidraw)](docs/diagrams/imp-architecture.svg)
 
-  subgraph Node[Worker Node]
-    AG[Imp Agent DaemonSet]
-    FC[Firecracker VMM]
-    GA[Guest Agent]
-  end
-
-  CRD --> OP
-  OP --> AG
-  AG --> FC
-  FC --> GA
-```
+Excalidraw source: `docs/diagrams/imp-architecture.excalidraw`
 
 ## Quickstart
 
@@ -205,6 +191,15 @@ Imp provides first-class integration with **Cilium**. When Cilium is detected:
 - VMs can reach `ClusterIP` services via kube-dns
 
 For non-Cilium CNIs (Flannel/Calico/Weave/etc.), Imp uses a VXLAN fallback for cross-node VM connectivity.
+
+## Metrics & Observability
+
+Imp exposes operator and agent metrics so you can monitor VM lifecycle and platform health:
+
+- VM state and phase metrics
+- Scheduling/boot latency metrics
+- Guest resource metrics (CPU, memory, disk)
+- Prometheus-compatible scraping and dashboards
 
 ## Reconcile Sequence
 
