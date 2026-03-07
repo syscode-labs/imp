@@ -11,6 +11,9 @@ import (
 	"time"
 
 	firecracker "github.com/firecracker-microvm/firecracker-go-sdk"
+	"github.com/prometheus/client_golang/prometheus"
+	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"google.golang.org/grpc"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -20,6 +23,20 @@ import (
 	"github.com/syscode-labs/imp/internal/agent/rootfs"
 	pb "github.com/syscode-labs/imp/internal/proto/guest"
 )
+
+// newTestMetricsCollector creates a VMMetricsCollector backed by a throw-away OTel meter
+// and Prometheus registry, suitable for use in unit tests.
+func newTestMetricsCollector(t *testing.T) *VMMetricsCollector {
+	t.Helper()
+	reg := prometheus.NewRegistry()
+	exp, err := otelprometheus.New(otelprometheus.WithRegisterer(reg))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mp := sdkmetric.NewMeterProvider(sdkmetric.WithReader(exp))
+	t.Cleanup(func() { _ = mp.Shutdown(context.Background()) })
+	return NewVMMetricsCollector(mp.Meter("test"), reg)
+}
 
 type fakeRootfsBuilder struct {
 	buildCalled          bool
@@ -635,7 +652,7 @@ func TestFirecrackerDriver_Snapshot_noVM_returnsError(t *testing.T) {
 
 func TestFirecrackerDriver_HasMetricsAndNodeNameFields(t *testing.T) {
 	d := &FirecrackerDriver{
-		Metrics:  NewVMMetricsCollector(),
+		Metrics:  newTestMetricsCollector(t),
 		NodeName: "node-1",
 		procs:    make(map[string]*fcProc),
 	}
@@ -692,7 +709,7 @@ func TestFirecrackerDriver_PollMetrics(t *testing.T) {
 	metricsInterval = 1 * time.Millisecond
 	defer func() { metricsInterval = old }()
 
-	mc := NewVMMetricsCollector()
+	mc := newTestMetricsCollector(t)
 	d := &FirecrackerDriver{
 		Metrics:  mc,
 		NodeName: "node-1",
