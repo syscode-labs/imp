@@ -17,6 +17,7 @@
 
 Imp is a Kubernetes operator and node agent for running Firecracker microVM workloads as first-class Kubernetes resources.
 In plain terms: it gives you lightweight mini-VMs that behave like disposable app sandboxes, so you can run risky or isolated workloads without giving them access to your whole host.
+A microVM is a very small virtual machine with stronger isolation than a container, and Firecracker is the open-source microVM runtime Imp uses to start those sandboxes quickly.
 
 It provides CRDs for VM lifecycle, VM networking, snapshots, migrations, warm pools, and runner pools, with Cilium-first networking support, VXLAN fallback for non-Cilium CNIs, and built-in metrics for VM state, latency, and health.
 
