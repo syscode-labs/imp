@@ -1,30 +1,148 @@
-# go-scaffold
-// TODO(user): Add simple overview of use/purpose
+# Imp
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+[![CI](https://github.com/syscode-labs/imp/actions/workflows/ci.yml/badge.svg)](https://github.com/syscode-labs/imp/actions/workflows/ci.yml)
+[![Lint](https://github.com/syscode-labs/imp/actions/workflows/lint.yml/badge.svg)](https://github.com/syscode-labs/imp/actions/workflows/lint.yml)
+[![CodeQL](https://github.com/syscode-labs/imp/actions/workflows/codeql.yml/badge.svg)](https://github.com/syscode-labs/imp/actions/workflows/codeql.yml)
+[![Go Version](https://img.shields.io/badge/go-1.25.6-00ADD8?logo=go)](https://go.dev/doc/devel/release)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-## Getting Started
+Imp is a Kubernetes operator and node agent for running Firecracker microVM workloads as first-class Kubernetes resources.
+
+It provides CRDs for VM lifecycle, VM networking, snapshots, migrations, warm pools, and runner pools, with Cilium-first networking support and a VXLAN fallback for non-Cilium CNIs.
+
+## What Imp Manages
+
+- `ImpVM`: microVM lifecycle and scheduling
+- `ImpNetwork`: VM network, NAT, DNS, and optional Cilium integration
+- `ImpVMSnapshot`: VM state snapshot lifecycle
+- `ImpVMMigration`: migration orchestration
+- `ImpWarmPool`: prewarmed VMs from snapshots
+- `ImpVMRunnerPool`: VM pools for CI-style runner workloads
+- `ImpVMClass`, `ImpVMTemplate`, `ClusterImpConfig`, `ClusterImpNodeProfile`
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph K8s[Kubernetes Control Plane]
+    OP[Imp Operator]
+    CRD[Imp CRDs]
+  end
+
+  subgraph Node[Worker Node]
+    AG[Imp Agent DaemonSet]
+    FC[Firecracker VMM]
+    GA[Guest Agent]
+  end
+
+  CRD --> OP
+  OP --> AG
+  AG --> FC
+  FC --> GA
+```
+
+## Quickstart
 
 ### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
 
-### OCI Golden Image + Firecracker E2E
+- Go `1.25.6+`
+- Docker or compatible container runtime
+- `kubectl`
+- A Kubernetes cluster (Kind is supported for e2e)
+- `helm` (recommended install path)
 
-The repository includes two standalone IaC scripts:
+### Install with Helm (Recommended)
+
+```sh
+helm upgrade --install imp ./charts/imp -n imp-system --create-namespace
+kubectl -n imp-system get pods
+```
+
+### Install with Kustomize/Make
+
+```sh
+make install
+make deploy IMG=<registry>/imp-operator:<tag>
+```
+
+### Uninstall
+
+```sh
+helm uninstall imp -n imp-system
+# or (kustomize path)
+make undeploy
+make uninstall
+```
+
+## First VM in 5 Minutes
+
+Apply a minimal network and VM in `default` namespace:
+
+```sh
+kubectl apply -f - <<'EOF'
+apiVersion: imp.dev/v1alpha1
+kind: ImpNetwork
+metadata:
+  name: quick-net
+  namespace: default
+spec:
+  subnet: 192.168.100.0/24
+  nat:
+    enabled: true
+---
+apiVersion: imp.dev/v1alpha1
+kind: ImpVM
+metadata:
+  name: quick-vm
+  namespace: default
+spec:
+  image: ghcr.io/syscode-labs/imp-guestbook:latest
+  networkRef:
+    name: quick-net
+EOF
+```
+
+Check status:
+
+```sh
+kubectl get impvm -n default
+kubectl describe impvm quick-vm -n default
+kubectl get impnetwork quick-net -n default -o yaml
+```
+
+## Development
+
+```sh
+make test
+make lint
+make build
+```
+
+Run operator locally:
+
+```sh
+make run
+```
+
+Run e2e tests (isolated Kind cluster):
+
+```sh
+make test-e2e
+```
+
+## OCI Golden Image + Firecracker E2E
+
+The repository includes IaC scripts under `hack/`:
 
 - `hack/oci-build-golden-image.sh`
+- `hack/packer-build-golden-image.sh` (native Packer OCI builder with script preflight/sanitization)
 - `hack/oci-firecracker-e2e.sh`
-- `hack/packer-build-golden-image.sh` (Packer wrapper around `oci-build-golden-image.sh`)
 
 `hack/oci-build-golden-image.sh` is idempotent for missing OCI inputs:
 
-- auto-detects compartment and AD for `VM.Standard.E2.1.Micro` from limits
-- reuses an existing public subnet, or creates a minimal public VCN/subnet stack
-- prunes oldest `imp-fc-golden-*` images if custom image quota is full
+- auto-detects compartment and AD for `VM.Standard.E2.1.Micro`
+- reuses existing public subnet or creates a minimal public VCN/subnet stack
+- prunes oldest `imp-fc-golden-*` images when custom-image quota is full
 
 Build a minimal golden image:
 
@@ -38,19 +156,17 @@ OCI_OUTPUT_ENV_FILE="$HOME/.config/imp/oci-golden.env" \
 hack/oci-build-golden-image.sh
 ```
 
-Build the same golden image through Packer while reusing the script checks:
+Build via native Packer OCI builder:
 
 ```sh
 IMP_OCI_PROFILE=syscode-api \
 IMP_OCI_COMPARTMENT_NAME=homelab \
 IMP_OCI_DOMAIN_NAME=homelab \
-OCI_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/builder.pub" \
-OCI_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/builder" \
 OCI_OUTPUT_ENV_FILE="$HOME/.config/imp/oci-golden.env" \
 hack/packer-build-golden-image.sh
 ```
 
-Run e2e using the generated image:
+Run e2e using a generated image:
 
 ```sh
 source "$HOME/.config/imp/oci-golden.env"
@@ -63,158 +179,102 @@ OCI_IMAGE_OCID="$OCI_IMAGE_OCID" \
 hack/oci-firecracker-e2e.sh
 ```
 
-Or run e2e and let it build a golden image automatically when `OCI_IMAGE_OCID` is unset:
-
-```sh
-IMP_OCI_PROFILE=syscode-api \
-IMP_OCI_COMPARTMENT_NAME=homelab \
-IMP_OCI_DOMAIN_NAME=homelab \
-OCI_SSH_PUBLIC_KEY_FILE="$HOME/.ssh/builder.pub" \
-OCI_SSH_PRIVATE_KEY_FILE="$HOME/.ssh/builder" \
-hack/oci-firecracker-e2e.sh
-```
-
 Notes:
 
-- OCI requires boot volume size `>= 50` GB.
-- Golden image max size is controlled by `OCI_GOLDEN_MAX_GB` (default `50` GiB), and the script will fail/delete oversize images by default.
-- Optional: set `OCI_GOLDEN_ZERO_FILL=true` to zero free space before capture (slower, may reduce resulting image size).
-- If your SSH key is passphrase-protected, use an unencrypted key for automation or set `ALLOW_SSH_AGENT=true` with a loaded agent.
-- Targeting defaults can be set once with:
-  - `IMP_OCI_PROFILE` (recommended `syscode-api`)
-  - `IMP_OCI_COMPARTMENT_NAME` (recommended `homelab`)
-  - `IMP_OCI_DOMAIN_NAME` (recommended `homelab`)
+- OCI boot volume minimum is `50` GB.
+- Golden image max size is controlled by `OCI_GOLDEN_MAX_GB` (default `50` GiB).
+- Optional `OCI_GOLDEN_ZERO_FILL=true` can reduce sparse image footprint but is slower.
+- For automation, use an unencrypted SSH key or load passphrase keys in `ssh-agent`.
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
-
-```sh
-make docker-build docker-push IMG=<some-registry>/go-scaffold:tag
-```
-
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
-
-**Install the CRDs into the cluster:**
-
-```sh
-make install
-```
-
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
-
-```sh
-make deploy IMG=<some-registry>/go-scaffold:tag
-```
-
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
-
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
-```
-
->**NOTE**: Ensure that the samples has default values to test it out.
-
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
-```
-
-**Delete the APIs(CRDs) from the cluster:**
-
-```sh
-make uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
-make undeploy
-```
-
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/go-scaffold:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/go-scaffold/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## CNI Support
+## Networking Support
 
 Imp provides first-class integration with **Cilium**. When Cilium is detected:
 
-- VMs are enrolled as `CiliumExternalWorkload` objects and become full Cilium mesh participants
-- `NetworkPolicy` rules apply to VMs identically to pods
-- VM traffic is visible in Hubble (`hubble observe`)
+- VMs are enrolled as `CiliumExternalWorkload` resources
+- Kubernetes `NetworkPolicy` applies to VMs
+- VM traffic is visible in Hubble
 - VMs can reach `ClusterIP` services via kube-dns
 
-Other CNIs (Flannel, Calico, Weave, etc.) work for basic node-local networking. Cross-node VM connectivity uses an automatic VXLAN overlay managed by Imp, without Cilium NetworkPolicy or Hubble visibility.
+For non-Cilium CNIs (Flannel/Calico/Weave/etc.), Imp uses a VXLAN fallback for cross-node VM connectivity.
 
-> **Support policy:** Cilium is the only officially supported CNI for cross-node networking and NetworkPolicy enforcement. Other CNIs receive best-effort support via the VXLAN fallback. External contributions adding CNI-specific integrations are welcome and will be reviewed.
+## Reconcile Sequence
+
+```mermaid
+sequenceDiagram
+  participant U as User
+  participant APIS as K8s API
+  participant OP as Imp Operator
+  participant AG as Imp Agent (Node)
+  participant FC as Firecracker
+
+  U->>APIS: Create ImpVM + ImpNetwork
+  APIS->>OP: Watch event
+  OP->>OP: Resolve class/template + schedule node
+  OP->>AG: Desired VM runtime spec
+  AG->>FC: Create machine + start microVM
+  FC-->>AG: Runtime state, PID, network info
+  AG-->>APIS: Status updates
+  OP-->>APIS: Conditions / phase transitions
+```
+
+## Troubleshooting
+
+- `ImpVM stuck in Pending`: check scheduler events and node capacity.
+  `kubectl describe impvm <name> -n <ns>`
+- No VM IP / networking issues: inspect `ImpNetwork` status and agent logs.
+  `kubectl -n imp-system logs ds/imp-agent`
+- Cilium features not active: verify Cilium CRDs exist and cni detection events.
+  `kubectl get crd | grep cilium`
+- Webhook admission failures: check cert-manager/webhook pods and certificates.
+  `kubectl -n imp-system get pods,certificates,issuers`
+- Snapshot or migration stalls: inspect related CR conditions.
+  `kubectl describe impvmsnapshot <name> -n <ns>`
+  `kubectl describe impvmmigration <name> -n <ns>`
+- OCI image/e2e script failures: validate profile/session and compartment/env file values.
+  `oci session validate --profile syscode-api`
+  `source ~/.config/imp/oci-golden.env`
+
+## Security Model
+
+- Control plane:
+  - Operator runs with Kubernetes RBAC scoped to Imp CRDs and required core resources.
+  - Admission webhooks validate critical resources (`ImpVM`, `ImpVMClass`, `ImpVMTemplate`).
+- Node plane:
+  - Agent is privileged to manage Firecracker, networking, and host paths.
+  - Limit agent deployment to trusted nodes via taints/selectors if required.
+- OCI automation:
+  - Use dedicated API user/group (`homelab-api`) with least-privilege policy.
+  - Current policy is scoped to `syscode-labs:homelab` for compute/network/volume families.
+  - Avoid tenancy-wide `manage all-resources`; use temporary broad grants only for debugging.
+- Supply chain:
+  - Pin operator/agent image tags in Helm values for reproducible deployments.
+  - Prefer private registries and signed images where possible.
+- Secrets:
+  - Keep OCI keys out of repo and use local profile files or external secret stores.
+  - Use short-lived session tokens for admin profiles where practical.
+
+## Distribution
+
+Create a single install bundle:
+
+```sh
+make build-installer IMG=<registry>/imp-operator:<tag>
+```
+
+This generates `dist/install.yaml`.
 
 ## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
 
-**NOTE:** Run `make help` for more information on all potential `make` targets
+Contributions are welcome. Before opening a PR:
 
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+```sh
+make manifests generate
+make lint-fix
+make test
+```
 
 ## License
 
 Copyright 2026.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+Licensed under the Apache License, Version 2.0.
