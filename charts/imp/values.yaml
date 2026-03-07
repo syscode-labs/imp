@@ -59,3 +59,10 @@ metrics:
   podMonitor:
     enabled: true
     interval: 30s
+
+grafana:
+  enabled: false
+  dashboardLabel:
+    key: grafana_dashboard
+    value: "1"
+  namespace: ""
