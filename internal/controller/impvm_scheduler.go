@@ -74,6 +74,12 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 		return "", nil
 	}
 
+	// 2b. Filter out unready / unschedulable nodes
+	eligible = filterSchedulable(eligible)
+	if len(eligible) == 0 {
+		return "", nil
+	}
+
 	// 3. Count running VMs per node
 	allVMs := &impdevv1alpha1.ImpVMList{}
 	if err := r.List(ctx, allVMs); err != nil {
@@ -191,6 +197,36 @@ func filterByNodeSelector(nodes []corev1.Node, selector map[string]string) []cor
 		}
 		if match {
 			result = append(result, node)
+		}
+	}
+	return result
+}
+
+// nodeIsSchedulable returns false when the node should not receive new workloads.
+// Composes isNodeReady and additionally checks Spec.Unschedulable and pressure conditions.
+func nodeIsSchedulable(node corev1.Node) bool {
+	if node.Spec.Unschedulable {
+		return false
+	}
+	if !isNodeReady(&node) {
+		return false
+	}
+	for _, c := range node.Status.Conditions {
+		switch c.Type {
+		case corev1.NodeMemoryPressure, corev1.NodeDiskPressure, corev1.NodePIDPressure:
+			if c.Status == corev1.ConditionTrue {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func filterSchedulable(nodes []corev1.Node) []corev1.Node {
+	var result []corev1.Node
+	for _, n := range nodes {
+		if nodeIsSchedulable(n) {
+			result = append(result, n)
 		}
 	}
 	return result

@@ -637,6 +637,91 @@ var _ = Describe("ImpVM Scheduler: explicit VCPUCapacity scheduling", func() {
 	})
 })
 
+// ─── nodeIsSchedulable ────────────────────────────────────────────────────────
+
+var _ = Describe("nodeIsSchedulable", func() {
+	ready := func(extra ...corev1.NodeCondition) corev1.Node {
+		conds := []corev1.NodeCondition{{Type: corev1.NodeReady, Status: corev1.ConditionTrue}}
+		return corev1.Node{Status: corev1.NodeStatus{Conditions: append(conds, extra...)}}
+	}
+
+	It("returns true for a ready node with no pressure", func() {
+		Expect(nodeIsSchedulable(ready())).To(BeTrue())
+	})
+
+	It("returns false when Spec.Unschedulable is set", func() {
+		n := ready()
+		n.Spec.Unschedulable = true
+		Expect(nodeIsSchedulable(n)).To(BeFalse())
+	})
+
+	It("returns false when Ready=False", func() {
+		n := corev1.Node{Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{
+			{Type: corev1.NodeReady, Status: corev1.ConditionFalse},
+		}}}
+		Expect(nodeIsSchedulable(n)).To(BeFalse())
+	})
+
+	It("returns false when Ready=Unknown", func() {
+		n := corev1.Node{Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{
+			{Type: corev1.NodeReady, Status: corev1.ConditionUnknown},
+		}}}
+		Expect(nodeIsSchedulable(n)).To(BeFalse())
+	})
+
+	It("returns false when no Ready condition is present", func() {
+		Expect(nodeIsSchedulable(corev1.Node{})).To(BeFalse())
+	})
+
+	It("returns false when MemoryPressure=True", func() {
+		Expect(nodeIsSchedulable(ready(corev1.NodeCondition{
+			Type: corev1.NodeMemoryPressure, Status: corev1.ConditionTrue,
+		}))).To(BeFalse())
+	})
+
+	It("returns false when DiskPressure=True", func() {
+		Expect(nodeIsSchedulable(ready(corev1.NodeCondition{
+			Type: corev1.NodeDiskPressure, Status: corev1.ConditionTrue,
+		}))).To(BeFalse())
+	})
+
+	It("returns false when PIDPressure=True", func() {
+		Expect(nodeIsSchedulable(ready(corev1.NodeCondition{
+			Type: corev1.NodePIDPressure, Status: corev1.ConditionTrue,
+		}))).To(BeFalse())
+	})
+})
+
+// ─── filterSchedulable ────────────────────────────────────────────────────────
+
+var _ = Describe("filterSchedulable", func() {
+	It("returns only schedulable nodes from a mixed list", func() {
+		good := corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "good"},
+			Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{
+				{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+			}},
+		}
+		unschedulable := corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "unschedulable"},
+			Spec:       corev1.NodeSpec{Unschedulable: true},
+			Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{
+				{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
+			}},
+		}
+		notReady := corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "not-ready"},
+			Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{
+				{Type: corev1.NodeReady, Status: corev1.ConditionFalse},
+			}},
+		}
+
+		result := filterSchedulable([]corev1.Node{good, unschedulable, notReady})
+		Expect(result).To(HaveLen(1))
+		Expect(result[0].Name).To(Equal("good"))
+	})
+})
+
 // ─── syncStatus: node healthy path ───────────────────────────────────────────
 
 var _ = Describe("ImpVM syncStatus: node healthy", func() {
