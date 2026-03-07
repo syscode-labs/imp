@@ -17,7 +17,7 @@ import (
 // sockPath is the path to the Firecracker VSOCK Unix socket (e.g. /run/imp/sockets/vmname.vsock).
 // port is the guest VSOCK port (e.g. 10000).
 func Dial(ctx context.Context, sockPath string, port uint32) (*grpc.ClientConn, error) {
-	return grpc.NewClient("vsock",
+	return grpc.NewClient("passthrough:///vsock",
 		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 			return dialVSOCK(ctx, sockPath, port)
 		}),

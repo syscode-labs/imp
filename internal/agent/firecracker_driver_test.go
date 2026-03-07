@@ -723,7 +723,12 @@ func TestFirecrackerDriver_PollMetrics(t *testing.T) {
 			MemoryUsedBytes: 1024,
 			DiskUsedBytes:   2048,
 		},
-		onMetrics: func() { select { case called <- struct{}{}: default: } },
+		onMetrics: func() {
+			select {
+			case called <- struct{}{}:
+			default:
+			}
+		},
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
