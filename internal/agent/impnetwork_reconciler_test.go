@@ -79,7 +79,7 @@ func TestImpNetworkReconciler_withLocalVM(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "vm-local", Namespace: "default"},
 		Spec: impdevv1alpha1.ImpVMSpec{
 			NodeName:   "node-a",
-			NetworkRef: &impdevv1alpha1.NetworkRef{Name: "net1"},
+			NetworkRef: &impdevv1alpha1.LocalObjectRef{Name: "net1"},
 		},
 	}
 	localVM.Status.Phase = impdevv1alpha1.VMPhaseRunning
