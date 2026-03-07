@@ -41,4 +41,13 @@ type VMDriver interface {
 	// The VM is always resumed before Snapshot returns, even on error.
 	// destDir must exist and be writable.
 	Snapshot(ctx context.Context, vm *impdevv1alpha1.ImpVM, destDir string) (SnapshotResult, error)
+
+	// IsAlive returns true if the process with the given PID is still running.
+	// Uses syscall.Kill(pid, 0) on Linux. StubDriver returns IsAliveResult.
+	IsAlive(pid int64) bool
+
+	// Reattach re-registers an already-running VM (started by a previous agent
+	// process) into the driver's internal state without launching a new process.
+	// Called during lazy recovery when the agent restarts and finds a live PID.
+	Reattach(ctx context.Context, vm *impdevv1alpha1.ImpVM) error
 }
