@@ -84,9 +84,10 @@ func (s *Server) HTTPCheck(_ context.Context, req *pb.HTTPCheckRequest) (*pb.HTT
 
 // Metrics reads CPU, memory and disk usage from /proc and syscall.
 func (s *Server) Metrics(_ context.Context, _ *pb.MetricsRequest) (*pb.MetricsResponse, error) {
-	cpu, err := cpuUsage()
+	cpu, iowait, err := cpuAndIOWaitUsage()
 	if err != nil {
 		cpu = 0
+		iowait = 0
 	}
 	mem, err := memUsedBytes()
 	if err != nil {
@@ -98,6 +99,7 @@ func (s *Server) Metrics(_ context.Context, _ *pb.MetricsRequest) (*pb.MetricsRe
 	}
 	return &pb.MetricsResponse{
 		CpuUsageRatio:   cpu,
+		CpuIowaitRatio:  iowait,
 		MemoryUsedBytes: mem,
 		DiskUsedBytes:   disk,
 	}, nil

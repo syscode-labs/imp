@@ -12,26 +12,11 @@ import (
 	"time"
 )
 
-// cpuUsage samples /proc/stat twice 100ms apart and returns the ratio 0.0–1.0.
-func cpuUsage() (float64, error) {
-	s1, err := readCPUStat()
-	if err != nil {
-		return 0, err
-	}
-	time.Sleep(100 * time.Millisecond)
-	s2, err := readCPUStat()
-	if err != nil {
-		return 0, err
-	}
-	total := float64(s2.total - s1.total)
-	idle := float64(s2.idle - s1.idle)
-	if total == 0 {
-		return 0, nil
-	}
-	return (total - idle) / total, nil
+type cpuStat struct {
+	total  uint64
+	idle   uint64
+	iowait uint64
 }
-
-type cpuStat struct{ total, idle uint64 }
 
 func readCPUStat() (cpuStat, error) {
 	f, err := os.Open("/proc/stat")
@@ -59,9 +44,36 @@ func readCPUStat() (cpuStat, error) {
 		if len(vals) > 3 {
 			idle = vals[3]
 		}
-		return cpuStat{total: total, idle: idle}, nil
+		iowait := uint64(0)
+		if len(vals) > 4 {
+			iowait = vals[4]
+		}
+		return cpuStat{total: total, idle: idle, iowait: iowait}, nil
 	}
 	return cpuStat{}, fmt.Errorf("cpu line not found in /proc/stat")
+}
+
+// cpuAndIOWaitUsage samples /proc/stat twice 100ms apart and returns both
+// the CPU usage ratio and the iowait ratio (both 0.0–1.0).
+func cpuAndIOWaitUsage() (cpuRatio, iowaitRatio float64, err error) {
+	s1, err := readCPUStat()
+	if err != nil {
+		return
+	}
+	time.Sleep(100 * time.Millisecond)
+	s2, err := readCPUStat()
+	if err != nil {
+		return
+	}
+	total := float64(s2.total - s1.total)
+	if total == 0 {
+		return
+	}
+	idle := float64(s2.idle - s1.idle)
+	iowait := float64(s2.iowait - s1.iowait)
+	cpuRatio = (total - idle) / total
+	iowaitRatio = iowait / total
+	return
 }
 
 // memUsedBytes returns MemTotal - MemAvailable from /proc/meminfo.

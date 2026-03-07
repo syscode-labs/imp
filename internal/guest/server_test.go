@@ -121,6 +121,17 @@ func TestMetrics_returns(t *testing.T) {
 	}
 }
 
+func TestMetrics_iowait(t *testing.T) {
+	client := startTestServer(t)
+	resp, err := client.Metrics(context.Background(), &pb.MetricsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.CpuIowaitRatio < 0 || resp.CpuIowaitRatio > 1 {
+		t.Errorf("cpu_iowait_ratio = %f, want 0.0–1.0", resp.CpuIowaitRatio)
+	}
+}
+
 func TestHTTPCheck_connectionRefused(t *testing.T) {
 	// Use a port we know has no listener (bind then close to get a free port)
 	l, err := net.Listen("tcp", "127.0.0.1:0")
