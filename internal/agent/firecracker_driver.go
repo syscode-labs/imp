@@ -89,6 +89,9 @@ type FirecrackerDriver struct {
 	procs map[string]*fcProc // keyed by vmKey(vm)
 }
 
+// compile-time interface check.
+var _ VMDriver = (*FirecrackerDriver)(nil)
+
 // NewFirecrackerDriver constructs a FirecrackerDriver from environment variables:
 //   - FC_BIN         — path to firecracker binary (falls back to exec.LookPath)
 //   - FC_SOCK_DIR    — socket directory (default: /run/imp/sockets)
@@ -639,5 +642,12 @@ func (d *FirecrackerDriver) applySnapshotBoot(ctx context.Context, vm *impdevv1a
 	return nil
 }
 
-// compile-time interface check.
-var _ VMDriver = (*FirecrackerDriver)(nil)
+// IsAlive is a placeholder — real implementation in Task 2.
+func (d *FirecrackerDriver) IsAlive(_ int64) bool {
+	return false
+}
+
+// Reattach is a placeholder — real implementation in Task 2.
+func (d *FirecrackerDriver) Reattach(_ context.Context, _ *impdevv1alpha1.ImpVM) error {
+	return fmt.Errorf("not implemented")
+}

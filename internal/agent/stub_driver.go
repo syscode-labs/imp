@@ -28,6 +28,13 @@ type StubDriver struct {
 	startErr   error
 	stopErr    error
 	inspectErr error
+
+	// IsAliveResult is returned by IsAlive.
+	IsAliveResult bool
+	// ReattachCalls records the vmKey of each Reattach call for test assertions.
+	ReattachCalls []string
+	// ReattachErr is returned by Reattach (one-shot, cleared after use).
+	ReattachErr error
 }
 
 // InjectStartError causes the next Start call to return err (one-shot).
@@ -110,4 +117,24 @@ func (d *StubDriver) Snapshot(_ context.Context, vm *impdevv1alpha1.ImpVM, destD
 		return SnapshotResult{}, err
 	}
 	return SnapshotResult{StatePath: statePath, MemPath: memPath}, nil
+}
+
+// IsAlive returns IsAliveResult. The pid argument is ignored.
+func (d *StubDriver) IsAlive(_ int64) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.IsAliveResult
+}
+
+// Reattach records the call and returns ReattachErr (one-shot, cleared after use).
+func (d *StubDriver) Reattach(_ context.Context, vm *impdevv1alpha1.ImpVM) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.ReattachCalls = append(d.ReattachCalls, vmKey(vm))
+	if d.ReattachErr != nil {
+		err := d.ReattachErr
+		d.ReattachErr = nil
+		return err
+	}
+	return nil
 }
