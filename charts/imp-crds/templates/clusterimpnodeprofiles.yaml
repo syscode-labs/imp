@@ -62,10 +62,31 @@ spec:
                   Range: 0.0–1.0.
                 pattern: ^(0(\.[0-9]+)?|1(\.0+)?)$
                 type: string
+              cpuModel:
+                description: |-
+                  CPUModel is the CPU model string detected by the node agent at startup
+                  (e.g. "Intel(R) Core(TM) i5-8500T CPU @ 2.10GHz").
+                  Used by the migration scheduler to filter CPU-compatible destination nodes.
+                  Set automatically by the node agent; do not edit manually.
+                type: string
               maxImpVMs:
                 description: |-
                   MaxImpVMs is a hard cap on the number of ImpVMs allowed on this node,
                   regardless of remaining compute headroom.
+                format: int32
+                minimum: 0
+                type: integer
+              memoryMiB:
+                description: |-
+                  MemoryMiB is the total memory in MiB available for VMs on this node.
+                  When non-zero, takes precedence over fraction-based scheduling.
+                format: int64
+                minimum: 0
+                type: integer
+              vcpuCapacity:
+                description: |-
+                  VCPUCapacity is the total number of vCPUs available for VMs on this node.
+                  When non-zero, takes precedence over fraction-based scheduling.
                 format: int32
                 minimum: 0
                 type: integer

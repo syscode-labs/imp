@@ -74,6 +74,15 @@ spec:
                 format: int32
                 minimum: 1
                 type: integer
+              guestAgent:
+                description: GuestAgent controls guest agent injection. Overrides
+                  defaults when set.
+                properties:
+                  enabled:
+                    description: Enabled controls guest agent injection. Defaults
+                      to true when omitted.
+                    type: boolean
+                type: object
               memoryMiB:
                 description: MemoryMiB is the amount of RAM in mebibytes.
                 format: int32
@@ -246,6 +255,58 @@ spec:
                         format: int32
                         type: integer
                     type: object
+                type: object
+              restartPolicy:
+                description: RestartPolicy configures automatic restart for persistent
+                  VMs using this class.
+                properties:
+                  backoff:
+                    description: Backoff configures exponential backoff between restart
+                      attempts.
+                    properties:
+                      initialDelay:
+                        default: 10s
+                        description: InitialDelay is the delay before the first restart
+                          attempt.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
+                        type: string
+                      maxDelay:
+                        default: 5m
+                        description: MaxDelay caps the exponential backoff.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
+                        type: string
+                      maxRetries:
+                        default: 5
+                        description: MaxRetries is the maximum number of restart attempts
+                          before OnExhaustion applies.
+                        format: int32
+                        type: integer
+                    type: object
+                  coolDownPeriod:
+                    default: 1h
+                    description: |-
+                      CoolDownPeriod is the duration before the retry counter resets automatically.
+                      Only used when OnExhaustion is "cool-down".
+                    pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
+                    type: string
+                  mode:
+                    default: in-place
+                    description: |-
+                      Mode controls where the VM restarts after failure.
+                      "in-place" restarts on the same node. "reschedule" re-runs the scheduler.
+                    enum:
+                    - in-place
+                    - reschedule
+                    type: string
+                  onExhaustion:
+                    default: fail
+                    description: OnExhaustion controls behaviour once Backoff.MaxRetries
+                      is exhausted.
+                    enum:
+                    - fail
+                    - manual-reset
+                    - cool-down
+                    type: string
                 type: object
               vcpu:
                 description: VCPU is the number of virtual CPUs allocated to each

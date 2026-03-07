@@ -32,7 +32,23 @@ tests:
               - impnetworks
               - clusterimpconfigs
               - clusterimpnodeprofiles
-            verbs: [get, list, watch, update, patch]
+              - impvmsnapshots
+              - impwarmpools
+              - impvmmigrations
+              - impvmrunnerpools
+            verbs: [get, list, watch, create, update, patch, delete]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["imp.dev"]
+            resources:
+              - impvms/status
+              - impnetworks/status
+              - impvmsnapshots/status
+              - impwarmpools/status
+              - impvmmigrations/status
+              - impvmrunnerpools/status
+            verbs: [get, update, patch]
 
   - it: does not create full ClusterRole by default
     template: templates/operator/clusterrole-full.yaml

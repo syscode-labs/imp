@@ -13,18 +13,27 @@ rules:
     - impnetworks
     - clusterimpconfigs
     - clusterimpnodeprofiles
+    - impvmsnapshots
+    - impwarmpools
+    - impvmmigrations
     - impvmrunnerpools
   verbs: [get, list, watch, create, update, patch, delete]
 - apiGroups: ["imp.dev"]
   resources:
     - impvms/status
     - impnetworks/status
+    - impvmsnapshots/status
+    - impwarmpools/status
+    - impvmmigrations/status
     - impvmrunnerpools/status
   verbs: [get, update, patch]
 - apiGroups: ["imp.dev"]
   resources:
     - impvms/finalizers
     - impnetworks/finalizers
+    - impvmsnapshots/finalizers
+    - impwarmpools/finalizers
+    - impvmmigrations/finalizers
   verbs: [update]
 - apiGroups: [""]
   resources: [nodes]

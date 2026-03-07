@@ -54,6 +54,13 @@ spec:
           spec:
             description: ImpVMTemplateSpec defines a reusable VM blueprint.
             properties:
+              ciliumLayer:
+                description: |-
+                  CiliumLayer is an optional OCI image whose filesystem layers are composited
+                  on top of the base image (after RunnerLayer if also set) before building
+                  the ext4 rootfs. Used to inject the cilium-agent binary for Cilium mesh
+                  enrollment.
+                type: string
               classRef:
                 description: ClassRef is the required compute class for VMs created
                   from this template.
@@ -63,8 +70,21 @@ spec:
                 required:
                 - name
                 type: object
+              guestAgent:
+                description: GuestAgent controls guest agent injection. Overrides
+                  defaults when set.
+                properties:
+                  enabled:
+                    description: Enabled controls guest agent injection. Defaults
+                      to true when omitted.
+                    type: boolean
+                type: object
               image:
                 description: Image is the OCI image to use as the VM rootfs.
+                type: string
+              networkGroup:
+                description: NetworkGroup places VMs from this template in a named
+                  group.
                 type: string
               networkRef:
                 description: NetworkRef optionally binds VMs to a specific ImpNetwork.
@@ -240,6 +260,65 @@ spec:
                         type: integer
                     type: object
                 type: object
+              restartPolicy:
+                description: RestartPolicy overrides the class-level restart policy
+                  for this template.
+                properties:
+                  backoff:
+                    description: Backoff configures exponential backoff between restart
+                      attempts.
+                    properties:
+                      initialDelay:
+                        default: 10s
+                        description: InitialDelay is the delay before the first restart
+                          attempt.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
+                        type: string
+                      maxDelay:
+                        default: 5m
+                        description: MaxDelay caps the exponential backoff.
+                        pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
+                        type: string
+                      maxRetries:
+                        default: 5
+                        description: MaxRetries is the maximum number of restart attempts
+                          before OnExhaustion applies.
+                        format: int32
+                        type: integer
+                    type: object
+                  coolDownPeriod:
+                    default: 1h
+                    description: |-
+                      CoolDownPeriod is the duration before the retry counter resets automatically.
+                      Only used when OnExhaustion is "cool-down".
+                    pattern: ^([0-9]+(\.[0-9]+)?(ns|us|ms|s|m|h))+$
+                    type: string
+                  mode:
+                    default: in-place
+                    description: |-
+                      Mode controls where the VM restarts after failure.
+                      "in-place" restarts on the same node. "reschedule" re-runs the scheduler.
+                    enum:
+                    - in-place
+                    - reschedule
+                    type: string
+                  onExhaustion:
+                    default: fail
+                    description: OnExhaustion controls behaviour once Backoff.MaxRetries
+                      is exhausted.
+                    enum:
+                    - fail
+                    - manual-reset
+                    - cool-down
+                    type: string
+                type: object
+              runnerLayer:
+                description: |-
+                  RunnerLayer is an optional OCI image whose filesystem layers are composited
+                  on top of the base image before building the ext4 rootfs. Used to inject
+                  CI runner binaries (GitHub Actions runner, gitlab-runner, etc.) without
+                  modifying the base image.
+                type: string
             required:
             - classRef
             type: object
