@@ -401,6 +401,104 @@ var _ = Describe("ImpVM Agent: Reconcile non-existent VM (NotFound)", func() {
 	})
 })
 
+var _ = Describe("ImpVM Agent: Running — lazy reattach on agent restart", func() {
+	ctx := context.Background()
+
+	It("reattaches and stays Running when PID is alive", func() {
+		driver := NewStubDriver()
+		driver.IsAliveResult = true
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "tc-reattach-alive", Namespace: "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{NodeName: testNode},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+		vm.Status.RuntimePID = 99999
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		// Inspect returns Running=false (no entry in states map — simulates restart)
+		// IsAliveResult=true means the PID check passes
+
+		_, err := newReconciler(driver).Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "tc-reattach-alive", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc-reattach-alive", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseRunning))
+		Expect(driver.ReattachCalls).To(HaveLen(1))
+		Expect(driver.ReattachCalls[0]).To(Equal("default/tc-reattach-alive"))
+	})
+
+	It("transitions to Failed when PID is dead", func() {
+		driver := NewStubDriver()
+		driver.IsAliveResult = false
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "tc-reattach-dead", Namespace: "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{NodeName: testNode},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+		vm.Status.RuntimePID = 99999
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		_, err := newReconciler(driver).Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "tc-reattach-dead", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc-reattach-dead", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseFailed))
+		Expect(driver.ReattachCalls).To(BeEmpty())
+	})
+
+	It("transitions to Failed when RuntimePID is zero", func() {
+		driver := NewStubDriver()
+		driver.IsAliveResult = true // shouldn't matter — PID is 0
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "tc-reattach-nopid", Namespace: "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{NodeName: testNode},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+		vm.Status.RuntimePID = 0
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		_, err := newReconciler(driver).Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "tc-reattach-nopid", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc-reattach-nopid", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseFailed))
+		Expect(driver.ReattachCalls).To(BeEmpty())
+	})
+})
+
 var _ = Describe("ImpVM Agent: handleTerminating driver.Stop error", func() {
 	ctx := context.Background()
 
