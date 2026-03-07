@@ -68,7 +68,10 @@ func (m *LinuxNetManager) attachToBridge(link netlink.Link, bridgeName string) e
 	if link.Attrs().MasterIndex == bridge.Attrs().Index {
 		return nil
 	}
-	return netlink.LinkSetMaster(link, bridge)
+	if err := netlink.LinkSetMaster(link, bridge); err != nil {
+		return fmt.Errorf("attach %s to bridge %s: %w", link.Attrs().Name, bridgeName, err)
+	}
+	return nil
 }
 
 // SyncFDB reconciles the local FDB (forwarding database) on the VXLAN interface
