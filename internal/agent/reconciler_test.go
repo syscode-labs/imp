@@ -447,7 +447,7 @@ var _ = Describe("ImpVM Agent: Running — lazy reattach on agent restart", func
 				Name: "tc-reattach-dead", Namespace: "default",
 				Finalizers: []string{"imp/finalizer"},
 			},
-			Spec: impdevv1alpha1.ImpVMSpec{NodeName: testNode},
+			Spec: impdevv1alpha1.ImpVMSpec{NodeName: testNode, Lifecycle: impdevv1alpha1.VMLifecyclePersistent},
 		}
 		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
 		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
@@ -477,7 +477,7 @@ var _ = Describe("ImpVM Agent: Running — lazy reattach on agent restart", func
 				Name: "tc-reattach-nopid", Namespace: "default",
 				Finalizers: []string{"imp/finalizer"},
 			},
-			Spec: impdevv1alpha1.ImpVMSpec{NodeName: testNode},
+			Spec: impdevv1alpha1.ImpVMSpec{NodeName: testNode, Lifecycle: impdevv1alpha1.VMLifecyclePersistent},
 		}
 		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
 		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
