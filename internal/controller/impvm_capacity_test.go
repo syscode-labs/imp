@@ -32,7 +32,7 @@ import (
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
 
-// makeNode creates a node with imp/enabled=true and the given allocatable resources.
+// makeNode creates a node with imp/enabled=true, a Ready=True condition, and the given allocatable resources.
 func makeNode(ctx context.Context, name string, cpu, memory string) *corev1.Node {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{
@@ -43,11 +43,14 @@ func makeNode(ctx context.Context, name string, cpu, memory string) *corev1.Node
 	Expect(k8sClient.Create(ctx, node)).To(Succeed())
 	DeferCleanup(func() { k8sClient.Delete(ctx, node) }) //nolint:errcheck
 
-	// Set allocatable resources on node status.
+	// Set allocatable resources and Ready condition on node status.
 	patch := client.MergeFrom(node.DeepCopy())
 	node.Status.Allocatable = corev1.ResourceList{
 		corev1.ResourceCPU:    resource.MustParse(cpu),
 		corev1.ResourceMemory: resource.MustParse(memory),
+	}
+	node.Status.Conditions = []corev1.NodeCondition{
+		{Type: corev1.NodeReady, Status: corev1.ConditionTrue},
 	}
 	Expect(k8sClient.Status().Patch(ctx, node, patch)).To(Succeed())
 	return node

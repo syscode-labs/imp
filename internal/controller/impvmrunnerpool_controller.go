@@ -139,8 +139,8 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	queueDepth, err := r.queueDepth(ctx, pool)
 	if err != nil {
 		log.Info("could not fetch runner queue depth; falling back to minIdle", "pool", pool.Name, "err", err)
-	} else if int32(queueDepth) > desiredCount {
-		desiredCount = int32(queueDepth)
+	} else if int32(queueDepth) > desiredCount { //nolint:gosec
+		desiredCount = int32(queueDepth) //nolint:gosec
 	}
 	if webhookDemand := runnerDemandFromAnnotation(pool); webhookDemand > desiredCount {
 		desiredCount = webhookDemand
@@ -338,5 +338,5 @@ func runnerDemandFromAnnotation(pool *impv1alpha1.ImpVMRunnerPool) int32 {
 	if err != nil || n < 0 {
 		return 0
 	}
-	return int32(n)
+	return int32(n) //nolint:gosec
 }
