@@ -17,10 +17,10 @@ import (
 	"time"
 
 	firecracker "github.com/firecracker-microvm/firecracker-go-sdk"
-	fcclientops "github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/models"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	fcclientops "github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -28,9 +28,9 @@ import (
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent/network"
 	"github.com/syscode-labs/imp/internal/agent/probe"
-	pb "github.com/syscode-labs/imp/internal/proto/guest"
 	"github.com/syscode-labs/imp/internal/agent/rootfs"
 	agentvsock "github.com/syscode-labs/imp/internal/agent/vsock"
+	pb "github.com/syscode-labs/imp/internal/proto/guest"
 )
 
 // shuttingDownTimeout is how long Stop waits for a graceful ACPI shutdown
@@ -43,11 +43,11 @@ var metricsInterval = 30 * time.Second
 
 // fcProc holds the runtime state of a running Firecracker microVM process.
 type fcProc struct {
-	machine      *firecracker.Machine
-	pid          int64
-	socket       string
-	netInfo      *network.NetworkInfo // nil when NetworkRef is absent
-	probeCancel  context.CancelFunc   // non-nil when probe goroutine is running
+	machine     *firecracker.Machine
+	pid         int64
+	socket      string
+	netInfo     *network.NetworkInfo // nil when NetworkRef is absent
+	probeCancel context.CancelFunc   // non-nil when probe goroutine is running
 }
 
 type rootfsBuilder interface {
@@ -198,14 +198,14 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		return 0, fmt.Errorf("create machine: %w", err)
 	}
 	if err := m.Start(ctx); err != nil {
-		_ = m.StopVMM()        //nolint:errcheck
+		_ = m.StopVMM()         //nolint:errcheck
 		_ = os.Remove(sockPath) //nolint:errcheck // best-effort cleanup
 		return 0, fmt.Errorf("start machine: %w", err)
 	}
 
 	pid, err := m.PID()
 	if err != nil {
-		_ = m.StopVMM()        //nolint:errcheck
+		_ = m.StopVMM()         //nolint:errcheck
 		_ = os.Remove(sockPath) //nolint:errcheck // best-effort cleanup
 		return 0, fmt.Errorf("get pid: %w", err)
 	}

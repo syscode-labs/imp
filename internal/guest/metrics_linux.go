@@ -5,6 +5,7 @@ package guest
 import (
 	"bufio"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -108,6 +109,9 @@ func diskUsedBytes(path string) (int64, error) {
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return 0, err
 	}
-	used := int64(stat.Blocks-stat.Bavail) * stat.Bsize
-	return used, nil
+	usedBlocks := stat.Blocks - stat.Bavail
+	if usedBlocks > math.MaxInt64/uint64(stat.Bsize) {
+		return math.MaxInt64, nil
+	}
+	return int64(usedBlocks * uint64(stat.Bsize)), nil
 }

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -42,7 +43,7 @@ func (s *Server) Exec(ctx context.Context, req *pb.ExecRequest) (*pb.ExecRespons
 	exitCode := int32(0)
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = int32(exitErr.ExitCode())
+			exitCode = intToInt32Safe(exitErr.ExitCode())
 		} else {
 			exitCode = 1
 		}
@@ -79,7 +80,7 @@ func (s *Server) HTTPCheck(_ context.Context, req *pb.HTTPCheckRequest) (*pb.HTT
 		return &pb.HTTPCheckResponse{StatusCode: 0}, nil
 	}
 	defer resp.Body.Close() //nolint:errcheck
-	return &pb.HTTPCheckResponse{StatusCode: int32(resp.StatusCode)}, nil
+	return &pb.HTTPCheckResponse{StatusCode: intToInt32Safe(resp.StatusCode)}, nil
 }
 
 // Metrics reads CPU, memory and disk usage from /proc and syscall.
@@ -103,4 +104,14 @@ func (s *Server) Metrics(_ context.Context, _ *pb.MetricsRequest) (*pb.MetricsRe
 		MemoryUsedBytes: mem,
 		DiskUsedBytes:   disk,
 	}, nil
+}
+
+func intToInt32Safe(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(v)
 }
