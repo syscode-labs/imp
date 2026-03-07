@@ -1,0 +1,13 @@
+{{- if .Values.grafana.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "imp.fullname" . }}-grafana-dashboard
+  namespace: {{ .Values.grafana.namespace | default .Release.Namespace }}
+  labels:
+    {{ .Values.grafana.dashboardLabel.key }}: {{ .Values.grafana.dashboardLabel.value | quote }}
+    {{- include "imp.labels" . | nindent 4 }}
+data:
+  imp-overview.json: |-
+{{ .Files.Get "dashboards/imp-overview.json" | indent 4 }}
+{{- end }}

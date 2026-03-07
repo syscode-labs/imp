@@ -1,0 +1,24 @@
+suite: grafana dashboard
+templates:
+  - templates/grafana/dashboard.yaml
+tests:
+  - it: creates ConfigMap when grafana.enabled=true
+    template: templates/grafana/dashboard.yaml
+    set:
+      grafana.enabled: true
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.labels["grafana_dashboard"]
+          value: "1"
+      - isNotEmpty:
+          path: data["imp-overview.json"]
+
+  - it: renders no resources when grafana.enabled=false
+    template: templates/grafana/dashboard.yaml
+    set:
+      grafana.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
