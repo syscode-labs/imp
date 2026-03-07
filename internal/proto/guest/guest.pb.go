@@ -286,6 +286,7 @@ type MetricsResponse struct {
 	CpuUsageRatio   float64                `protobuf:"fixed64,1,opt,name=cpu_usage_ratio,json=cpuUsageRatio,proto3" json:"cpu_usage_ratio,omitempty"`
 	MemoryUsedBytes int64                  `protobuf:"varint,2,opt,name=memory_used_bytes,json=memoryUsedBytes,proto3" json:"memory_used_bytes,omitempty"`
 	DiskUsedBytes   int64                  `protobuf:"varint,3,opt,name=disk_used_bytes,json=diskUsedBytes,proto3" json:"disk_used_bytes,omitempty"`
+	CpuIowaitRatio  float64                `protobuf:"fixed64,4,opt,name=cpu_iowait_ratio,json=cpuIowaitRatio,proto3" json:"cpu_iowait_ratio,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -341,6 +342,13 @@ func (x *MetricsResponse) GetDiskUsedBytes() int64 {
 	return 0
 }
 
+func (x *MetricsResponse) GetCpuIowaitRatio() float64 {
+	if x != nil {
+		return x.CpuIowaitRatio
+	}
+	return 0
+}
+
 var File_guest_guest_proto protoreflect.FileDescriptor
 
 const file_guest_guest_proto_rawDesc = "" +
@@ -364,11 +372,12 @@ const file_guest_guest_proto_rawDesc = "" +
 	"\x11HTTPCheckResponse\x12\x1f\n" +
 	"\vstatus_code\x18\x01 \x01(\x05R\n" +
 	"statusCode\"\x10\n" +
-	"\x0eMetricsRequest\"\x8d\x01\n" +
+	"\x0eMetricsRequest\"\xb7\x01\n" +
 	"\x0fMetricsResponse\x12&\n" +
 	"\x0fcpu_usage_ratio\x18\x01 \x01(\x01R\rcpuUsageRatio\x12*\n" +
 	"\x11memory_used_bytes\x18\x02 \x01(\x03R\x0fmemoryUsedBytes\x12&\n" +
-	"\x0fdisk_used_bytes\x18\x03 \x01(\x03R\rdiskUsedBytes2\xb7\x01\n" +
+	"\x0fdisk_used_bytes\x18\x03 \x01(\x03R\rdiskUsedBytes\x12(\n" +
+	"\x10cpu_iowait_ratio\x18\x04 \x01(\x01R\x0ecpuIowaitRatio2\xb7\x01\n" +
 	"\n" +
 	"GuestAgent\x12/\n" +
 	"\x04Exec\x12\x12.guest.ExecRequest\x1a\x13.guest.ExecResponse\x12>\n" +
