@@ -430,9 +430,14 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 	tapName := network.TAPName(vKey)
 	macAddr := network.MACAddr(vKey)
 
-	_, cidr, err := gonet.ParseCIDR(impNet.Spec.Subnet)
+	allocSubnet, err := resolveAllocationSubnet(ctx, d.Client, &impNet)
 	if err != nil {
-		return nil, fmt.Errorf("parse subnet %q: %w", impNet.Spec.Subnet, err)
+		return nil, fmt.Errorf("resolve allocation subnet: %w", err)
+	}
+
+	_, cidr, err := gonet.ParseCIDR(allocSubnet)
+	if err != nil {
+		return nil, fmt.Errorf("parse subnet %q: %w", allocSubnet, err)
 	}
 	prefixLen, _ := cidr.Mask.Size()
 
@@ -445,7 +450,7 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 	}
 
 	// Allocate VM IP.
-	ip, err := d.Alloc.Allocate(netKey, impNet.Spec.Subnet, gateway)
+	ip, err := d.Alloc.Allocate(netKey, allocSubnet, gateway)
 	if err != nil {
 		return nil, fmt.Errorf("allocate IP: %w", err)
 	}
@@ -464,7 +469,7 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 
 	// Install NAT if requested (best-effort — don't block VM start on NAT failure).
 	if impNet.Spec.NAT.Enabled {
-		if natErr := d.Net.EnsureNAT(ctx, impNet.Spec.Subnet, impNet.Spec.NAT.EgressInterface); natErr != nil {
+		if natErr := d.Net.EnsureNAT(ctx, allocSubnet, impNet.Spec.NAT.EgressInterface); natErr != nil {
 			logf.FromContext(ctx).Error(natErr, "EnsureNAT failed — VM will start without NAT")
 		}
 	}
@@ -477,7 +482,7 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 		PrefixLen:       prefixLen,
 		Gateway:         gateway,
 		DNS:             impNet.Spec.DNS,
-		Subnet:          impNet.Spec.Subnet,
+		Subnet:          allocSubnet,
 		NetworkKey:      netKey,
 		NATEnabled:      impNet.Spec.NAT.Enabled,
 		EgressInterface: impNet.Spec.NAT.EgressInterface,

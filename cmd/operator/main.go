@@ -133,6 +133,12 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = shutdownTelemetry(context.Background()) }()
+	_, shutdownTraces, err := telemetry.SetupTracerProvider(context.Background())
+	if err != nil {
+		setupLog.Error(err, "unable to set up traces")
+		os.Exit(1)
+	}
+	defer func() { _ = shutdownTraces(context.Background()) }()
 	controller.InitMetrics(mp.Meter("imp.controller"))
 
 	cfg := ctrl.GetConfigOrDie()

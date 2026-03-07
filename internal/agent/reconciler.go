@@ -331,26 +331,5 @@ func (r *ImpVMReconciler) syncFDB(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	}, &impNet); err != nil {
 		return client.IgnoreNotFound(err)
 	}
-
-	netKey := impNet.Namespace + "/" + impNet.Name
-	bridgeName := network.BridgeName(netKey)
-	vni, ifaceName := network.VXLANParams(string(impNet.UID))
-
-	if err := r.Net.EnsureVXLAN(ctx, vni, ifaceName, r.NodeIP, bridgeName); err != nil {
-		return err
-	}
-
-	// Collect remote entries (not on this node).
-	var remoteEntries []network.FDBEntry
-	for _, e := range impNet.Status.VTEPTable {
-		if e.NodeIP == r.NodeIP {
-			continue // skip local entries
-		}
-		remoteEntries = append(remoteEntries, network.FDBEntry{
-			MAC:   e.VMMAC,
-			DstIP: e.NodeIP,
-		})
-	}
-
-	return r.Net.SyncFDB(ctx, ifaceName, remoteEntries)
+	return syncNetworkFDB(ctx, &impNet, r.NodeIP, r.Net)
 }

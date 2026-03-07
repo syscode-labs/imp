@@ -71,6 +71,12 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = shutdownTelemetry(context.Background()) }()
+	_, shutdownTraces, err := telemetry.SetupTracerProvider(context.Background())
+	if err != nil {
+		log.Error(err, "unable to set up traces")
+		os.Exit(1)
+	}
+	defer func() { _ = shutdownTraces(context.Background()) }()
 	mc := agent.NewVMMetricsCollector(mp.Meter("imp.agent"), agentReg)
 
 	// IMP_STUB_DRIVER=true: StubDriver (CI, test clusters, no KVM needed).
@@ -110,6 +116,17 @@ func main() {
 		Driver:   driver,
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "ImpVMSnapshot")
+		os.Exit(1)
+	}
+
+	if err := (&agent.ImpNetworkReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		NodeName: nodeName,
+		NodeIP:   nodeIP,
+		Net:      prodNet,
+	}).SetupWithManager(mgr); err != nil {
+		log.Error(err, "unable to create controller", "controller", "ImpNetwork(agent)")
 		os.Exit(1)
 	}
 
