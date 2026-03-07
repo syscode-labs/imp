@@ -200,6 +200,8 @@ Imp provides first-class integration with **Cilium**. When Cilium is detected:
 
 For non-Cilium CNIs (Flannel/Calico/Weave/etc.), Imp uses a VXLAN fallback for cross-node VM connectivity.
 
+Cilium IPAM runbook: `docs/networking/cilium-ipam.md`
+
 ## Metrics & Observability
 
 Imp exposes operator and agent metrics so you can monitor VM lifecycle and platform health:
@@ -237,6 +239,8 @@ sequenceDiagram
   `kubectl -n imp-system logs ds/imp-agent`
 - Cilium features not active: verify Cilium CRDs exist and cni detection events.
   `kubectl get crd | grep cilium`
+- Cilium IPAM/pool issues: verify `CiliumPodIPPool` exists and `ImpNetwork.spec.ipam.cilium.poolRef` matches.
+  `kubectl get ciliumpodippool`
 - Webhook admission failures: check cert-manager/webhook pods and certificates.
   `kubectl -n imp-system get pods,certificates,issuers`
 - Snapshot or migration stalls: inspect related CR conditions.

@@ -193,6 +193,72 @@ spec:
 		})
 	})
 
+	Context("Cilium IPAM", func() {
+		const (
+			poolName    = "e2e-imp-pool"
+			networkName = "e2e-cilium-ipam-net"
+		)
+
+		AfterEach(func() {
+			_, _ = utils.Run(exec.Command("kubectl", "delete", "impnetwork", networkName,
+				"-n", "default", "--ignore-not-found"))
+			_, _ = utils.Run(exec.Command("kubectl", "delete", "ciliumpodippool", poolName,
+				"--ignore-not-found"))
+		})
+
+		It("accepts ImpNetwork with ipam.provider=cilium and existing CiliumPodIPPool", func() {
+			By("ensuring CiliumPodIPPool CRD exists")
+			if _, err := utils.Run(exec.Command("kubectl", "get", "crd", "ciliumpodippools.cilium.io")); err != nil {
+				Skip("CiliumPodIPPool CRD not installed in this cluster")
+			}
+
+			By("creating CiliumPodIPPool")
+			poolManifest := fmt.Sprintf(`
+apiVersion: cilium.io/v2alpha1
+kind: CiliumPodIPPool
+metadata:
+  name: %s
+spec:
+  ipv4:
+    cidrs:
+      - 10.123.0.0/24
+    maskSize: 30
+`, poolName)
+			applyPool := exec.Command("kubectl", "apply", "-f", "-")
+			applyPool.Stdin = strings.NewReader(poolManifest)
+			_, err := utils.Run(applyPool)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("creating ImpNetwork that delegates IPAM to Cilium pool")
+			netManifest := fmt.Sprintf(`
+apiVersion: imp.dev/v1alpha1
+kind: ImpNetwork
+metadata:
+  name: %s
+  namespace: default
+spec:
+  subnet: 10.44.0.0/24
+  ipam:
+    provider: cilium
+    cilium:
+      poolRef: %s
+`, networkName, poolName)
+			applyNet := exec.Command("kubectl", "apply", "-f", "-")
+			applyNet.Stdin = strings.NewReader(netManifest)
+			_, err = utils.Run(applyNet)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("verifying poolRef is persisted")
+			Eventually(func(g Gomega) {
+				getCmd := exec.Command("kubectl", "get", "impnetwork", networkName, "-n", "default",
+					"-o", "jsonpath={.spec.ipam.cilium.poolRef}")
+				out, getErr := utils.Run(getCmd)
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(out)).To(Equal(poolName))
+			}).Should(Succeed())
+		})
+	})
+
 	Context("Metrics", func() {
 		It("operator /metrics endpoint responds 200", func() {
 			pf := exec.Command("kubectl", "port-forward",
