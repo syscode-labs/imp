@@ -6,14 +6,19 @@
 #   - If remote test exits non-zero: keep OCI instance for debugging
 #
 # Required env:
-#   OCI_COMPARTMENT_OCID     Compartment OCID for compute/network operations
-#   OCI_AVAILABILITY_DOMAIN  Availability domain (e.g. Uocm:UK-LONDON-1-AD-1)
-#   OCI_SUBNET_OCID          Subnet OCID with public IP access
-#   OCI_IMAGE_OCID           Image OCID for the VM
 #   OCI_SSH_PUBLIC_KEY_FILE  Path to SSH public key file
 #   OCI_SSH_PRIVATE_KEY_FILE Path to SSH private key file
 #
 # Optional env:
+#   IMP_OCI_PROFILE          Preferred profile selector (default: syscode-api)
+#   OCI_PROFILE              OCI CLI profile to use (required unless OCI_CLI_PROFILE is set)
+#   OCI_CLI_PROFILE          OCI CLI profile to use (alternative to OCI_PROFILE)
+#   IMP_OCI_COMPARTMENT_NAME Preferred target compartment name (default: homelab)
+#   IMP_OCI_DOMAIN_NAME      Preferred target domain name (default: homelab; metadata only)
+#   OCI_COMPARTMENT_OCID     Compartment OCID for compute/network operations
+#   OCI_AVAILABILITY_DOMAIN  Availability domain (auto-filled if golden-image builder is used)
+#   OCI_SUBNET_OCID          Subnet OCID with public IP access (auto-filled if golden-image builder is used)
+#   OCI_IMAGE_OCID           Image OCID for the VM (auto-built if missing)
 #   OCI_SHAPE                Default: VM.Standard.E2.1.Micro
 #   OCI_SSH_USER             Default: ubuntu
 #   OCI_INSTANCE_NAME_PREFIX Default: imp-fc-e2e
@@ -23,8 +28,10 @@
 #   IMP_SOURCE_MODE          Default: local-tarball (only supported mode currently)
 #   FREE_TIER_MAX_MICRO      Default: 2
 #   ALLOW_PAID_SHAPE         Default: false (must be true to use non-free-tier shape)
+#   OCI_AUTO_BUILD_GOLDEN_IMAGE Default: true (build minimal OCI custom image when OCI_IMAGE_OCID is missing)
 #
 # Usage:
+#   IMP_OCI_PROFILE=syscode-api IMP_OCI_COMPARTMENT_NAME=homelab IMP_OCI_DOMAIN_NAME=homelab \
 #   OCI_COMPARTMENT_OCID=... OCI_AVAILABILITY_DOMAIN=... OCI_SUBNET_OCID=... \
 #   OCI_IMAGE_OCID=... OCI_SSH_PUBLIC_KEY_FILE=~/.ssh/id_ed25519.pub \
 #   OCI_SSH_PRIVATE_KEY_FILE=~/.ssh/id_ed25519 \
@@ -51,6 +58,62 @@ require_env() {
 
 log() {
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*"
+}
+
+resolve_oci_profile() {
+  OCI_PROFILE="${OCI_PROFILE:-${IMP_OCI_PROFILE:-}}"
+  OCI_CLI_PROFILE="${OCI_CLI_PROFILE:-$OCI_PROFILE}"
+  OCI_PROFILE="${OCI_PROFILE:-${OCI_CLI_PROFILE:-}}"
+  if [[ -z "${OCI_PROFILE:-}" ]]; then
+    echo "missing required OCI profile: set OCI_PROFILE or OCI_CLI_PROFILE" >&2
+    exit 2
+  fi
+  export OCI_PROFILE
+  export OCI_CLI_PROFILE="$OCI_PROFILE"
+  export OCI_CLI_SUPPRESS_PROMPTS=true
+}
+
+resolve_oci_auth_mode() {
+  local cfg profile_has_token
+  if [[ -n "${OCI_CLI_AUTH:-}" ]]; then
+    return 0
+  fi
+  cfg="${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}"
+  profile_has_token="$(
+    awk -v p="$OCI_PROFILE" '
+      BEGIN { in_profile=0; has=0 }
+      $0 ~ "^\\[" p "\\]$" { in_profile=1; next }
+      $0 ~ "^\\[" && in_profile { in_profile=0 }
+      in_profile && $0 ~ /^[[:space:]]*security_token_file[[:space:]]*=/ { has=1 }
+      END { print has }
+    ' "$cfg" 2>/dev/null || true
+  )"
+  if [[ "$profile_has_token" == "1" ]]; then
+    export OCI_CLI_AUTH=security_token
+  fi
+}
+
+resolve_compartment() {
+  if [[ -n "${OCI_COMPARTMENT_OCID:-}" ]]; then
+    return 0
+  fi
+  if [[ -z "${OCI_COMPARTMENT_NAME:-}" ]]; then
+    return 0
+  fi
+  local by_name
+  by_name="$(
+    oci iam compartment list --all --compartment-id-in-subtree true --output json \
+      | jq -r --arg n "$OCI_COMPARTMENT_NAME" '
+        .data
+        | map(select(."lifecycle-state"=="ACTIVE" and .name==$n))
+        | .[0].id // empty
+      '
+  )"
+  if [[ -z "${by_name:-}" ]]; then
+    echo "could not resolve OCI_COMPARTMENT_OCID from OCI_COMPARTMENT_NAME=$OCI_COMPARTMENT_NAME" >&2
+    exit 2
+  fi
+  OCI_COMPARTMENT_OCID="$by_name"
 }
 
 wait_for_running() {
@@ -121,6 +184,37 @@ terminate_instance() {
     --instance-id "$instance_id" \
     --force \
     --preserve-boot-volume false >/dev/null
+}
+
+ensure_image_ocid() {
+  if [[ -n "${OCI_IMAGE_OCID:-}" ]]; then
+    return 0
+  fi
+  if [[ "${OCI_AUTO_BUILD_GOLDEN_IMAGE:-true}" != "true" ]]; then
+    echo "OCI_IMAGE_OCID is missing and OCI_AUTO_BUILD_GOLDEN_IMAGE=false" >&2
+    exit 2
+  fi
+  local env_file
+  env_file="$(mktemp /tmp/imp-golden-env-XXXXXX)"
+  log "OCI_IMAGE_OCID missing; building minimal golden image first"
+  OCI_COMPARTMENT_OCID="${OCI_COMPARTMENT_OCID:-}" \
+  OCI_AVAILABILITY_DOMAIN="${OCI_AVAILABILITY_DOMAIN:-}" \
+  OCI_SUBNET_OCID="${OCI_SUBNET_OCID:-}" \
+  OCI_SSH_PUBLIC_KEY_FILE="$OCI_SSH_PUBLIC_KEY_FILE" \
+  OCI_SSH_PRIVATE_KEY_FILE="$OCI_SSH_PRIVATE_KEY_FILE" \
+  FIRECRACKER_VERSION="$FIRECRACKER_VERSION" \
+  OCI_OUTPUT_ENV_FILE="$env_file" \
+  "$REPO_ROOT/hack/oci-build-golden-image.sh"
+
+  # shellcheck disable=SC1090
+  source "$env_file"
+  rm -f "$env_file"
+
+  if [[ -z "${OCI_IMAGE_OCID:-}" ]]; then
+    echo "golden image build did not return OCI_IMAGE_OCID" >&2
+    exit 2
+  fi
+  log "Using generated OCI_IMAGE_OCID=$OCI_IMAGE_OCID"
 }
 
 ensure_noninteractive_ssh_key() {
@@ -383,11 +477,10 @@ main() {
   require_cmd ssh
   require_cmd scp
   require_cmd tar
+  require_cmd jq
+  resolve_oci_profile
+  resolve_oci_auth_mode
 
-  require_env OCI_COMPARTMENT_OCID
-  require_env OCI_AVAILABILITY_DOMAIN
-  require_env OCI_SUBNET_OCID
-  require_env OCI_IMAGE_OCID
   require_env OCI_SSH_PUBLIC_KEY_FILE
   require_env OCI_SSH_PRIVATE_KEY_FILE
 
@@ -397,6 +490,16 @@ main() {
   OCI_ASSIGN_PUBLIC_IP="${OCI_ASSIGN_PUBLIC_IP:-true}"
   OCI_WAIT_SECONDS="${OCI_WAIT_SECONDS:-900}"
   FIRECRACKER_VERSION="${FIRECRACKER_VERSION:-v1.9.0}"
+  OCI_COMPARTMENT_NAME="${OCI_COMPARTMENT_NAME:-${IMP_OCI_COMPARTMENT_NAME:-homelab}}"
+  OCI_DOMAIN_NAME="${OCI_DOMAIN_NAME:-${IMP_OCI_DOMAIN_NAME:-homelab}}"
+
+  ensure_image_ocid
+  resolve_compartment
+  require_env OCI_COMPARTMENT_OCID
+  require_env OCI_AVAILABILITY_DOMAIN
+  require_env OCI_SUBNET_OCID
+  require_env OCI_IMAGE_OCID
+  log "Using target domain metadata: OCI_DOMAIN_NAME=$OCI_DOMAIN_NAME"
 
   if [[ ! -f "$OCI_SSH_PUBLIC_KEY_FILE" ]]; then
     echo "SSH public key file not found: $OCI_SSH_PUBLIC_KEY_FILE" >&2
