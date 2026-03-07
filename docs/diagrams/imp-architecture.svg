@@ -1,32 +1,36 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="520" viewBox="0 0 1100 520">
-  <rect x="20" y="20" width="1060" height="480" rx="14" fill="#fffdf7" stroke="#1f2937" stroke-width="2"/>
-  <text x="44" y="58" font-size="26" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#111827">Kubernetes Cluster</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560">
+  <rect x="20" y="20" width="1060" height="520" rx="16" fill="#fffdf7" stroke="#1f2937" stroke-width="2"/>
+  <text x="44" y="58" font-size="26" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#111827">Kubernetes Cluster</text>
 
-  <rect x="70" y="120" width="300" height="110" rx="16" fill="#e6fcf5" stroke="#0f766e" stroke-width="2"/>
-  <text x="220" y="166" text-anchor="middle" font-size="24" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#0f766e">Imp Operator</text>
-  <text x="220" y="196" text-anchor="middle" font-size="18" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#0f766e">CRD control loop</text>
+  <rect x="70" y="120" width="300" height="120" rx="16" fill="#e6fcf5" stroke="#0f766e" stroke-width="2"/>
+  <text x="220" y="168" text-anchor="middle" font-size="23" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#0f766e">Imp Operator</text>
+  <text x="220" y="198" text-anchor="middle" font-size="17" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#0f766e">CRD control loop</text>
 
-  <rect x="430" y="120" width="250" height="110" rx="16" fill="#ecfccb" stroke="#3f6212" stroke-width="2"/>
-  <text x="555" y="166" text-anchor="middle" font-size="24" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#3f6212">Imp Agent</text>
-  <text x="555" y="196" text-anchor="middle" font-size="18" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#3f6212">on each node</text>
+  <rect x="420" y="120" width="260" height="120" rx="16" fill="#ecfccb" stroke="#3f6212" stroke-width="2"/>
+  <text x="550" y="168" text-anchor="middle" font-size="23" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#3f6212">Imp Agent</text>
+  <text x="550" y="198" text-anchor="middle" font-size="17" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#3f6212">runs on each node</text>
 
-  <rect x="740" y="120" width="280" height="110" rx="16" fill="#eef2ff" stroke="#3730a3" stroke-width="2"/>
-  <text x="880" y="166" text-anchor="middle" font-size="24" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#3730a3">Firecracker microVMs</text>
-  <text x="880" y="196" text-anchor="middle" font-size="18" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#3730a3">isolated workloads</text>
+  <rect x="730" y="120" width="300" height="120" rx="16" fill="#eef2ff" stroke="#3730a3" stroke-width="2"/>
+  <text x="880" y="164" text-anchor="middle" font-size="22" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#3730a3">Firecracker</text>
+  <text x="880" y="194" text-anchor="middle" font-size="20" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#3730a3">microVM workloads</text>
 
-  <line x1="370" y1="175" x2="430" y2="175" stroke="#111827" stroke-width="3"/>
-  <polygon points="430,175 416,167 416,183" fill="#111827"/>
+  <line x1="370" y1="180" x2="420" y2="180" stroke="#111827" stroke-width="3"/>
+  <polygon points="420,180 406,172 406,188" fill="#111827"/>
 
-  <line x1="680" y1="175" x2="740" y2="175" stroke="#111827" stroke-width="3"/>
-  <polygon points="740,175 726,167 726,183" fill="#111827"/>
+  <line x1="680" y1="180" x2="730" y2="180" stroke="#111827" stroke-width="3"/>
+  <polygon points="730,180 716,172 716,188" fill="#111827"/>
 
-  <rect x="70" y="280" width="450" height="160" rx="16" fill="#fff7ed" stroke="#9a3412" stroke-width="2"/>
-  <text x="95" y="320" font-size="24" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#9a3412">Networking</text>
-  <text x="95" y="352" font-size="19" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#9a3412">Cilium-first: NetworkPolicy + Hubble + service reachability</text>
-  <text x="95" y="382" font-size="19" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#9a3412">Fallback: VXLAN overlay for non-Cilium CNIs</text>
+  <rect x="70" y="290" width="470" height="190" rx="16" fill="#fff7ed" stroke="#9a3412" stroke-width="2"/>
+  <text x="95" y="330" font-size="24" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#9a3412">Networking</text>
+  <text x="95" y="364" font-size="17" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#9a3412">Cilium-first:</text>
+  <text x="95" y="388" font-size="17" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#9a3412">- Kubernetes NetworkPolicy for VMs</text>
+  <text x="95" y="412" font-size="17" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#9a3412">- Hubble visibility for VM traffic</text>
+  <text x="95" y="436" font-size="17" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#9a3412">Fallback: VXLAN overlay on non-Cilium CNIs</text>
 
-  <rect x="560" y="280" width="460" height="160" rx="16" fill="#f0f9ff" stroke="#0c4a6e" stroke-width="2"/>
-  <text x="585" y="320" font-size="24" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#0c4a6e">Metrics &amp; Observability</text>
-  <text x="585" y="352" font-size="19" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#0c4a6e">Prometheus metrics for VM state, latency, health</text>
-  <text x="585" y="382" font-size="19" font-family="Inter, 'Segoe UI', Arial, sans-serif" fill="#0c4a6e">Dashboards and monitors for operator + agent signals</text>
+  <rect x="560" y="290" width="470" height="190" rx="16" fill="#f0f9ff" stroke="#0c4a6e" stroke-width="2"/>
+  <text x="585" y="330" font-size="24" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#0c4a6e">Metrics &amp; Observability</text>
+  <text x="585" y="364" font-size="17" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#0c4a6e">- VM state and phase metrics</text>
+  <text x="585" y="388" font-size="17" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#0c4a6e">- Scheduling and boot latency metrics</text>
+  <text x="585" y="412" font-size="17" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#0c4a6e">- Guest CPU/memory/disk metrics</text>
+  <text x="585" y="436" font-size="17" font-family="'Avenir Next', Inter, 'Segoe UI', Arial, sans-serif" fill="#0c4a6e">- Prometheus-compatible scraping and dashboards</text>
 </svg>
