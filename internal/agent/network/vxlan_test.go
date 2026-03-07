@@ -2,6 +2,7 @@ package network_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/syscode-labs/imp/internal/agent/network"
@@ -76,5 +77,21 @@ func TestStubNetManager_EnsureVXLAN_recordsBridgeName(t *testing.T) {
 	}
 	if stub.EnsureVXLANBridgeCalls[0] != "impbr-xyz" {
 		t.Errorf("expected bridgeName impbr-xyz, got %q", stub.EnsureVXLANBridgeCalls[0])
+	}
+}
+
+func TestStubNetManager_EnsureVXLAN_emptyBridgeName(t *testing.T) {
+	stub := &network.StubNetManager{}
+	_ = stub.EnsureVXLAN(context.Background(), 42, "impvx-abc", "10.0.0.1", "")
+	if stub.EnsureVXLANBridgeCalls[0] != "" {
+		t.Errorf("expected empty bridgeName recorded, got %q", stub.EnsureVXLANBridgeCalls[0])
+	}
+}
+
+func TestStubNetManager_EnsureVXLAN_propagatesError(t *testing.T) {
+	stub := &network.StubNetManager{EnsureVXLANErr: errors.New("boom")}
+	err := stub.EnsureVXLAN(context.Background(), 42, "impvx-abc", "10.0.0.1", "impbr-xyz")
+	if err == nil || err.Error() != "boom" {
+		t.Errorf("expected error 'boom', got %v", err)
 	}
 }
