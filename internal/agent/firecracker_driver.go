@@ -211,6 +211,16 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	// 6. Build the VMM command.
 	cmd := exec.CommandContext(ctx, d.BinPath, "--api-sock", sockPath) //nolint:gosec // G204: BinPath validated in NewFirecrackerDriver
 
+	// Redirect the Firecracker process stdout to a serial log file so that
+	// the guest ttyS0 console (console=ttyS0 kernel arg) is persisted on disk.
+	serialLogPath := filepath.Join(d.SocketDir, vm.Namespace+"-"+vm.Name+".serial.log")
+	serialLogFile, err := os.OpenFile(serialLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
+	if err != nil {
+		return 0, fmt.Errorf("open serial log %s: %w", serialLogPath, err)
+	}
+	cmd.Stdout = serialLogFile
+	defer serialLogFile.Close() //nolint:errcheck // file stays open via cmd until process exits
+
 	// 7. Create and start the machine.
 	m, err := firecracker.NewMachine(ctx, cfg, firecracker.WithProcessRunner(cmd))
 	if err != nil {
