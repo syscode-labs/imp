@@ -245,6 +245,7 @@ func (r *ImpVMReconciler) finishSucceeded(ctx context.Context, vm *impdevv1alpha
 func (r *ImpVMReconciler) finishFailed(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
 	base := vm.DeepCopy()
 	vm.Status.Phase = impdevv1alpha1.VMPhaseFailed
+	vm.Status.StartedAt = nil // clear so a future restart doesn't immediately re-timeout
 	if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
 		return ctrl.Result{}, err
 	}
