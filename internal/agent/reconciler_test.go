@@ -549,6 +549,109 @@ var _ = Describe("ImpVM Agent: registerVTEP — concurrent writes", func() {
 	})
 })
 
+var _ = Describe("ImpVM Agent: Starting — stuck timeout", func() {
+	ctx := context.Background()
+
+	It("transitions to Failed when StartedAt exceeds StartTimeout", func() {
+		r := &ImpVMReconciler{
+			Client:       k8sClient,
+			NodeName:     testNode,
+			Driver:       NewStubDriver(),
+			StartTimeout: 5 * time.Minute,
+		}
+
+		sixMinsAgo := metav1.NewTime(time.Now().Add(-6 * time.Minute))
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "tc-starting-timeout", Namespace: "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{NodeName: testNode},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseStarting
+		vm.Status.StartedAt = &sixMinsAgo
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		_, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "tc-starting-timeout", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc-starting-timeout", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseFailed))
+	})
+
+	It("stays in Starting when StartedAt is within StartTimeout", func() {
+		r := &ImpVMReconciler{
+			Client:       k8sClient,
+			NodeName:     testNode,
+			Driver:       NewStubDriver(),
+			StartTimeout: 5 * time.Minute,
+		}
+
+		oneMinsAgo := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "tc-starting-notimeout", Namespace: "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{NodeName: testNode},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseStarting
+		vm.Status.StartedAt = &oneMinsAgo
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		result, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "tc-starting-notimeout", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(Equal(2 * time.Second))
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc-starting-notimeout", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseStarting))
+	})
+
+	It("stays in Starting when StartedAt is nil (timeout not yet set)", func() {
+		r := &ImpVMReconciler{
+			Client:       k8sClient,
+			NodeName:     testNode,
+			Driver:       NewStubDriver(),
+			StartTimeout: 5 * time.Minute,
+		}
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "tc-starting-nostartedat", Namespace: "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{NodeName: testNode},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseStarting
+		// StartedAt intentionally not set
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		result, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "tc-starting-nostartedat", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(Equal(2 * time.Second))
+	})
+})
+
 var _ = Describe("ImpVM Agent: handleTerminating driver.Stop error", func() {
 	ctx := context.Background()
 

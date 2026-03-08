@@ -9,6 +9,7 @@ import (
 	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -35,6 +36,9 @@ type ImpVMReconciler struct {
 	// Alloc is the in-memory IP allocator. When non-nil, Reserve is called during
 	// lazy reattach to restore IP state after agent restart.
 	Alloc *network.Allocator
+	// StartTimeout is how long a VM may remain in Starting before being
+	// transitioned to Failed. Defaults to 5 minutes when zero.
+	StartTimeout time.Duration
 }
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;update;patch
@@ -65,12 +69,29 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	case impdevv1alpha1.VMPhaseRunning:
 		return r.handleRunning(ctx, vm)
 	case impdevv1alpha1.VMPhaseStarting:
-		log.Info("VM is Starting — requeuing")
-		return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+		return r.handleStarting(ctx, vm)
 	default:
 		// Pending, Succeeded, Failed — not our concern.
 		return ctrl.Result{}, nil
 	}
+}
+
+func (r *ImpVMReconciler) startTimeout() time.Duration {
+	if r.StartTimeout > 0 {
+		return r.StartTimeout
+	}
+	return 5 * time.Minute
+}
+
+func (r *ImpVMReconciler) handleStarting(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
+	if vm.Status.StartedAt != nil {
+		if elapsed := time.Since(vm.Status.StartedAt.Time); elapsed > r.startTimeout() {
+			log.Info("VM stuck in Starting — timing out", "elapsed", elapsed, "timeout", r.startTimeout())
+			return r.finishFailed(ctx, vm)
+		}
+	}
+	return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 }
 
 func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
@@ -79,6 +100,8 @@ func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha
 	// Set phase=Starting before calling driver to make concurrent reconciles idempotent.
 	base := vm.DeepCopy()
 	vm.Status.Phase = impdevv1alpha1.VMPhaseStarting
+	now := metav1.Now()
+	vm.Status.StartedAt = &now
 	if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
 		if apierrors.IsConflict(err) {
 			return ctrl.Result{Requeue: true}, nil
@@ -100,6 +123,7 @@ func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha
 
 	base = vm.DeepCopy()
 	vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+	vm.Status.StartedAt = nil
 	vm.Status.IP = state.IP
 	vm.Status.RuntimePID = pid
 	if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {

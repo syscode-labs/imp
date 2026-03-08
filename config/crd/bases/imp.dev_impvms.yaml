@@ -747,6 +747,12 @@ spec:
                   a node.
                 format: date-time
                 type: string
+              startedAt:
+                description: |-
+                  StartedAt is the time the VM last transitioned to phase Starting.
+                  Used to detect and time out stuck start attempts.
+                format: date-time
+                type: string
             type: object
         type: object
     served: true

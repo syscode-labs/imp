@@ -147,6 +147,11 @@ type ImpVMStatus struct {
 	// +optional
 	RunningAt *metav1.Time `json:"runningAt,omitempty"`
 
+	// StartedAt is the time the VM last transitioned to phase Starting.
+	// Used to detect and time out stuck start attempts.
+	// +optional
+	StartedAt *metav1.Time `json:"startedAt,omitempty"`
+
 	// RestartCount is the cumulative number of times this VM has been restarted.
 	// +optional
 	RestartCount int32 `json:"restartCount,omitempty"`

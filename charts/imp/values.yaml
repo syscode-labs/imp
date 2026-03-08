@@ -39,7 +39,10 @@ agent:
     kernelPath: ""
   hostPaths:
     socketDir:
-      enabled: false
+      # enabled: true ensures sockets survive agent pod restarts (required for
+      # PID-based reattach). Setting this to false will orphan Firecracker
+      # sockets on restart — breaking graceful stop for running VMs.
+      enabled: true
       path: /run/imp/sockets
     imageCache:
       enabled: false
