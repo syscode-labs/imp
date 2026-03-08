@@ -26,6 +26,9 @@ import (
 
 	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/cnidetect"
 	"github.com/syscode-labs/imp/internal/controller"
@@ -139,6 +142,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = shutdownTraces(context.Background()) }()
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
 	controller.InitMetrics(mp.Meter("imp.controller"))
 
 	cfg := ctrl.GetConfigOrDie()

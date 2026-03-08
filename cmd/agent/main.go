@@ -18,6 +18,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+
 	"github.com/syscode-labs/imp/internal/agent"
 	"github.com/syscode-labs/imp/internal/agent/network"
 	"github.com/syscode-labs/imp/internal/telemetry"
@@ -78,6 +81,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = shutdownTraces(context.Background()) }()
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	))
 	mc := agent.NewVMMetricsCollector(mp.Meter("imp.agent"), agentReg)
 
 	// IMP_STUB_DRIVER=true: StubDriver (CI, test clusters, no KVM needed).
