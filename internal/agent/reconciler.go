@@ -10,6 +10,7 @@ import (
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -278,46 +279,50 @@ func (r *ImpVMReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // registerVTEP adds or updates the VTEPEntry for vm in ImpNetwork.status.vtepTable.
+// It uses optimistic-lock retries to handle concurrent patches from multiple agents.
 func (r *ImpVMReconciler) registerVTEP(ctx context.Context, vm *impdevv1alpha1.ImpVM, vmIP, vmMAC string) error {
-	var impNet impdevv1alpha1.ImpNetwork
-	if err := r.Get(ctx, client.ObjectKey{
-		Namespace: vm.Namespace,
-		Name:      vm.Spec.NetworkRef.Name,
-	}, &impNet); err != nil {
-		return err
-	}
-
-	// Check if an up-to-date entry already exists.
-	for _, e := range impNet.Status.VTEPTable {
-		if e.VMIP == vmIP && e.VMMAC == vmMAC && e.NodeIP == r.NodeIP {
-			return nil // already registered
+	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		var impNet impdevv1alpha1.ImpNetwork
+		if err := r.Get(ctx, client.ObjectKey{
+			Namespace: vm.Namespace,
+			Name:      vm.Spec.NetworkRef.Name,
+		}, &impNet); err != nil {
+			return err
 		}
-	}
 
-	base := impNet.DeepCopy()
+		// Check if an up-to-date entry already exists.
+		for _, e := range impNet.Status.VTEPTable {
+			if e.VMIP == vmIP && e.VMMAC == vmMAC && e.NodeIP == r.NodeIP {
+				return nil // already registered
+			}
+		}
 
-	// Replace or append entry for this VM IP.
-	found := false
-	for i, e := range impNet.Status.VTEPTable {
-		if e.VMIP == vmIP {
-			impNet.Status.VTEPTable[i] = impdevv1alpha1.VTEPEntry{
+		base := impNet.DeepCopy()
+
+		// Replace or append entry for this VM IP.
+		found := false
+		for i, e := range impNet.Status.VTEPTable {
+			if e.VMIP == vmIP {
+				impNet.Status.VTEPTable[i] = impdevv1alpha1.VTEPEntry{
+					NodeIP: r.NodeIP,
+					VMIP:   vmIP,
+					VMMAC:  vmMAC,
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			impNet.Status.VTEPTable = append(impNet.Status.VTEPTable, impdevv1alpha1.VTEPEntry{
 				NodeIP: r.NodeIP,
 				VMIP:   vmIP,
 				VMMAC:  vmMAC,
-			}
-			found = true
-			break
+			})
 		}
-	}
-	if !found {
-		impNet.Status.VTEPTable = append(impNet.Status.VTEPTable, impdevv1alpha1.VTEPEntry{
-			NodeIP: r.NodeIP,
-			VMIP:   vmIP,
-			VMMAC:  vmMAC,
-		})
-	}
 
-	return r.Status().Patch(ctx, &impNet, client.MergeFrom(base))
+		return r.Status().Patch(ctx, &impNet,
+			client.MergeFromWithOptions(base, client.MergeFromWithOptimisticLock{}))
+	})
 }
 
 // deregisterVTEP removes the VTEPEntry for vm.Status.IP from ImpNetwork.status.vtepTable.

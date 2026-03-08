@@ -126,7 +126,8 @@ type ImpNetworkStatus struct {
 	// VTEPTable contains VTEP entries for cross-node VXLAN FDB population.
 	// Each entry maps a VM's IP and MAC to the node IP hosting it.
 	// +optional
-	// +listType=atomic
+	// +listType=map
+	// +listMapKey=vmIP
 	VTEPTable []VTEPEntry `json:"vtepTable,omitempty"`
 }
 

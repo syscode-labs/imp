@@ -5,6 +5,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -496,6 +497,55 @@ var _ = Describe("ImpVM Agent: Running — lazy reattach on agent restart", func
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc-reattach-nopid", Namespace: "default"}, updated)).To(Succeed())
 		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseFailed))
 		Expect(driver.ReattachCalls).To(BeEmpty())
+	})
+})
+
+var _ = Describe("ImpVM Agent: registerVTEP — concurrent writes", func() {
+	ctx := context.Background()
+
+	It("preserves both entries when two goroutines register simultaneously", func() {
+		impNet := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-net-concurrent", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpNetworkSpec{Subnet: "10.200.0.0/24"},
+		}
+		Expect(k8sClient.Create(ctx, impNet)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, impNet) }) //nolint:errcheck
+
+		r1 := &ImpVMReconciler{Client: k8sClient, NodeIP: "10.0.0.1"}
+		r2 := &ImpVMReconciler{Client: k8sClient, NodeIP: "10.0.0.2"}
+
+		vm1 := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm1-conc", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpVMSpec{NetworkRef: &impdevv1alpha1.LocalObjectRef{Name: "test-net-concurrent"}},
+		}
+		vm2 := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "vm2-conc", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpVMSpec{NetworkRef: &impdevv1alpha1.LocalObjectRef{Name: "test-net-concurrent"}},
+		}
+
+		var wg sync.WaitGroup
+		var err1, err2 error
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			err1 = r1.registerVTEP(ctx, vm1, "10.200.0.2", "02:00:00:00:00:01")
+		}()
+		go func() {
+			defer wg.Done()
+			err2 = r2.registerVTEP(ctx, vm2, "10.200.0.3", "02:00:00:00:00:02")
+		}()
+		wg.Wait()
+
+		Expect(err1).NotTo(HaveOccurred())
+		Expect(err2).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "test-net-concurrent", Namespace: "default"}, updated)).To(Succeed())
+		vmIPs := make([]string, 0, len(updated.Status.VTEPTable))
+		for _, e := range updated.Status.VTEPTable {
+			vmIPs = append(vmIPs, e.VMIP)
+		}
+		Expect(vmIPs).To(ConsistOf("10.200.0.2", "10.200.0.3"))
 	})
 })
 
