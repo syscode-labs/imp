@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 
 	"github.com/syscode-labs/imp/internal/agent"
+	"github.com/syscode-labs/imp/internal/agent/api"
 	"github.com/syscode-labs/imp/internal/agent/network"
 	"github.com/syscode-labs/imp/internal/telemetry"
 )
@@ -142,6 +143,18 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "unable to create controller", "controller", "ImpNetwork(agent)")
 		os.Exit(1)
+	}
+
+	// Register the HTTP API server (:9091) when using the real Firecracker driver.
+	if fcDrv, ok := driver.(*agent.FirecrackerDriver); ok {
+		apiServer := &api.APIServer{
+			SocketDir: fcDrv.SocketDir,
+			Driver:    fcDrv,
+		}
+		if err := mgr.Add(apiServer); err != nil {
+			log.Error(err, "Unable to add APIServer runnable")
+			os.Exit(1)
+		}
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

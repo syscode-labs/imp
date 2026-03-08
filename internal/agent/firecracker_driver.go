@@ -50,6 +50,7 @@ type fcProc struct {
 	machine     *firecracker.Machine
 	pid         int64
 	socket      string
+	vsockPath   string             // path to the VSOCK Unix socket proxy; empty when guest agent is disabled
 	netInfo     *network.NetworkInfo // nil when NetworkRef is absent
 	probeCancel context.CancelFunc   // non-nil when probe goroutine is running
 }
@@ -258,6 +259,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	var vsockPath, vmNamespace, vmName, className string
 	if gaEnabled {
 		vsockPath = strings.TrimSuffix(sockPath, ".sock") + ".vsock"
+		proc.vsockPath = vsockPath
 		probes = vm.Spec.Probes // may be nil — runProbes handles nil probes
 		vmNamespace = vm.Namespace
 		vmName = vm.Name
@@ -719,4 +721,17 @@ func (d *FirecrackerDriver) Reattach(_ context.Context, vm *impdevv1alpha1.ImpVM
 	}
 	d.mu.Unlock()
 	return nil
+}
+
+// GetVSockPath returns the VSOCK Unix socket proxy path for the given VM key
+// ("namespace/name"). The second return value is false when the VM is not
+// running on this node or was started without the guest agent.
+func (d *FirecrackerDriver) GetVSockPath(key string) (string, bool) {
+	d.mu.Lock()
+	proc, ok := d.procs[key]
+	d.mu.Unlock()
+	if !ok || proc.vsockPath == "" {
+		return "", false
+	}
+	return proc.vsockPath, true
 }
