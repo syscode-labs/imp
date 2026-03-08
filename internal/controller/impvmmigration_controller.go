@@ -4,6 +4,9 @@ import (
 	"context"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/tracing"
 )
 
 // ImpVMMigrationReconciler reconciles ImpVMMigration objects.
@@ -28,13 +32,21 @@ type ImpVMMigrationReconciler struct {
 // +kubebuilder:rbac:groups=imp.dev,resources=impvmmigrations/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 
-func (r *ImpVMMigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ImpVMMigrationReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := logf.FromContext(ctx)
 
 	mig := &impv1alpha1.ImpVMMigration{}
 	if err := r.Get(ctx, req.NamespacedName, mig); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	ctx, span := otel.Tracer("imp.operator").Start(ctx, "operator.impvmmigration.reconcile",
+		trace.WithAttributes(
+			attribute.String("mig.name", req.Name),
+			attribute.String("mig.namespace", req.Namespace),
+			attribute.String("mig.phase", string(mig.Status.Phase)),
+		))
+	defer func() { tracing.RecordError(span, err); span.End() }()
 
 	switch mig.Status.Phase {
 	case "":
@@ -65,12 +77,19 @@ func (r *ImpVMMigrationReconciler) handleEmpty(ctx context.Context, mig *impv1al
 
 // handlePending validates the source VM, selects a target node, creates a child
 // ImpVMSnapshot, then advances to Phase="Snapshotting".
-func (r *ImpVMMigrationReconciler) handlePending(ctx context.Context, mig *impv1alpha1.ImpVMMigration) (ctrl.Result, error) {
+func (r *ImpVMMigrationReconciler) handlePending(ctx context.Context, mig *impv1alpha1.ImpVMMigration) (result ctrl.Result, err error) {
 	log := logf.FromContext(ctx)
+
+	ctx, span := otel.Tracer("imp.operator").Start(ctx, "operator.impvmmigration.pending",
+		trace.WithAttributes(
+			attribute.String("mig.name", mig.Name),
+			attribute.String("mig.namespace", mig.Namespace),
+		))
+	defer func() { tracing.RecordError(span, err); span.End() }()
 
 	// Validate source VM exists.
 	vm := &impv1alpha1.ImpVM{}
-	err := r.Get(ctx, client.ObjectKey{
+	err = r.Get(ctx, client.ObjectKey{
 		Namespace: mig.Spec.SourceVMNamespace,
 		Name:      mig.Spec.SourceVMName,
 	}, vm)
@@ -139,7 +158,14 @@ func (r *ImpVMMigrationReconciler) handlePending(ctx context.Context, mig *impv1
 // handleSnapshotting waits for the child snapshot to reach a terminal state.
 // On success it creates the target VM and advances to "Restoring".
 // On failure it sets Phase="Failed".
-func (r *ImpVMMigrationReconciler) handleSnapshotting(ctx context.Context, mig *impv1alpha1.ImpVMMigration) (ctrl.Result, error) {
+func (r *ImpVMMigrationReconciler) handleSnapshotting(ctx context.Context, mig *impv1alpha1.ImpVMMigration) (result ctrl.Result, err error) {
+	ctx, span := otel.Tracer("imp.operator").Start(ctx, "operator.impvmmigration.snapshotting",
+		trace.WithAttributes(
+			attribute.String("mig.name", mig.Name),
+			attribute.String("mig.namespace", mig.Namespace),
+		))
+	defer func() { tracing.RecordError(span, err); span.End() }()
+
 	if mig.Status.SnapshotRef == "" {
 		return r.failMigration(ctx, mig, "internal error: Snapshotting phase without SnapshotRef")
 	}
@@ -219,7 +245,14 @@ func (r *ImpVMMigrationReconciler) createTargetVM(ctx context.Context, mig *impv
 
 // handleRestoring waits for the target VM to reach Running, then deletes the source
 // VM and marks the migration Succeeded.
-func (r *ImpVMMigrationReconciler) handleRestoring(ctx context.Context, mig *impv1alpha1.ImpVMMigration) (ctrl.Result, error) {
+func (r *ImpVMMigrationReconciler) handleRestoring(ctx context.Context, mig *impv1alpha1.ImpVMMigration) (result ctrl.Result, err error) {
+	ctx, span := otel.Tracer("imp.operator").Start(ctx, "operator.impvmmigration.restoring",
+		trace.WithAttributes(
+			attribute.String("mig.name", mig.Name),
+			attribute.String("mig.namespace", mig.Namespace),
+		))
+	defer func() { tracing.RecordError(span, err); span.End() }()
+
 	log := logf.FromContext(ctx)
 
 	targetVM := &impv1alpha1.ImpVM{}
