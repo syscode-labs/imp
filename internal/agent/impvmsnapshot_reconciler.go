@@ -9,6 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -16,15 +19,16 @@ import (
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent/snapshot"
+	"github.com/syscode-labs/imp/internal/tracing"
 )
 
 const snapshotTempDirPrefix = "imp-snapshot-"
 
-func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := logf.FromContext(ctx)
 
 	snap := &impdevv1alpha1.ImpVMSnapshot{}
-	if err := r.Get(ctx, req.NamespacedName, snap); err != nil {
+	if err = r.Get(ctx, req.NamespacedName, snap); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -40,7 +44,7 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Resolve source VM and verify it is on this node.
 	vm := &impdevv1alpha1.ImpVM{}
-	if err := r.Get(ctx, client.ObjectKey{
+	if err = r.Get(ctx, client.ObjectKey{
 		Namespace: snap.Spec.SourceVMNamespace,
 		Name:      snap.Spec.SourceVMName,
 	}, vm); err != nil {
@@ -58,16 +62,27 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
+	ctx, span := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.snapshot",
+		trace.WithAttributes(
+			attribute.String("vm.name", snap.Spec.SourceVMName),
+			attribute.String("vm.namespace", snap.Spec.SourceVMNamespace),
+		),
+	)
+	defer func() {
+		tracing.RecordError(span, err)
+		span.End()
+	}()
+
 	// Mark Running.
 	if snap.Status.Phase != "Running" {
 		base := snap.DeepCopy()
 		snap.Status.Phase = "Running"
-		if err := r.Status().Patch(ctx, snap, client.MergeFrom(base)); err != nil {
+		if err = r.Status().Patch(ctx, snap, client.MergeFrom(base)); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 
-	result, termErr := r.executeSnapshot(ctx, snap, vm)
+	execResult, termErr := r.executeSnapshot(ctx, snap, vm)
 
 	// Always set TerminatedAt — even on failure — after all cleanup is complete.
 	now := metav1.Now()
@@ -80,9 +95,9 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		snap.Status.Phase = "Succeeded"
 		snap.Status.CompletedAt = &now
 		if snap.Spec.Storage.Type == "oci-registry" {
-			snap.Status.Digest = result.digest
+			snap.Status.Digest = execResult.digest
 		} else {
-			snap.Status.SnapshotPath = result.path
+			snap.Status.SnapshotPath = execResult.path
 		}
 	}
 	return ctrl.Result{}, r.Status().Patch(ctx, snap, client.MergeFrom(base))

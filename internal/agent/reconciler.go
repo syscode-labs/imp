@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -169,12 +170,23 @@ func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha
 	// Register VTEP entry so the operator and other nodes know where this VM lives.
 	if vm.Spec.NetworkRef != nil && state.IP != "" && r.NodeIP != "" {
 		macAddr := network.MACAddr(vm.Namespace + "/" + vm.Name)
-		if err := r.registerVTEP(ctx, vm, state.IP, macAddr); err != nil {
-			log.Error(err, "registerVTEP failed — FDB sync may be incomplete")
-		} else {
-			// Sync local FDB now that this node has a VTEP entry.
-			if err := r.syncFDB(ctx, vm); err != nil {
-				log.Error(err, "syncFDB after registerVTEP failed")
+		{
+			vCtx, vSpan := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.vtep_register",
+				trace.WithAttributes(
+					attribute.String("vm.name", vm.Name),
+					attribute.String("vm.ip", state.IP),
+				),
+			)
+			vtepErr := r.registerVTEP(vCtx, vm, state.IP, macAddr)
+			tracing.RecordError(vSpan, vtepErr)
+			vSpan.End()
+			if vtepErr != nil {
+				log.Error(vtepErr, "registerVTEP failed — FDB sync may be incomplete")
+			} else {
+				// Sync local FDB now that this node has a VTEP entry.
+				if err := r.syncFDB(ctx, vm); err != nil {
+					log.Error(err, "syncFDB after registerVTEP failed")
+				}
 			}
 		}
 	}
@@ -200,8 +212,18 @@ func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.
 	// the Firecracker process is still alive (procs map may be empty after an
 	// agent pod restart). If PID is alive, reattach and restore allocator state.
 	if pid := vm.Status.RuntimePID; pid > 0 && r.Driver.IsAlive(pid) {
-		if err := r.Driver.Reattach(ctx, vm); err != nil {
-			log.Error(err, "Reattach failed — treating VM as dead")
+		rCtx, rSpan := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.reattach",
+			trace.WithAttributes(
+				attribute.String("vm.name", vm.Name),
+				attribute.String("vm.namespace", vm.Namespace),
+				attribute.String("vm.pid", strconv.FormatInt(pid, 10)),
+			),
+		)
+		reattachErr := r.Driver.Reattach(rCtx, vm)
+		if reattachErr != nil {
+			tracing.RecordError(rSpan, reattachErr)
+			rSpan.End()
+			log.Error(reattachErr, "Reattach failed — treating VM as dead")
 		} else {
 			// Restore in-memory IP allocation so Release works correctly later.
 			if r.Alloc != nil && vm.Spec.NetworkRef != nil && vm.Status.IP != "" {
@@ -211,12 +233,35 @@ func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.
 			// Re-publish VTEP entry and sync FDB in case they were lost.
 			if vm.Spec.NetworkRef != nil && vm.Status.IP != "" && r.NodeIP != "" {
 				macAddr := network.MACAddr(vm.Namespace + "/" + vm.Name)
-				if err := r.registerVTEP(ctx, vm, vm.Status.IP, macAddr); err != nil {
-					log.Error(err, "registerVTEP after reattach failed")
-				} else if err := r.syncFDB(ctx, vm); err != nil {
-					log.Error(err, "syncFDB after reattach failed")
+				{
+					vCtx, vSpan := otel.Tracer("imp.agent").Start(rCtx, "agent.impvm.vtep_register",
+						trace.WithAttributes(
+							attribute.String("vm.name", vm.Name),
+							attribute.String("vm.ip", vm.Status.IP),
+						),
+					)
+					vtepErr := r.registerVTEP(vCtx, vm, vm.Status.IP, macAddr)
+					tracing.RecordError(vSpan, vtepErr)
+					vSpan.End()
+					if vtepErr != nil {
+						log.Error(vtepErr, "registerVTEP after reattach failed")
+					} else {
+						fCtx, fSpan := otel.Tracer("imp.agent").Start(rCtx, "agent.impvm.fdb_sync",
+							trace.WithAttributes(
+								attribute.String("vm.name", vm.Name),
+								attribute.String("net.name", vm.Spec.NetworkRef.Name),
+							),
+						)
+						fdbErr := r.syncFDB(fCtx, vm)
+						tracing.RecordError(fSpan, fdbErr)
+						fSpan.End()
+						if fdbErr != nil {
+							log.Error(fdbErr, "syncFDB after reattach failed")
+						}
+					}
 				}
 			}
+			rSpan.End()
 			log.Info("VM reattached after agent restart", "pid", pid)
 			return ctrl.Result{}, nil
 		}
