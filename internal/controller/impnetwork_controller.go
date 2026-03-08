@@ -5,6 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
@@ -22,6 +25,7 @@ import (
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/cnidetect"
+	"github.com/syscode-labs/imp/internal/tracing"
 )
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch
@@ -42,11 +46,18 @@ type ImpNetworkReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cilium.io,resources=ciliumexternalworkloads,verbs=get;list;watch;create;update;patch;delete
 
-func (r *ImpNetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ImpNetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	net := &impdevv1alpha1.ImpNetwork{}
 	if err := r.Get(ctx, req.NamespacedName, net); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	ctx, span := otel.Tracer("imp.operator").Start(ctx, "operator.impnetwork.reconcile",
+		trace.WithAttributes(
+			attribute.String("net.name", req.Name),
+			attribute.String("net.namespace", req.Namespace),
+		))
+	defer func() { tracing.RecordError(span, err); span.End() }()
 
 	if !net.DeletionTimestamp.IsZero() {
 		return r.handleDeletion(ctx, net)
@@ -116,7 +127,14 @@ func (r *ImpNetworkReconciler) sync(ctx context.Context, net *impdevv1alpha1.Imp
 // reconcileVTEPTable removes stale entries from ImpNetwork.status.vtepTable.
 // An entry is stale if no Running ImpVM with that IP exists in this namespace
 // referencing this network. The agent is responsible for adding entries.
-func (r *ImpNetworkReconciler) reconcileVTEPTable(ctx context.Context, net *impdevv1alpha1.ImpNetwork) error {
+func (r *ImpNetworkReconciler) reconcileVTEPTable(ctx context.Context, net *impdevv1alpha1.ImpNetwork) (err error) {
+	ctx, span := otel.Tracer("imp.operator").Start(ctx, "operator.impnetwork.vtep_gc",
+		trace.WithAttributes(
+			attribute.String("net.name", net.Name),
+			attribute.String("net.namespace", net.Namespace),
+		))
+	defer func() { tracing.RecordError(span, err); span.End() }()
+
 	if len(net.Status.VTEPTable) == 0 {
 		return nil
 	}
@@ -196,7 +214,14 @@ func (r *ImpNetworkReconciler) ciliumPresent() bool {
 // reconcileCiliumEnrollment creates CiliumExternalWorkload objects for Running VMs
 // attached to this network, and GCs CEWs for VMs that are no longer Running.
 // It is a no-op when Cilium is not the active CNI or its CRDs are not present.
-func (r *ImpNetworkReconciler) reconcileCiliumEnrollment(ctx context.Context, net *impdevv1alpha1.ImpNetwork) error {
+func (r *ImpNetworkReconciler) reconcileCiliumEnrollment(ctx context.Context, net *impdevv1alpha1.ImpNetwork) (err error) {
+	ctx, span := otel.Tracer("imp.operator").Start(ctx, "operator.impnetwork.cilium_enroll",
+		trace.WithAttributes(
+			attribute.String("net.name", net.Name),
+			attribute.String("net.namespace", net.Namespace),
+		))
+	defer func() { tracing.RecordError(span, err); span.End() }()
+
 	log := logf.FromContext(ctx)
 
 	// Guard: only proceed when Cilium is the detected CNI and its CRDs exist.
