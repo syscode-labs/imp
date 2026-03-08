@@ -1,0 +1,28 @@
+{{- if .Values.plugin.rbac.readonly.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: imp-plugin-readonly
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: plugin
+rules:
+- apiGroups: ["imp.dev"]
+  resources:
+  - impvms
+  - impvmclasses
+  - impvmtemplates
+  - impnetworks
+  - clusterimpconfigs
+  - clusterimpnodeprofiles
+  - impvmmigrations
+  - impvmsnapshots
+  - impvmrunnerpools
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods/portforward"]
+  verbs: ["create"]
+{{- end }}

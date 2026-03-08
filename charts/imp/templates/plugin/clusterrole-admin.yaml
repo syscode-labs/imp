@@ -1,0 +1,39 @@
+{{- if .Values.plugin.rbac.admin.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: imp-plugin-admin
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: plugin
+# Superset of imp-plugin-readonly. Binds this role to users who need
+# imp kill, imp migrate, and imp elect in addition to read-only access.
+rules:
+- apiGroups: ["imp.dev"]
+  resources:
+  - impvms
+  - impvmclasses
+  - impvmtemplates
+  - impnetworks
+  - clusterimpconfigs
+  - clusterimpnodeprofiles
+  - impvmmigrations
+  - impvmsnapshots
+  - impvmrunnerpools
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["imp.dev"]
+  resources: ["impvmmigrations"]
+  verbs: ["create"]
+- apiGroups: ["imp.dev"]
+  resources: ["impvmsnapshots", "impvms"]
+  verbs: ["patch"]
+- apiGroups: ["imp.dev"]
+  resources: ["impvms"]
+  verbs: ["delete"]
+- apiGroups: [""]
+  resources: ["pods", "nodes"]
+  verbs: ["get", "list"]
+- apiGroups: [""]
+  resources: ["pods/portforward"]
+  verbs: ["create"]
+{{- end }}

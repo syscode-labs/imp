@@ -73,3 +73,12 @@ grafana:
   namespace: ""
   tempo:
     datasourceUid: ""   # optional: pre-fill the Tempo datasource UID
+
+plugin:
+  rbac:
+    # readonly: grants access for imp status, imp logs, imp metrics, imp exec
+    readonly:
+      enabled: true
+    # admin: superset of readonly; also grants imp kill, imp migrate, imp elect
+    admin:
+      enabled: true
