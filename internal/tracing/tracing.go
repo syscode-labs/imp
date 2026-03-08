@@ -21,7 +21,7 @@ func SpanFromVM(ctx context.Context, vm *impdevv1alpha1.ImpVM, spanName string, 
 		"tracestate":  vm.Annotations["imp.dev/trace-state"],
 	}
 	remoteCtx := otel.GetTextMapPropagator().Extract(ctx, carrier)
-	return otel.Tracer("imp").Start(remoteCtx, spanName, opts...)
+	return otel.Tracer("imp.agent").Start(remoteCtx, spanName, opts...)
 }
 
 // InjectToVM injects the current trace context from ctx into vm's annotations.
