@@ -1,12 +1,8 @@
 name: CodeQL
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   schedule:
-    - cron: "0 8 * * 1" # every Monday at 08:00 UTC
+    - cron: "0 2 * * *" # nightly at 02:00 UTC
 
 jobs:
   analyze:
@@ -21,7 +17,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
