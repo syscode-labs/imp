@@ -20,6 +20,7 @@ limitations under the License.
 package e2e
 
 import (
+	"os"
 	"os/exec"
 	"testing"
 
@@ -34,6 +35,13 @@ const (
 	helmRelease    = "imp"
 	helmCRDRelease = "imp-crds"
 )
+
+func getenvOrDefault(name, fallback string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return fallback
+}
 
 // Note: the Kind cluster itself is managed by the CI workflow (helm/kind-action@v1) or
 // must be created manually before running these tests locally:
@@ -57,12 +65,17 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred(), "helm install imp-crds failed")
 
 	By("installing imp chart")
+	operatorRepo := getenvOrDefault("IMP_E2E_OPERATOR_IMAGE_REPOSITORY", "local/imp-operator")
+	operatorTag := getenvOrDefault("IMP_E2E_OPERATOR_IMAGE_TAG", "e2e")
+	agentRepo := getenvOrDefault("IMP_E2E_AGENT_IMAGE_REPOSITORY", "local/imp-agent")
+	agentTag := getenvOrDefault("IMP_E2E_AGENT_IMAGE_TAG", "e2e")
+
 	impCmd := exec.Command("helm", "install", helmRelease, "charts/imp",
 		"--namespace", namespace,
-		"--set", "operator.image.repository=local/imp-operator",
-		"--set", "operator.image.tag=e2e",
-		"--set", "agent.image.repository=local/imp-agent",
-		"--set", "agent.image.tag=e2e",
+		"--set", "operator.image.repository="+operatorRepo,
+		"--set", "operator.image.tag="+operatorTag,
+		"--set", "agent.image.repository="+agentRepo,
+		"--set", "agent.image.tag="+agentTag,
 		"--set", "agent.env.kernelPath=/var/lib/imp/vmlinux",
 		"--set-string", "agent.nodeSelector.imp\\.dev/no-agent=true",
 		"--set", "metrics.serviceMonitor.enabled=false",
