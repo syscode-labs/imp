@@ -16,6 +16,8 @@ import (
 	"github.com/syscode-labs/imp/internal/tracing"
 )
 
+// setupTracer installs a real SDK tracer provider with AlwaysSample as the global OTel provider.
+// It mutates global OTel state, so tests that use it must not call t.Parallel().
 func setupTracer(t *testing.T) *tracetest.SpanRecorder {
 	t.Helper()
 	sr := tracetest.NewSpanRecorder()
@@ -81,11 +83,12 @@ func TestInjectToVM_nilAnnotations_initializesMap(t *testing.T) {
 	tracing.InjectToVM(context.Background(), vm, span)
 	span.End()
 
-	// When propagator is installed, traceparent should be set
 	if vm.Annotations == nil {
 		t.Error("expected Annotations to be initialized")
 	}
-	// traceparent may be empty if no-op tracer is used; just verify no panic
+	if vm.Annotations["imp.dev/trace-context"] == "" {
+		t.Error("expected imp.dev/trace-context annotation to be non-empty")
+	}
 }
 
 func TestRecordError_nil_noops(t *testing.T) {
