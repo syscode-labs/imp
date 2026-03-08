@@ -19,6 +19,9 @@ import (
 	firecracker "github.com/firecracker-microvm/firecracker-go-sdk"
 	"github.com/firecracker-microvm/firecracker-go-sdk/client/models"
 	fcclientops "github.com/firecracker-microvm/firecracker-go-sdk/client/operations"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -31,6 +34,7 @@ import (
 	"github.com/syscode-labs/imp/internal/agent/rootfs"
 	agentvsock "github.com/syscode-labs/imp/internal/agent/vsock"
 	pb "github.com/syscode-labs/imp/internal/proto/guest"
+	"github.com/syscode-labs/imp/internal/tracing"
 )
 
 // shuttingDownTimeout is how long Stop waits for a graceful ACPI shutdown
@@ -161,9 +165,21 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	if gaEnabled {
 		buildOpts = append(buildOpts, rootfs.WithGuestAgent(d.guestAgentPath()))
 	}
-	rootfsPath, err := d.buildRootfs(ctx, vm, buildOpts...)
-	if err != nil {
-		return 0, fmt.Errorf("build rootfs for %s: %w", vm.Spec.Image, err)
+	var rootfsPath string
+	{
+		rCtx, rSpan := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.rootfs_build",
+			trace.WithAttributes(
+				attribute.String("vm.name", vm.Name),
+				attribute.String("vm.image", vm.Spec.Image),
+			),
+		)
+		var buildErr error
+		rootfsPath, buildErr = d.buildRootfs(rCtx, vm, buildOpts...)
+		tracing.RecordError(rSpan, buildErr)
+		rSpan.End()
+		if buildErr != nil {
+			return 0, fmt.Errorf("build rootfs for %s: %w", vm.Spec.Image, buildErr)
+		}
 	}
 
 	// 3. Set up networking if a NetworkRef is specified.
@@ -200,10 +216,21 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	if err != nil {
 		return 0, fmt.Errorf("create machine: %w", err)
 	}
-	if err := m.Start(ctx); err != nil {
-		_ = m.StopVMM()         //nolint:errcheck
-		_ = os.Remove(sockPath) //nolint:errcheck // best-effort cleanup
-		return 0, fmt.Errorf("start machine: %w", err)
+	{
+		lCtx, lSpan := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.firecracker_launch",
+			trace.WithAttributes(
+				attribute.String("vm.name", vm.Name),
+				attribute.String("vm.namespace", vm.Namespace),
+			),
+		)
+		startErr := m.Start(lCtx)
+		tracing.RecordError(lSpan, startErr)
+		lSpan.End()
+		if startErr != nil {
+			_ = m.StopVMM()         //nolint:errcheck
+			_ = os.Remove(sockPath) //nolint:errcheck // best-effort cleanup
+			return 0, fmt.Errorf("start machine: %w", startErr)
+		}
 	}
 
 	pid, err := m.PID()
