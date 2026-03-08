@@ -17,6 +17,22 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Commit message convention check
+        run: |
+          python -m pip install --upgrade pip commitizen
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          else
+            RANGE="${{ github.event.before }}..${{ github.sha }}"
+          fi
+          echo "Checking commit messages in range: ${RANGE}"
+          cz check --rev-range "${RANGE}"
+
       - name: Check linter configuration
         run: make lint-config
       - name: Run linter
