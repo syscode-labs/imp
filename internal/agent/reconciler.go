@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -18,6 +21,7 @@ import (
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent/network"
+	"github.com/syscode-labs/imp/internal/tracing"
 )
 
 // ImpVMReconciler watches ImpVM objects and drives VM lifecycle on this node.
@@ -46,11 +50,11 @@ type ImpVMReconciler struct {
 // +kubebuilder:rbac:groups=imp.dev,resources=impnetworks,verbs=get;list;watch
 // +kubebuilder:rbac:groups=imp.dev,resources=impnetworks/status,verbs=get;update;patch
 
-func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := logf.FromContext(ctx).WithValues("node", r.NodeName)
 
 	vm := &impdevv1alpha1.ImpVM{}
-	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
+	if err = r.Get(ctx, req.NamespacedName, vm); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -58,6 +62,19 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if vm.Spec.NodeName != r.NodeName {
 		return ctrl.Result{}, nil
 	}
+
+	ctx, span := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.reconcile",
+		trace.WithAttributes(
+			attribute.String("vm.name", req.Name),
+			attribute.String("vm.namespace", req.Namespace),
+			attribute.String("vm.node", r.NodeName),
+			attribute.String("vm.phase", string(vm.Status.Phase)),
+		),
+	)
+	defer func() {
+		tracing.RecordError(span, err)
+		span.End()
+	}()
 
 	log = log.WithValues("vm", req.NamespacedName, "phase", vm.Status.Phase)
 
@@ -94,8 +111,20 @@ func (r *ImpVMReconciler) handleStarting(ctx context.Context, vm *impdevv1alpha1
 	return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
 }
 
-func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
+func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha1.ImpVM) (result ctrl.Result, err error) {
 	log := logf.FromContext(ctx)
+
+	ctx, span := tracing.SpanFromVM(ctx, vm, "agent.impvm.start",
+		trace.WithAttributes(
+			attribute.String("vm.name", vm.Name),
+			attribute.String("vm.namespace", vm.Namespace),
+			attribute.String("vm.node", r.NodeName),
+		),
+	)
+	defer func() {
+		tracing.RecordError(span, err)
+		span.End()
+	}()
 
 	// Set phase=Starting before calling driver to make concurrent reconciles idempotent.
 	base := vm.DeepCopy()
@@ -200,10 +229,21 @@ func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.
 	return r.finishFailed(ctx, vm)
 }
 
-func (r *ImpVMReconciler) handleTerminating(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
+func (r *ImpVMReconciler) handleTerminating(ctx context.Context, vm *impdevv1alpha1.ImpVM) (result ctrl.Result, err error) {
 	log := logf.FromContext(ctx)
 
-	if err := r.Driver.Stop(ctx, vm); err != nil {
+	ctx, span := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.stop",
+		trace.WithAttributes(
+			attribute.String("vm.name", vm.Name),
+			attribute.String("vm.namespace", vm.Namespace),
+		),
+	)
+	defer func() {
+		tracing.RecordError(span, err)
+		span.End()
+	}()
+
+	if err = r.Driver.Stop(ctx, vm); err != nil {
 		log.Error(err, "Driver Stop failed — will retry")
 		return ctrl.Result{RequeueAfter: 2 * time.Second}, err
 	}
