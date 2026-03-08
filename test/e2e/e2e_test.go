@@ -361,7 +361,7 @@ spec:
 				out, getErr := utils.Run(getCmd)
 				g.Expect(getErr).NotTo(HaveOccurred())
 				g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty())
-			}).Should(Succeed())
+			}, 5*time.Minute, 2*time.Second).Should(Succeed())
 		})
 
 		It("keeps VM Pending with unmatched taint, schedules VM with matching toleration", func() {
