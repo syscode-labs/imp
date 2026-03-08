@@ -20,6 +20,9 @@ import (
 	"context"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/tracing"
 )
 
 const (
@@ -58,13 +62,21 @@ type ImpVMReconciler struct {
 // +kubebuilder:rbac:groups=imp.dev,resources=clusterimpconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
-func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := logf.FromContext(ctx)
 
 	vm := &impdevv1alpha1.ImpVM{}
 	if err := r.Get(ctx, req.NamespacedName, vm); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	ctx, span := otel.Tracer("imp.operator").Start(ctx, "operator.impvm.reconcile",
+		trace.WithAttributes(
+			attribute.String("vm.name", req.Name),
+			attribute.String("vm.namespace", req.Namespace),
+			attribute.String("vm.phase", string(vm.Status.Phase)),
+		))
+	defer func() { tracing.RecordError(span, err); span.End() }()
 
 	// 1. Handle deletion
 	if !vm.DeletionTimestamp.IsZero() {
@@ -103,6 +115,7 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		// Assign to node
 		specPatch := client.MergeFrom(vm.DeepCopy())
 		vm.Spec.NodeName = nodeName
+		tracing.InjectToVM(ctx, vm, span)
 		if err := r.Patch(ctx, vm, specPatch); err != nil {
 			return ctrl.Result{}, err
 		}

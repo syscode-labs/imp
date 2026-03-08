@@ -21,12 +21,16 @@ import (
 	"sort"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/tracing"
 )
 
 const labelImpEnabled = "imp/enabled"
@@ -60,7 +64,14 @@ func sumUsedResources(ctx context.Context, c client.Client, vms []impdevv1alpha1
 
 // schedule selects a node for vm using a capacity-aware least-loaded strategy.
 // Returns "" and no error when no suitable node is available.
-func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM) (string, error) {
+func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM) (nodeName string, err error) {
+	ctx, span := otel.Tracer("imp.operator").Start(ctx, "operator.impvm.schedule",
+		trace.WithAttributes(
+			attribute.String("vm.name", vm.Name),
+			attribute.String("vm.namespace", vm.Namespace),
+		))
+	defer func() { tracing.RecordError(span, err); span.End() }()
+
 	log := logf.FromContext(ctx)
 
 	// 1. List nodes with imp/enabled=true
