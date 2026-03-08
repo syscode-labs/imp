@@ -220,7 +220,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		return 0, fmt.Errorf("open serial log %s: %w", serialLogPath, err)
 	}
 	cmd.Stdout = serialLogFile
-	defer serialLogFile.Close() //nolint:errcheck // file stays open via cmd until process exits
+	defer serialLogFile.Close() //nolint:errcheck // child inherits fd; parent closing its copy is safe
 
 	// 7. Create and start the machine.
 	m, err := firecracker.NewMachine(ctx, cfg, firecracker.WithProcessRunner(cmd))
