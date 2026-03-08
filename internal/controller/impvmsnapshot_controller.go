@@ -6,6 +6,9 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -14,6 +17,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/tracing"
 )
 
 // ImpVMSnapshotReconciler reconciles ImpVMSnapshot objects.
@@ -28,13 +32,20 @@ type ImpVMSnapshotReconciler struct {
 
 var cronParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
-func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := logf.FromContext(ctx)
 
 	snap := &impv1alpha1.ImpVMSnapshot{}
 	if err := r.Get(ctx, req.NamespacedName, snap); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
+
+	ctx, span := otel.Tracer("imp.operator").Start(ctx, "operator.impvmsnapshot.reconcile",
+		trace.WithAttributes(
+			attribute.String("snap.name", req.Name),
+			attribute.String("snap.namespace", req.Namespace),
+		))
+	defer func() { tracing.RecordError(span, err); span.End() }()
 
 	// Design rule 1: only reconcile parent objects (no LabelSnapshotParent label).
 	if _, isChild := snap.Labels[impv1alpha1.LabelSnapshotParent]; isChild {
@@ -70,35 +81,47 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Design rule 5: retention pruning — sort by creationTimestamp ascending, prune oldest beyond retention.
-	retention := int(snap.Spec.Retention)
-	if retention == 0 {
-		retention = 3 // default
-	}
-	if len(children) > retention {
-		sort.Slice(children, func(i, j int) bool {
-			return children[i].CreationTimestamp.Before(&children[j].CreationTimestamp)
-		})
-		toDelete := children[:len(children)-retention]
-		for i := range toDelete {
-			// Design rule 5: never delete the baseSnapshot child.
-			if snap.Spec.BaseSnapshot != "" && toDelete[i].Name == snap.Spec.BaseSnapshot {
-				continue
+	{
+		retCtx, retSpan := otel.Tracer("imp.operator").Start(ctx, "operator.impvmsnapshot.retention",
+			trace.WithAttributes(
+				attribute.String("snap.name", req.Name),
+				attribute.String("snap.namespace", req.Namespace),
+			))
+		retention := int(snap.Spec.Retention)
+		if retention == 0 {
+			retention = 3 // default
+		}
+		if len(children) > retention {
+			sort.Slice(children, func(i, j int) bool {
+				return children[i].CreationTimestamp.Before(&children[j].CreationTimestamp)
+			})
+			toDelete := children[:len(children)-retention]
+			for i := range toDelete {
+				// Design rule 5: never delete the baseSnapshot child.
+				if snap.Spec.BaseSnapshot != "" && toDelete[i].Name == snap.Spec.BaseSnapshot {
+					continue
+				}
+				if err := r.Delete(retCtx, &toDelete[i]); client.IgnoreNotFound(err) != nil {
+					tracing.RecordError(retSpan, err)
+					retSpan.End()
+					return ctrl.Result{}, err
+				}
+				log.Info("pruned old child", "parent", snap.Name, "child", toDelete[i].Name)
 			}
-			if err := r.Delete(ctx, &toDelete[i]); client.IgnoreNotFound(err) != nil {
+			// Re-list from API server to get an accurate post-prune view (accounts for
+			// baseSnapshot children that were skipped during deletion).
+			postPrune := &impv1alpha1.ImpVMSnapshotList{}
+			if err := r.List(retCtx, postPrune,
+				client.InNamespace(snap.Namespace),
+				client.MatchingLabels{impv1alpha1.LabelSnapshotParent: snap.Name},
+			); err != nil {
+				tracing.RecordError(retSpan, err)
+				retSpan.End()
 				return ctrl.Result{}, err
 			}
-			log.Info("pruned old child", "parent", snap.Name, "child", toDelete[i].Name)
+			children = postPrune.Items
 		}
-		// Re-list from API server to get an accurate post-prune view (accounts for
-		// baseSnapshot children that were skipped during deletion).
-		postPrune := &impv1alpha1.ImpVMSnapshotList{}
-		if err := r.List(ctx, postPrune,
-			client.InNamespace(snap.Namespace),
-			client.MatchingLabels{impv1alpha1.LabelSnapshotParent: snap.Name},
-		); err != nil {
-			return ctrl.Result{}, err
-		}
-		children = postPrune.Items
+		retSpan.End()
 	}
 
 	// Design rule 6: BaseSnapshot validation.
@@ -143,8 +166,16 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// If next tick is within 5s of now, create a child.
 	if untilNext <= 5*time.Second {
-		if err := r.createChild(ctx, snap); err != nil {
-			return ctrl.Result{}, err
+		cronCtx, cronSpan := otel.Tracer("imp.operator").Start(ctx, "operator.impvmsnapshot.cron_trigger",
+			trace.WithAttributes(
+				attribute.String("snap.name", req.Name),
+				attribute.String("snap.namespace", req.Namespace),
+			))
+		cronErr := r.createChild(cronCtx, snap)
+		tracing.RecordError(cronSpan, cronErr)
+		cronSpan.End()
+		if cronErr != nil {
+			return ctrl.Result{}, cronErr
 		}
 		// Requeue after the next scheduled slot.
 		now = time.Now()
