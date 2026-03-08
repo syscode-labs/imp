@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -43,6 +44,20 @@ func getenvOrDefault(name, fallback string) string {
 	return fallback
 }
 
+func configureEventuallyDefaults() {
+	if timeoutRaw := os.Getenv("IMP_E2E_EVENTUALLY_TIMEOUT"); timeoutRaw != "" {
+		timeout, err := time.ParseDuration(timeoutRaw)
+		Expect(err).NotTo(HaveOccurred(), "invalid IMP_E2E_EVENTUALLY_TIMEOUT")
+		SetDefaultEventuallyTimeout(timeout)
+	}
+
+	if intervalRaw := os.Getenv("IMP_E2E_EVENTUALLY_POLL_INTERVAL"); intervalRaw != "" {
+		interval, err := time.ParseDuration(intervalRaw)
+		Expect(err).NotTo(HaveOccurred(), "invalid IMP_E2E_EVENTUALLY_POLL_INTERVAL")
+		SetDefaultEventuallyPollingInterval(interval)
+	}
+}
+
 // Note: the Kind cluster itself is managed by the CI workflow (helm/kind-action@v1) or
 // must be created manually before running these tests locally:
 //
@@ -51,6 +66,8 @@ func getenvOrDefault(name, fallback string) string {
 //	kind delete cluster --name imp-e2e
 
 var _ = BeforeSuite(func() {
+	configureEventuallyDefaults()
+
 	By("creating namespace")
 	nsCmd := exec.Command("kubectl", "create", "ns", namespace)
 	_, _ = utils.Run(nsCmd) // ignore if already exists
