@@ -1,0 +1,327 @@
+{
+  "uid": "imp-traces-v1",
+  "title": "Imp microVM Traces",
+  "tags": ["imp", "microvm", "traces"],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "hide": 0,
+        "includeAll": false,
+        "multi": false,
+        "name": "tempo_datasource",
+        "options": [],
+        "query": "tempo",
+        "refresh": 1,
+        "type": "datasource",
+        "label": "Tempo"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "title": "VM Lifecycle",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 1},
+      "id": 1,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"agent.impvm.start\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "VM Boot (operator\u2192agent)",
+      "type": "traces"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 11},
+      "id": 2,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"agent.impvm.stop\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "VM Stop",
+      "type": "traces"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 11},
+      "id": 3,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"agent.impvm.reattach\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "VM Reattach",
+      "type": "traces"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 21},
+      "id": 101,
+      "title": "Operator Reconcilers",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 22},
+      "id": 4,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"operator.impvm.reconcile\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "ImpVM Reconcile",
+      "type": "traces"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 22},
+      "id": 5,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"operator.impnetwork.reconcile\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "ImpNetwork Reconcile",
+      "type": "traces"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 32},
+      "id": 6,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"operator.impvmmigration.reconcile\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "Migration Reconcile",
+      "type": "traces"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 32},
+      "id": 7,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"operator.impvmsnapshot.reconcile\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "Snapshot Reconcile",
+      "type": "traces"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 42},
+      "id": 102,
+      "title": "Agent Operations",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 8, "x": 0, "y": 43},
+      "id": 8,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"agent.impvm.rootfs_build\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "Rootfs Build",
+      "type": "traces"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 8, "x": 8, "y": 43},
+      "id": 9,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"agent.impvm.firecracker_launch\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "Firecracker Launch",
+      "type": "traces"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 8, "x": 16, "y": 43},
+      "id": 10,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"agent.impvm.snapshot\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "VM Snapshot",
+      "type": "traces"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 12, "x": 0, "y": 53},
+      "id": 11,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"agent.impvm.vtep_register\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "VTEP Register",
+      "type": "traces"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 12, "x": 12, "y": 53},
+      "id": 12,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{name=\"agent.impvm.fdb_sync\"}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "FDB Sync",
+      "type": "traces"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 63},
+      "id": 103,
+      "title": "Errors",
+      "type": "row"
+    },
+    {
+      "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+      "fieldConfig": {"defaults": {}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 64},
+      "id": 13,
+      "options": {
+        "dedupStrategy": "none",
+        "sortBy": [{"displayName": "Start time", "desc": true}]
+      },
+      "targets": [
+        {
+          "datasource": {"type": "tempo", "uid": "${tempo_datasource}"},
+          "queryType": "traceql",
+          "query": "{status=error}",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "All Error Spans",
+      "type": "traces"
+    }
+  ]
+}

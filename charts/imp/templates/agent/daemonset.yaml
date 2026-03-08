@@ -45,8 +45,13 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.hostIP
+        - name: OTEL_SERVICE_NAME
+          value: imp-agent
         - name: FC_KERNEL
           value: {{ .Values.agent.env.kernelPath | required "agent.env.kernelPath is required" | quote }}
+        {{- with .Values.agent.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         ports:
         - name: metrics
           containerPort: 9090

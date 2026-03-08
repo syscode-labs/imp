@@ -35,6 +35,12 @@ spec:
       - name: operator
         image: {{ include "imp.operator.image" . }}
         imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
+        env:
+        - name: OTEL_SERVICE_NAME
+          value: imp-operator
+        {{- with .Values.operator.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081

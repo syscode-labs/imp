@@ -17,6 +17,7 @@ operator:
   nodeSelector: {}
   rbac:
     cniDetection: minimal
+  extraEnv: []
 
 agent:
   image:
@@ -37,6 +38,7 @@ agent:
       maxUnavailable: 1
   env:
     kernelPath: ""
+  extraEnv: []
   hostPaths:
     socketDir:
       # enabled: true ensures sockets survive agent pod restarts (required for
@@ -69,3 +71,5 @@ grafana:
     key: grafana_dashboard
     value: "1"
   namespace: ""
+  tempo:
+    datasourceUid: ""   # optional: pre-fill the Tempo datasource UID
