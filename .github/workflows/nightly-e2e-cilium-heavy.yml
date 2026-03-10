@@ -50,6 +50,16 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
+      - name: Build local E2E images
+        run: |
+          docker build -f Dockerfile.operator -t local/imp-operator:e2e .
+          docker build -f Dockerfile.agent -t local/imp-agent:e2e .
+
+      - name: Load local E2E images into Kind
+        run: |
+          kind load docker-image local/imp-operator:e2e --name imp-cilium-heavy
+          kind load docker-image local/imp-agent:e2e --name imp-cilium-heavy
+
       - name: Run heavy Cilium E2E tests (retry once)
         run: |
           set -euo pipefail
