@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Clone the code
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -28,7 +30,15 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
           else
-            RANGE="${{ github.event.before }}..${{ github.sha }}"
+            BEFORE="${{ github.event.before }}"
+            AFTER="${{ github.sha }}"
+            if [ -n "${BEFORE}" ] && [ "${BEFORE}" != "0000000000000000000000000000000000000000" ] && git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then
+              RANGE="${BEFORE}..${AFTER}"
+            elif git rev-parse --verify "${AFTER}^" >/dev/null 2>&1; then
+              RANGE="${AFTER}^..${AFTER}"
+            else
+              RANGE="${AFTER}..${AFTER}"
+            fi
           fi
           echo "Checking commit messages in range: ${RANGE}"
           cz check --rev-range "${RANGE}"
