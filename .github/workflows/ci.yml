@@ -49,6 +49,7 @@ jobs:
           python-version: "3.x"
 
       - name: Commit message convention check
+        if: github.actor != 'dependabot[bot]'
         run: |
           python -m pip install --upgrade pip commitizen
           if [ "${{ github.event_name }}" = "pull_request" ]; then
