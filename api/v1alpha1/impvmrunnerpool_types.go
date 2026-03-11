@@ -27,6 +27,11 @@ type ImpVMRunnerPoolSpec struct {
 	// JobDetection configures how the operator discovers queued jobs.
 	// +optional
 	JobDetection *RunnerJobDetectionSpec `json:"jobDetection,omitempty"`
+
+	// ExpireAfter sets VM expiration for runner VMs created by this pool.
+	// 0 or unset disables automatic expiration.
+	// +optional
+	ExpireAfter *metav1.Duration `json:"expireAfter,omitempty"`
 }
 
 // RunnerPlatformSpec identifies the CI platform and credentials.

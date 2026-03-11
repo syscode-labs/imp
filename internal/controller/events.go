@@ -8,6 +8,7 @@ const (
 	EventReasonRescheduling         = "Rescheduling"
 	EventReasonTerminating          = "Terminating"
 	EventReasonTerminationTimeout   = "TerminationTimeout"
+	EventReasonExpired              = "Expired"
 	EventReasonHealthCheckFailed    = "HealthCheckFailed"
 	EventReasonHealthCheckRecovered = "HealthCheckRecovered"
 	EventReasonCNIDetected          = "CNIDetected"

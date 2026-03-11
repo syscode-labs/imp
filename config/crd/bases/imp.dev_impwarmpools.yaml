@@ -59,6 +59,11 @@ spec:
             description: ImpWarmPoolSpec defines a pool of pre-booted VMs ready for
               instant assignment.
             properties:
+              expireAfter:
+                description: |-
+                  ExpireAfter sets VM expiration for members created by this pool.
+                  0 or unset disables automatic expiration.
+                type: string
               size:
                 default: 2
                 description: Size is the number of pre-booted VMs to maintain in the

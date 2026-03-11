@@ -5,9 +5,11 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestImpVMRunnerPool_roundTrip(t *testing.T) {
@@ -27,6 +29,7 @@ func TestImpVMRunnerPool_roundTrip(t *testing.T) {
 			Webhook: &RunnerWebhookSpec{Enabled: true, SecretRef: "gh-webhook"},
 			Polling: &RunnerPollingSpec{Enabled: true, IntervalSeconds: 30},
 		},
+		ExpireAfter: &metav1.Duration{Duration: 4 * time.Hour},
 	}
 
 	b, err := json.Marshal(pool)
@@ -37,6 +40,8 @@ func TestImpVMRunnerPool_roundTrip(t *testing.T) {
 	assert.Equal(t, "github-actions", out.Spec.Platform.Type)
 	assert.Equal(t, "my-org", out.Spec.Platform.Scope.Org)
 	assert.Equal(t, int32(10), out.Spec.Scaling.MaxConcurrent)
+	require.NotNil(t, out.Spec.ExpireAfter)
+	assert.Equal(t, 4*time.Hour, out.Spec.ExpireAfter.Duration)
 }
 
 func TestImpVMRunnerPoolCRD_scopeValidationRequiresExactlyOne(t *testing.T) {

@@ -882,3 +882,88 @@ var _ = Describe("ImpVM syncStatus: node healthy", func() {
 		Expect(c.Status).To(Equal(metav1.ConditionTrue))
 	})
 })
+
+var _ = Describe("ImpVM expiration", func() {
+	ctx := context.Background()
+
+	It("computes status.expiresAt from runningAt and requeues before expiry", func() {
+		node := readyNode("expire-requeue-node")
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, node) }) //nolint:errcheck
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "expire-requeue-vm",
+				Namespace:  "default",
+				Finalizers: []string{finalizerImp},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				NodeName:      "expire-requeue-node",
+				ExpireAfter:   &metav1.Duration{Duration: 1 * time.Hour},
+				ClassRef:      &impdevv1alpha1.ClusterObjectRef{Name: "dummy"},
+				Image:         "ghcr.io/syscode-labs/test:latest",
+				TemplateRef:   nil,
+				RestartPolicy: nil,
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		now := metav1.Now()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+		vm.Status.RunningAt = &now
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		result, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}, updated)).To(Succeed())
+		Expect(updated.Status.ExpiresAt).NotTo(BeNil())
+		Expect(updated.Status.ExpiresAt.After(now.Time)).To(BeTrue())
+	})
+
+	It("deletes VM when expireAfter elapsed", func() {
+		node := readyNode("expire-delete-node")
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		Expect(k8sClient.Status().Update(ctx, node)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, node) }) //nolint:errcheck
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "expire-delete-vm",
+				Namespace:  "default",
+				Finalizers: []string{finalizerImp},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				NodeName:    "expire-delete-node",
+				ExpireAfter: &metav1.Duration{Duration: 1 * time.Second},
+				ClassRef:    &impdevv1alpha1.ClusterObjectRef{Name: "dummy"},
+				Image:       "ghcr.io/syscode-labs/test:latest",
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		past := metav1.NewTime(time.Now().Add(-2 * time.Minute))
+		vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+		vm.Status.RunningAt = &past
+		vm.Status.ExpiresAt = &past
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}, updated)).To(Succeed())
+		Expect(updated.DeletionTimestamp).NotTo(BeNil())
+	})
+})

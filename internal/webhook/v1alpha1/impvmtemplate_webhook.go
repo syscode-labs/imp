@@ -55,6 +55,13 @@ func validateImpVMTemplate(tmpl *impdevv1alpha1.ImpVMTemplate) field.ErrorList {
 			"classRef.name is required",
 		))
 	}
+	if tmpl.Spec.ExpireAfter != nil && tmpl.Spec.ExpireAfter.Duration < 0 {
+		errs = append(errs, field.Invalid(
+			field.NewPath("spec", "expireAfter"),
+			tmpl.Spec.ExpireAfter.Duration.String(),
+			"expireAfter must be >= 0",
+		))
+	}
 
 	return errs
 }

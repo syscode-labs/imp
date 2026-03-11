@@ -16,6 +16,11 @@ type ImpWarmPoolSpec struct {
 
 	// TemplateName is the ImpVMTemplate used to create pool members.
 	TemplateName string `json:"templateName"`
+
+	// ExpireAfter sets VM expiration for members created by this pool.
+	// 0 or unset disables automatic expiration.
+	// +optional
+	ExpireAfter *metav1.Duration `json:"expireAfter,omitempty"`
 }
 
 // ImpWarmPoolStatus reflects the observed pool state.

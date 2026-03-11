@@ -62,6 +62,11 @@ spec:
             description: ImpVMRunnerPoolSpec defines a pool of ephemeral CI runner
               VMs.
             properties:
+              expireAfter:
+                description: |-
+                  ExpireAfter sets VM expiration for runner VMs created by this pool.
+                  0 or unset disables automatic expiration.
+                type: string
               jobDetection:
                 description: JobDetection configures how the operator discovers queued
                   jobs.

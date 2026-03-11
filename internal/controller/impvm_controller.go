@@ -137,12 +137,73 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 	}
 
 	// 5. Handle Failed phase — apply restart policy before re-syncing.
-	if vm.Status.Phase == impdevv1alpha1.VMPhaseFailed {
-		return r.handleFailed(ctx, vm)
+	expiryRequeueAfter, done, err := r.reconcileExpiry(ctx, vm)
+	if err != nil || done {
+		return ctrl.Result{}, err
 	}
 
-	// 6. SyncStatus
-	return r.syncStatus(ctx, vm)
+	// 6. Handle Failed phase — apply restart policy before re-syncing.
+	if vm.Status.Phase == impdevv1alpha1.VMPhaseFailed {
+		result, err = r.handleFailed(ctx, vm)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if expiryRequeueAfter > 0 &&
+			(result.RequeueAfter == 0 || expiryRequeueAfter < result.RequeueAfter) {
+			result.RequeueAfter = expiryRequeueAfter
+		}
+		return result, nil
+	}
+
+	// 7. SyncStatus
+	result, err = r.syncStatus(ctx, vm)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if expiryRequeueAfter > 0 &&
+		(result.RequeueAfter == 0 || expiryRequeueAfter < result.RequeueAfter) {
+		result.RequeueAfter = expiryRequeueAfter
+	}
+	return result, nil
+}
+
+func (r *ImpVMReconciler) reconcileExpiry(ctx context.Context, vm *impdevv1alpha1.ImpVM) (time.Duration, bool, error) {
+	if vm.Spec.ExpireAfter == nil || vm.Spec.ExpireAfter.Duration <= 0 {
+		if vm.Status.ExpiresAt == nil {
+			return 0, false, nil
+		}
+		base := vm.DeepCopy()
+		vm.Status.ExpiresAt = nil
+		if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+			return 0, false, err
+		}
+		return 0, false, nil
+	}
+
+	if vm.Status.RunningAt == nil {
+		// Expiration is anchored to first Running transition.
+		return 0, false, nil
+	}
+
+	if vm.Status.ExpiresAt == nil {
+		base := vm.DeepCopy()
+		exp := metav1.NewTime(vm.Status.RunningAt.Add(vm.Spec.ExpireAfter.Duration))
+		vm.Status.ExpiresAt = &exp
+		if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+			return 0, false, err
+		}
+	}
+
+	remaining := time.Until(vm.Status.ExpiresAt.Time)
+	if remaining <= 0 {
+		if err := r.Delete(ctx, vm); err != nil && !apierrors.IsNotFound(err) {
+			return 0, true, err
+		}
+		r.Recorder.Event(vm, corev1.EventTypeNormal, EventReasonExpired,
+			"VM expired and was deleted")
+		return 0, true, nil
+	}
+	return remaining, false, nil
 }
 
 func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {

@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	"context"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -55,6 +56,17 @@ func TestImpVMTemplateWebhook_ValidateCreate_EmptyClassName(t *testing.T) {
 	_, err := wh.ValidateCreate(context.Background(), tmpl)
 	if err == nil {
 		t.Fatal("expected error when classRef.name is empty, got nil")
+	}
+}
+
+func TestImpVMTemplateWebhook_ValidateCreate_NegativeExpireAfterRejected(t *testing.T) {
+	wh := &ImpVMTemplateWebhook{}
+	tmpl := newTemplate("small")
+	tmpl.Spec.ExpireAfter = &metav1.Duration{Duration: -5 * time.Minute}
+
+	_, err := wh.ValidateCreate(context.Background(), tmpl)
+	if err == nil {
+		t.Fatal("expected error for negative expireAfter, got nil")
 	}
 }
 

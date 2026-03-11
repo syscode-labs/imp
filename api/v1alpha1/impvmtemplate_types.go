@@ -44,6 +44,11 @@ type ImpVMTemplateSpec struct {
 	// enrollment.
 	// +optional
 	CiliumLayer string `json:"ciliumLayer,omitempty"`
+
+	// ExpireAfter sets default VM expiration for VMs created from this template.
+	// 0 or unset disables automatic expiration.
+	// +optional
+	ExpireAfter *metav1.Duration `json:"expireAfter,omitempty"`
 }
 
 // +kubebuilder:object:root=true

@@ -43,8 +43,27 @@ func (w *ImpVMWebhook) Default(ctx context.Context, vm *impdevv1alpha1.ImpVM) er
 	if vm.Spec.Lifecycle == "" {
 		vm.Spec.Lifecycle = impdevv1alpha1.VMLifecycleEphemeral
 	}
+	w.mergeExpireAfter(ctx, vm)
 	w.mergeRestartPolicy(ctx, vm)
 	return nil
+}
+
+// mergeExpireAfter resolves VM expiration defaults from template into VM spec.
+// VM-level value wins. Class has no expiration field.
+func (w *ImpVMWebhook) mergeExpireAfter(ctx context.Context, vm *impdevv1alpha1.ImpVM) {
+	if vm.Spec.ExpireAfter != nil || vm.Spec.TemplateRef == nil || w.Client == nil {
+		return
+	}
+	tpl := &impdevv1alpha1.ImpVMTemplate{}
+	if err := w.Client.Get(ctx, client.ObjectKey{
+		Namespace: vm.Namespace, Name: vm.Spec.TemplateRef.Name,
+	}, tpl); err != nil {
+		return
+	}
+	if tpl.Spec.ExpireAfter != nil {
+		d := *tpl.Spec.ExpireAfter
+		vm.Spec.ExpireAfter = &d
+	}
 }
 
 // mergeRestartPolicy resolves the restart policy inheritance chain (class → template → VM).
@@ -139,6 +158,14 @@ func validateImpVM(vm *impdevv1alpha1.ImpVM) field.ErrorList {
 		errs = append(errs, field.Required(
 			field.NewPath("spec", "image"),
 			"image is required when classRef is set without templateRef",
+		))
+	}
+
+	if vm.Spec.ExpireAfter != nil && vm.Spec.ExpireAfter.Duration < 0 {
+		errs = append(errs, field.Invalid(
+			field.NewPath("spec", "expireAfter"),
+			vm.Spec.ExpireAfter.Duration.String(),
+			"expireAfter must be >= 0",
 		))
 	}
 

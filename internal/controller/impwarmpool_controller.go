@@ -169,6 +169,13 @@ func (r *ImpWarmPoolReconciler) createPoolMember(
 	if tpl.Spec.NetworkGroup != "" {
 		vm.Spec.NetworkGroup = tpl.Spec.NetworkGroup
 	}
+	if pool.Spec.ExpireAfter != nil {
+		d := *pool.Spec.ExpireAfter
+		vm.Spec.ExpireAfter = &d
+	} else if tpl.Spec.ExpireAfter != nil {
+		d := *tpl.Spec.ExpireAfter
+		vm.Spec.ExpireAfter = &d
+	}
 
 	if err := ctrl.SetControllerReference(pool, vm, r.Scheme); err != nil {
 		return err

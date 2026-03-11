@@ -18,6 +18,7 @@ Each example is designed to be:
 ## Included Teasers
 
 - `secure-runner-pool`: Ephemeral CI runners that scale from webhook demand
+- `runner-pool-expiration`: Runner pool with template and pool `expireAfter` chain
 - `preview-env-pr`: Per-PR preview environment VM pattern
 - `warm-pool-fast-start`: Pre-warmed pool for low-latency VM assignment
 - `multi-tenant-isolation`: Team isolation via namespaces and networks

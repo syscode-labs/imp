@@ -114,6 +114,11 @@ type ImpVMSpec struct {
 	// enrollment.
 	// +optional
 	CiliumLayer string `json:"ciliumLayer,omitempty"`
+
+	// ExpireAfter is the maximum wall-clock runtime from first Running transition.
+	// 0 or unset disables automatic expiration.
+	// +optional
+	ExpireAfter *metav1.Duration `json:"expireAfter,omitempty"`
 }
 
 // UserDataSource references a ConfigMap containing cloud-init user-data.
@@ -146,6 +151,11 @@ type ImpVMStatus struct {
 	// RunningAt is the time the VM first reached Running phase.
 	// +optional
 	RunningAt *metav1.Time `json:"runningAt,omitempty"`
+
+	// ExpiresAt is the computed expiration timestamp (RunningAt + Spec.ExpireAfter).
+	// Empty when expiration is disabled or VM has not reached Running yet.
+	// +optional
+	ExpiresAt *metav1.Time `json:"expiresAt,omitempty"`
 
 	// StartedAt is the time the VM last transitioned to phase Starting.
 	// Used to detect and time out stuck start attempts.

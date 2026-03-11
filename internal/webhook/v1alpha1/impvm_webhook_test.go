@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	"context"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -131,6 +132,31 @@ func TestImpVMWebhook_mergeRestartPolicy_VMOverridesClass(t *testing.T) {
 	}
 }
 
+func TestImpVMWebhook_Default_InheritsExpireAfterFromTemplate(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+
+	tpl := &impdevv1alpha1.ImpVMTemplate{
+		ObjectMeta: metav1.ObjectMeta{Name: "tmpl", Namespace: "default"},
+		Spec: impdevv1alpha1.ImpVMTemplateSpec{
+			ClassRef:    impdevv1alpha1.ClusterObjectRef{Name: "small"},
+			ExpireAfter: &metav1.Duration{Duration: 30 * time.Minute},
+		},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(tpl).Build()
+	wh := &ImpVMWebhook{Client: c}
+
+	vm := newVM("tmpl", "", "")
+	if err := wh.Default(context.Background(), vm); err != nil {
+		t.Fatalf("Default() returned unexpected error: %v", err)
+	}
+	if vm.Spec.ExpireAfter == nil || vm.Spec.ExpireAfter.Duration != 30*time.Minute {
+		t.Fatalf("expected expireAfter=30m, got %#v", vm.Spec.ExpireAfter)
+	}
+}
+
 // --- ValidateCreate tests --------------------------------------------------
 
 func TestImpVMWebhook_ValidateCreate_BothRefs(t *testing.T) {
@@ -180,6 +206,17 @@ func TestImpVMWebhook_ValidateCreate_Valid_TemplateRef(t *testing.T) {
 	_, err := wh.ValidateCreate(context.Background(), vm)
 	if err != nil {
 		t.Errorf("expected no error for valid templateRef, got: %v", err)
+	}
+}
+
+func TestImpVMWebhook_ValidateCreate_NegativeExpireAfterRejected(t *testing.T) {
+	wh := &ImpVMWebhook{}
+	vm := newVM("my-template", "", "")
+	vm.Spec.ExpireAfter = &metav1.Duration{Duration: -1 * time.Minute}
+
+	_, err := wh.ValidateCreate(context.Background(), vm)
+	if err == nil {
+		t.Fatal("expected error for negative expireAfter, got nil")
 	}
 }
 

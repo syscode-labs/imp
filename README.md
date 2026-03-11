@@ -111,6 +111,52 @@ kubectl describe impvm quick-vm -n default
 kubectl get impnetwork quick-net -n default -o yaml
 ```
 
+## VM Expiration (`expireAfter`)
+
+Imp can automatically delete a microVM after a fixed runtime window.
+
+- `0` or unset means disabled
+- expiration is anchored to first `status.runningAt`
+- on expiry, the controller issues normal `Delete` (graceful stop path first)
+
+Resolution precedence:
+
+1. `ImpVM.spec.expireAfter`
+2. creator pool (`ImpVMRunnerPool.spec.expireAfter` / `ImpWarmPool.spec.expireAfter`)
+3. `ImpVMTemplate.spec.expireAfter`
+4. disabled
+
+Quick example:
+
+```yaml
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMTemplate
+metadata:
+  name: ci-runner-template
+  namespace: default
+spec:
+  classRef:
+    name: ci-small
+  image: ghcr.io/syscode-labs/test:latest
+  expireAfter: 2h
+---
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMRunnerPool
+metadata:
+  name: ci-runner-pool
+  namespace: default
+spec:
+  templateName: ci-runner-template
+  expireAfter: 45m
+  platform:
+    type: github-actions
+    scope:
+      repo: your-org/your-repo
+    credentialsSecret: gh-runner-token
+```
+
+See [examples/runner-pool-expiration](/Users/giovanni/syscode/git/imp/examples/runner-pool-expiration/README.md) for a complete runnable teaser.
+
 ## Development
 
 ```sh

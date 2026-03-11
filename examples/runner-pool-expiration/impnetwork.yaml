@@ -1,0 +1,9 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpNetwork
+metadata:
+  name: ci-expire-net
+  namespace: default
+spec:
+  subnet: 192.168.130.0/24
+  nat:
+    enabled: true

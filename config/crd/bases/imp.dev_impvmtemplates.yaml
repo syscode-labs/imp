@@ -69,6 +69,11 @@ spec:
                 required:
                 - name
                 type: object
+              expireAfter:
+                description: |-
+                  ExpireAfter sets default VM expiration for VMs created from this template.
+                  0 or unset disables automatic expiration.
+                type: string
               guestAgent:
                 description: GuestAgent controls guest agent injection. Overrides
                   defaults when set.

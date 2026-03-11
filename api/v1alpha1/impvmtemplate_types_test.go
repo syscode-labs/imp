@@ -3,6 +3,9 @@ package v1alpha1
 import (
 	"encoding/json"
 	"testing"
+	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestImpVMTemplateSpec_RoundTrip(t *testing.T) {
@@ -15,6 +18,7 @@ func TestImpVMTemplateSpec_RoundTrip(t *testing.T) {
 				HTTP: &HTTPGetAction{Path: "/ready", Port: 8080},
 			},
 		},
+		ExpireAfter: &metav1.Duration{Duration: 2 * time.Hour},
 	}
 	data, err := json.Marshal(tmpl)
 	if err != nil {
@@ -29,5 +33,8 @@ func TestImpVMTemplateSpec_RoundTrip(t *testing.T) {
 	}
 	if got.Probes == nil || got.Probes.ReadinessProbe == nil || got.Probes.ReadinessProbe.HTTP == nil {
 		t.Fatal("ReadinessProbe.HTTP lost")
+	}
+	if got.ExpireAfter == nil || got.ExpireAfter.Duration != 2*time.Hour {
+		t.Fatalf("ExpireAfter wrong: %#v", got.ExpireAfter)
 	}
 }

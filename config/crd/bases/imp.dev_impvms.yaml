@@ -279,6 +279,11 @@ spec:
                       x-kubernetes-map-type: atomic
                   type: object
                 type: array
+              expireAfter:
+                description: |-
+                  ExpireAfter is the maximum wall-clock runtime from first Running transition.
+                  0 or unset disables automatic expiration.
+                type: string
               guestAgent:
                 description: GuestAgent controls guest agent injection. Overrides
                   defaults when set.
@@ -703,6 +708,12 @@ spec:
               exhaustedAt:
                 description: ExhaustedAt is the time restart retries were exhausted
                   (informational).
+                format: date-time
+                type: string
+              expiresAt:
+                description: |-
+                  ExpiresAt is the computed expiration timestamp (RunningAt + Spec.ExpireAfter).
+                  Empty when expiration is disabled or VM has not reached Running yet.
                 format: date-time
                 type: string
               ip:

@@ -1,0 +1,12 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMTemplate
+metadata:
+  name: ci-expire-template
+  namespace: default
+spec:
+  classRef:
+    name: ci-expire-small
+  networkRef:
+    name: ci-expire-net
+  image: ghcr.io/syscode-labs/test:latest
+  expireAfter: 2h
