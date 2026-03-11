@@ -17,9 +17,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
+
+	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 
 	"github.com/syscode-labs/imp/internal/agent"
 	"github.com/syscode-labs/imp/internal/agent/api"

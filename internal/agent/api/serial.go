@@ -10,15 +10,21 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 func (s *APIServer) handleSerial(w http.ResponseWriter, r *http.Request) {
 	namespace := r.PathValue("namespace")
 	vmName := r.PathValue("vm")
+	if len(validation.IsDNS1123Label(namespace)) != 0 || len(validation.IsDNS1123Subdomain(vmName)) != 0 {
+		http.Error(w, "invalid namespace or vm name", http.StatusBadRequest)
+		return
+	}
 
 	logPath := filepath.Join(s.SocketDir, namespace+"-"+vmName+".serial.log")
 
-	f, err := os.Open(logPath)
+	f, err := os.Open(logPath) //nolint:gosec // G304: path segments validated as Kubernetes DNS-1123 names
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			http.Error(w, fmt.Sprintf("serial log for %s/%s not found", namespace, vmName), http.StatusNotFound)
