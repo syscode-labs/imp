@@ -50,7 +50,7 @@ type fcProc struct {
 	machine     *firecracker.Machine
 	pid         int64
 	socket      string
-	vsockPath   string             // path to the VSOCK Unix socket proxy; empty when guest agent is disabled
+	vsockPath   string               // path to the VSOCK Unix socket proxy; empty when guest agent is disabled
 	netInfo     *network.NetworkInfo // nil when NetworkRef is absent
 	probeCancel context.CancelFunc   // non-nil when probe goroutine is running
 }
@@ -215,7 +215,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	// Redirect the Firecracker process stdout to a serial log file so that
 	// the guest ttyS0 console (console=ttyS0 kernel arg) is persisted on disk.
 	serialLogPath := filepath.Join(d.SocketDir, vm.Namespace+"-"+vm.Name+".serial.log")
-	serialLogFile, err := os.OpenFile(serialLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640)
+	serialLogFile, err := os.OpenFile(serialLogPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640) //nolint:gosec // G304: path is derived from Kubernetes metadata names
 	if err != nil {
 		return 0, fmt.Errorf("open serial log %s: %w", serialLogPath, err)
 	}

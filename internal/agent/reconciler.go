@@ -63,6 +63,7 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 	if vm.Spec.NodeName != r.NodeName {
 		return ctrl.Result{}, nil
 	}
+	ctx = logf.IntoContext(ctx, log.WithValues("vm", req.NamespacedName, "phase", vm.Status.Phase))
 
 	ctx, span := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.reconcile",
 		trace.WithAttributes(
@@ -76,8 +77,6 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 		tracing.RecordError(span, err)
 		span.End()
 	}()
-
-	log = log.WithValues("vm", req.NamespacedName, "phase", vm.Status.Phase)
 
 	switch vm.Status.Phase {
 	case impdevv1alpha1.VMPhaseTerminating:
