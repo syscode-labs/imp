@@ -18,8 +18,9 @@ type ImpWarmPoolSpec struct {
 	TemplateName string `json:"templateName"`
 
 	// ExpireAfter sets VM expiration for members created by this pool.
-	// 0 or unset disables automatic expiration.
+	// 0 or unset disables automatic expiration. Minimum enabled value is 60s.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="duration(self) == duration('0s') || duration(self) >= duration('60s')",message="expireAfter must be 0 (disabled) or at least 60s"
 	ExpireAfter *metav1.Duration `json:"expireAfter,omitempty"`
 }
 

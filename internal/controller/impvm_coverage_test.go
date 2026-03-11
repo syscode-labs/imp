@@ -942,7 +942,7 @@ var _ = Describe("ImpVM expiration", func() {
 			},
 			Spec: impdevv1alpha1.ImpVMSpec{
 				NodeName:    "expire-delete-node",
-				ExpireAfter: &metav1.Duration{Duration: 1 * time.Second},
+				ExpireAfter: &metav1.Duration{Duration: 60 * time.Second},
 				ClassRef:    &impdevv1alpha1.ClusterObjectRef{Name: "dummy"},
 				Image:       "ghcr.io/syscode-labs/test:latest",
 			},

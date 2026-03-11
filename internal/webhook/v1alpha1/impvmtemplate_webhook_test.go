@@ -70,6 +70,17 @@ func TestImpVMTemplateWebhook_ValidateCreate_NegativeExpireAfterRejected(t *test
 	}
 }
 
+func TestImpVMTemplateWebhook_ValidateCreate_TooShortExpireAfterRejected(t *testing.T) {
+	wh := &ImpVMTemplateWebhook{}
+	tmpl := newTemplate("small")
+	tmpl.Spec.ExpireAfter = &metav1.Duration{Duration: 30 * time.Second}
+
+	_, err := wh.ValidateCreate(context.Background(), tmpl)
+	if err == nil {
+		t.Fatal("expected error for expireAfter < 60s, got nil")
+	}
+}
+
 func TestImpVMTemplateWebhook_ValidateUpdate_Valid(t *testing.T) {
 	wh := &ImpVMTemplateWebhook{}
 	oldTmpl := newTemplate("small")

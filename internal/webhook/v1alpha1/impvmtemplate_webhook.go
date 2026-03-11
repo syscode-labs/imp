@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"context"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -55,12 +56,15 @@ func validateImpVMTemplate(tmpl *impdevv1alpha1.ImpVMTemplate) field.ErrorList {
 			"classRef.name is required",
 		))
 	}
-	if tmpl.Spec.ExpireAfter != nil && tmpl.Spec.ExpireAfter.Duration < 0 {
-		errs = append(errs, field.Invalid(
-			field.NewPath("spec", "expireAfter"),
-			tmpl.Spec.ExpireAfter.Duration.String(),
-			"expireAfter must be >= 0",
-		))
+	if tmpl.Spec.ExpireAfter != nil {
+		d := tmpl.Spec.ExpireAfter.Duration
+		if d < 0 || (d > 0 && d < 60*time.Second) {
+			errs = append(errs, field.Invalid(
+				field.NewPath("spec", "expireAfter"),
+				d.String(),
+				"expireAfter must be 0 (disabled) or at least 60s",
+			))
+		}
 	}
 
 	return errs

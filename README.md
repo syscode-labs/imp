@@ -116,6 +116,7 @@ kubectl get impnetwork quick-net -n default -o yaml
 Imp can automatically delete a microVM after a fixed runtime window.
 
 - `0` or unset means disabled
+- minimum enabled value is `60s`
 - expiration is anchored to first `status.runningAt`
 - on expiry, the controller issues normal `Delete` (graceful stop path first)
 

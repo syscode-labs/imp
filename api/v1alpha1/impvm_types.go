@@ -116,8 +116,9 @@ type ImpVMSpec struct {
 	CiliumLayer string `json:"ciliumLayer,omitempty"`
 
 	// ExpireAfter is the maximum wall-clock runtime from first Running transition.
-	// 0 or unset disables automatic expiration.
+	// 0 or unset disables automatic expiration. Minimum enabled value is 60s.
 	// +optional
+	// +kubebuilder:validation:XValidation:rule="duration(self) == duration('0s') || duration(self) >= duration('60s')",message="expireAfter must be 0 (disabled) or at least 60s"
 	ExpireAfter *metav1.Duration `json:"expireAfter,omitempty"`
 }
 

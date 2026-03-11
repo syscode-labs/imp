@@ -72,8 +72,11 @@ spec:
               expireAfter:
                 description: |-
                   ExpireAfter sets default VM expiration for VMs created from this template.
-                  0 or unset disables automatic expiration.
+                  0 or unset disables automatic expiration. Minimum enabled value is 60s.
                 type: string
+                x-kubernetes-validations:
+                - message: expireAfter must be 0 (disabled) or at least 60s
+                  rule: duration(self) == duration('0s') || duration(self) >= duration('60s')
               guestAgent:
                 description: GuestAgent controls guest agent injection. Overrides
                   defaults when set.

@@ -62,8 +62,11 @@ spec:
               expireAfter:
                 description: |-
                   ExpireAfter sets VM expiration for members created by this pool.
-                  0 or unset disables automatic expiration.
+                  0 or unset disables automatic expiration. Minimum enabled value is 60s.
                 type: string
+                x-kubernetes-validations:
+                - message: expireAfter must be 0 (disabled) or at least 60s
+                  rule: duration(self) == duration('0s') || duration(self) >= duration('60s')
               size:
                 default: 2
                 description: Size is the number of pre-booted VMs to maintain in the

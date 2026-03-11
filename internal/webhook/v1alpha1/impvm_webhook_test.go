@@ -220,6 +220,17 @@ func TestImpVMWebhook_ValidateCreate_NegativeExpireAfterRejected(t *testing.T) {
 	}
 }
 
+func TestImpVMWebhook_ValidateCreate_TooShortExpireAfterRejected(t *testing.T) {
+	wh := &ImpVMWebhook{}
+	vm := newVM("my-template", "", "")
+	vm.Spec.ExpireAfter = &metav1.Duration{Duration: 30 * time.Second}
+
+	_, err := wh.ValidateCreate(context.Background(), vm)
+	if err == nil {
+		t.Fatal("expected error for expireAfter < 60s, got nil")
+	}
+}
+
 // --- ValidateUpdate tests --------------------------------------------------
 
 func TestImpVMWebhook_ValidateUpdate_NodeNameImmutable(t *testing.T) {
