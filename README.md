@@ -158,6 +158,13 @@ spec:
 
 See [examples/runner-pool-expiration](/Users/giovanni/syscode/git/imp/examples/runner-pool-expiration/README.md) for a complete runnable teaser.
 
+## GitHub Runner Capacity Signaling
+
+When using `ImpVMRunnerPool` with GitHub Actions, GitHub does not read pool objects directly.
+It only sees registered self-hosted runner instances.
+
+Read: [docs/runner-pool/github-capacity-signaling.md](/Users/giovanni/syscode/git/imp/docs/runner-pool/github-capacity-signaling.md)
+
 ## Development
 
 ```sh
