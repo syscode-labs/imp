@@ -23,7 +23,7 @@ jobs:
           python-version: "3.x"
 
       - name: Commit message convention check
-        if: github.actor != 'dependabot[bot]'
+        if: ${{ !(github.event_name == 'pull_request' && startsWith(github.head_ref, 'dependabot/')) }}
         run: |
           python -m pip install --upgrade pip commitizen
           if [ "${{ github.event_name }}" = "pull_request" ]; then
