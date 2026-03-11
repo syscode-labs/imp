@@ -19,9 +19,9 @@ type execRequest struct {
 
 // execLine is one line of the streaming NDJSON response.
 type execLine struct {
-	Stream string `json:"stream"`           // "stdout", "stderr", or "exit"
-	Line   string `json:"line,omitempty"`   // present for stdout/stderr
-	Code   *int32 `json:"code,omitempty"`   // present for exit
+	Stream string `json:"stream"`         // "stdout", "stderr", or "exit"
+	Line   string `json:"line,omitempty"` // present for stdout/stderr
+	Code   *int32 `json:"code,omitempty"` // present for exit
 }
 
 func (s *APIServer) handleExec(w http.ResponseWriter, r *http.Request) {
