@@ -13,8 +13,10 @@ spec:
       repo: your-org/your-repo
     credentialsSecret: nightly-gh-token
   scaling:
+    mode: webhook
     minIdle: 0
     maxConcurrent: 8
-  jobDetection:
+    scaleUpStep: 3
+    cooldownSeconds: 30
     webhook:
-      enabled: true
+      secretRef: nightly-webhook-secret

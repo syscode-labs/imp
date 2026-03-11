@@ -24,7 +24,15 @@ func TestImpVMRunnerPool_roundTrip(t *testing.T) {
 		},
 		RunnerLayer: "ghcr.io/syscode-labs/imp-runners/github-actions:v2.317",
 		Labels:      []string{"self-hosted", "linux"},
-		Scaling:     &RunnerScalingSpec{MinIdle: 0, MaxConcurrent: 10},
+		Scaling: &RunnerScalingSpec{
+			Mode:            RunnerScalingModeHybrid,
+			MinIdle:         ptrInt32(0),
+			MaxConcurrent:   ptrInt32(10),
+			ScaleUpStep:     ptrInt32(2),
+			CooldownSeconds: ptrInt32(30),
+			Webhook:         &RunnerWebhookSpec{SecretRef: "gh-webhook"},
+			Polling:         &RunnerPollingSpec{IntervalSeconds: 30},
+		},
 		JobDetection: &RunnerJobDetectionSpec{
 			Webhook: &RunnerWebhookSpec{Enabled: true, SecretRef: "gh-webhook"},
 			Polling: &RunnerPollingSpec{Enabled: true, IntervalSeconds: 30},
@@ -39,7 +47,10 @@ func TestImpVMRunnerPool_roundTrip(t *testing.T) {
 	assert.Equal(t, "ubuntu-runner", out.Spec.TemplateName)
 	assert.Equal(t, "github-actions", out.Spec.Platform.Type)
 	assert.Equal(t, "my-org", out.Spec.Platform.Scope.Org)
-	assert.Equal(t, int32(10), out.Spec.Scaling.MaxConcurrent)
+	require.NotNil(t, out.Spec.Scaling)
+	require.NotNil(t, out.Spec.Scaling.MaxConcurrent)
+	assert.Equal(t, int32(10), *out.Spec.Scaling.MaxConcurrent)
+	assert.Equal(t, RunnerScalingModeHybrid, out.Spec.Scaling.Mode)
 	require.NotNil(t, out.Spec.ExpireAfter)
 	assert.Equal(t, 4*time.Hour, out.Spec.ExpireAfter.Duration)
 }
@@ -50,7 +61,11 @@ func TestImpVMRunnerPoolCRD_scopeValidationRequiresExactlyOne(t *testing.T) {
 
 	yaml := string(b)
 	assert.Contains(t, yaml, "set exactly one of org or repo")
-	assert.Contains(t, yaml, "(size(self.org) > 0) != (size(self.repo) > 0)")
-	assert.False(t, strings.Contains(yaml, "!(size(self.org) > 0 && size(self.repo) > 0)"),
-		"scope validation should require at least one of org or repo, not only mutual exclusion")
+	assert.Contains(t, yaml, "has(self.org) != has(self.repo)")
+	assert.False(t, strings.Contains(yaml, "!(has(self.org) && has(self.repo))"),
+		"scope validation should require exactly one of org or repo")
+	assert.Contains(t, yaml, "scaling.mode is required for github-actions pools")
+	assert.Contains(t, yaml, "github-actions scaling requires explicit minIdle")
 }
+
+func ptrInt32(v int32) *int32 { return &v }

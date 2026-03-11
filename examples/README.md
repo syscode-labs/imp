@@ -18,6 +18,7 @@ Each example is designed to be:
 ## Included Teasers
 
 - `secure-runner-pool`: Ephemeral CI runners that scale from webhook demand
+- `github-scaling-explicit`: Explicit scaling mode with hard ceilings (GitHub-first)
 - `runner-pool-expiration`: Runner pool with template and pool `expireAfter` chain
 - `preview-env-pr`: Per-PR preview environment VM pattern
 - `warm-pool-fast-start`: Pre-warmed pool for low-latency VM assignment

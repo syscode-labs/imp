@@ -90,7 +90,7 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	// Delete terminal VMs — runners are single-use.
+	// Delete terminal VMs - runners are single-use.
 	for i := range vmList.Items {
 		vm := &vmList.Items[i]
 		if vm.DeletionTimestamp != nil {
@@ -118,31 +118,22 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	for i := range vmList.Items {
 		switch vmList.Items[i].Status.Phase {
 		case impv1alpha1.VMPhaseSucceeded, impv1alpha1.VMPhaseFailed, impv1alpha1.VMPhaseRetryExhausted:
-			// skip — just deleted
+			// skip - just deleted
 		default:
 			activeCount++
 		}
 	}
 
-	// Determine how many VMs to create.
-	// When Scaling is nil, apply conservative defaults: no idle VMs (minIdle=0) and
-	// a maxConcurrent ceiling of 10. With minIdle=0, no VMs are proactively created;
-	// VMs will only be created when a job event triggers a reconcile with toCreate > 0.
-	minIdle := int32(0)
-	maxConcurrent := int32(10)
-	if pool.Spec.Scaling != nil {
-		minIdle = pool.Spec.Scaling.MinIdle
-		maxConcurrent = pool.Spec.Scaling.MaxConcurrent
-	}
+	scaling := resolveRunnerScaling(pool)
+	desiredCount := scaling.minIdle
 
-	desiredCount := minIdle
-	queueDepth, err := r.queueDepth(ctx, pool)
+	queueDepth, err := r.queueDepth(ctx, pool, scaling.pollingEnabled)
 	if err != nil {
-		log.Info("could not fetch runner queue depth; falling back to minIdle", "pool", pool.Name, "err", err)
+		log.Info("could not fetch runner queue depth; falling back to current desired", "pool", pool.Name, "err", err)
 	} else if int32(queueDepth) > desiredCount { //nolint:gosec
 		desiredCount = int32(queueDepth) //nolint:gosec
 	}
-	if webhookDemand := runnerDemandFromAnnotation(pool); webhookDemand > desiredCount {
+	if webhookDemand := runnerDemandFromAnnotation(pool, scaling.webhookEnabled); webhookDemand > desiredCount {
 		desiredCount = webhookDemand
 	}
 
@@ -150,12 +141,15 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	if toCreate < 0 {
 		toCreate = 0
 	}
-	available := maxConcurrent - activeCount
+	available := scaling.maxConcurrent - activeCount
 	if available < 0 {
 		available = 0
 	}
 	if toCreate > available {
 		toCreate = available
+	}
+	if toCreate > scaling.scaleUpStep {
+		toCreate = scaling.scaleUpStep
 	}
 
 	for i := int32(0); i < toCreate; i++ {
@@ -175,21 +169,96 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, err
 	}
 
-	// Requeue.
-	requeueAfter := 30 * time.Second
-	if pool.Spec.JobDetection != nil &&
-		pool.Spec.JobDetection.Polling != nil &&
-		pool.Spec.JobDetection.Polling.Enabled &&
-		pool.Spec.JobDetection.Polling.IntervalSeconds > 0 {
-		requeueAfter = time.Duration(pool.Spec.JobDetection.Polling.IntervalSeconds) * time.Second
+	requeueAfter := scaling.cooldown
+	if scaling.pollingEnabled && scaling.pollingInterval > 0 {
+		requeueAfter = time.Duration(scaling.pollingInterval) * time.Second
 	}
 	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
-func (r *ImpVMRunnerPoolReconciler) queueDepth(ctx context.Context, pool *impv1alpha1.ImpVMRunnerPool) (int, error) {
-	if pool.Spec.JobDetection == nil ||
-		pool.Spec.JobDetection.Polling == nil ||
-		!pool.Spec.JobDetection.Polling.Enabled {
+type runnerScalingResolved struct {
+	minIdle         int32
+	maxConcurrent   int32
+	scaleUpStep     int32
+	cooldown        time.Duration
+	pollingInterval int32
+	pollingEnabled  bool
+	webhookEnabled  bool
+}
+
+func resolveRunnerScaling(pool *impv1alpha1.ImpVMRunnerPool) runnerScalingResolved {
+	out := runnerScalingResolved{
+		minIdle:       0,
+		maxConcurrent: 10,
+		scaleUpStep:   10,
+		cooldown:      30 * time.Second,
+	}
+
+	mode := impv1alpha1.RunnerScalingMode("")
+	if s := pool.Spec.Scaling; s != nil {
+		mode = s.Mode
+		if s.MinIdle != nil {
+			out.minIdle = *s.MinIdle
+		}
+		if s.MaxConcurrent != nil {
+			out.maxConcurrent = *s.MaxConcurrent
+		}
+		if s.ScaleUpStep != nil {
+			out.scaleUpStep = *s.ScaleUpStep
+		}
+		if s.CooldownSeconds != nil {
+			out.cooldown = time.Duration(*s.CooldownSeconds) * time.Second
+		}
+		if s.Polling != nil && s.Polling.IntervalSeconds > 0 {
+			out.pollingInterval = s.Polling.IntervalSeconds
+		}
+	}
+
+	if mode == "" && pool.Spec.JobDetection != nil {
+		jd := pool.Spec.JobDetection
+		webhook := jd.Webhook != nil && jd.Webhook.Enabled
+		polling := jd.Polling != nil && jd.Polling.Enabled
+		switch {
+		case webhook && polling:
+			mode = impv1alpha1.RunnerScalingModeHybrid
+		case polling:
+			mode = impv1alpha1.RunnerScalingModePolling
+		case webhook:
+			mode = impv1alpha1.RunnerScalingModeWebhook
+		}
+		if jd.Polling != nil && jd.Polling.IntervalSeconds > 0 && out.pollingInterval == 0 {
+			out.pollingInterval = jd.Polling.IntervalSeconds
+		}
+	}
+
+	switch mode {
+	case impv1alpha1.RunnerScalingModeHybrid:
+		out.webhookEnabled = true
+		out.pollingEnabled = true
+	case impv1alpha1.RunnerScalingModePolling:
+		out.pollingEnabled = true
+	case impv1alpha1.RunnerScalingModeWebhook:
+		out.webhookEnabled = true
+	}
+
+	if out.scaleUpStep <= 0 {
+		out.scaleUpStep = out.maxConcurrent
+	}
+	if out.maxConcurrent <= 0 {
+		out.maxConcurrent = 1
+	}
+	if out.pollingEnabled && out.pollingInterval <= 0 {
+		out.pollingInterval = 30
+	}
+	return out
+}
+
+func (r *ImpVMRunnerPoolReconciler) queueDepth(
+	ctx context.Context,
+	pool *impv1alpha1.ImpVMRunnerPool,
+	enabled bool,
+) (int, error) {
+	if !enabled {
 		return 0, nil
 	}
 
@@ -331,10 +400,8 @@ func pickSecretValue(m map[string][]byte, preferredKey string) string {
 	return ""
 }
 
-func runnerDemandFromAnnotation(pool *impv1alpha1.ImpVMRunnerPool) int32 {
-	if pool.Spec.JobDetection == nil ||
-		pool.Spec.JobDetection.Webhook == nil ||
-		!pool.Spec.JobDetection.Webhook.Enabled {
+func runnerDemandFromAnnotation(pool *impv1alpha1.ImpVMRunnerPool, enabled bool) int32 {
+	if !enabled {
 		return 0
 	}
 	raw := pool.Annotations[AnnotationRunnerDemand]

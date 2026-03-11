@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -31,7 +32,14 @@ func TestRunnerPoolReconciler_createsMinIdleVMs(t *testing.T) {
 				Type:              "github-actions",
 				CredentialsSecret: "gh-creds",
 			},
-			Scaling: &impv1alpha1.RunnerScalingSpec{MinIdle: minIdle, MaxConcurrent: 5},
+			Scaling: &impv1alpha1.RunnerScalingSpec{
+				Mode:            impv1alpha1.RunnerScalingModeWebhook,
+				MinIdle:         ptrInt32(minIdle),
+				MaxConcurrent:   ptrInt32(5),
+				ScaleUpStep:     ptrInt32(5),
+				CooldownSeconds: ptrInt32(30),
+				Webhook:         &impv1alpha1.RunnerWebhookSpec{SecretRef: "wh"},
+			},
 		},
 	}
 	tpl := &impv1alpha1.ImpVMTemplate{
@@ -68,11 +76,15 @@ func TestRunnerPoolReconciler_deletesTerminalVMs(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "ci-pool", Namespace: "ci"},
 		Spec: impv1alpha1.ImpVMRunnerPoolSpec{
 			TemplateName: "ubuntu-runner",
-			Platform: impv1alpha1.RunnerPlatformSpec{
-				Type:              "github-actions",
-				CredentialsSecret: "gh-creds",
+			Platform:     impv1alpha1.RunnerPlatformSpec{Type: "github-actions", CredentialsSecret: "gh-creds"},
+			Scaling: &impv1alpha1.RunnerScalingSpec{
+				Mode:            impv1alpha1.RunnerScalingModeWebhook,
+				MinIdle:         ptrInt32(0),
+				MaxConcurrent:   ptrInt32(5),
+				ScaleUpStep:     ptrInt32(5),
+				CooldownSeconds: ptrInt32(30),
+				Webhook:         &impv1alpha1.RunnerWebhookSpec{SecretRef: "wh"},
 			},
-			Scaling: &impv1alpha1.RunnerScalingSpec{MinIdle: 0, MaxConcurrent: 5},
 		},
 	}
 	tpl := &impv1alpha1.ImpVMTemplate{
@@ -81,8 +93,9 @@ func TestRunnerPoolReconciler_deletesTerminalVMs(t *testing.T) {
 	}
 	doneVM := &impv1alpha1.ImpVM{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "ci-pool-abc", Namespace: "ci",
-			Labels: map[string]string{impv1alpha1.LabelRunnerPool: "ci-pool"},
+			Name:      "ci-pool-abc",
+			Namespace: "ci",
+			Labels:    map[string]string{impv1alpha1.LabelRunnerPool: "ci-pool"},
 		},
 	}
 	doneVM.Status.Phase = impv1alpha1.VMPhaseSucceeded
@@ -109,16 +122,19 @@ func TestRunnerPoolReconciler_deletesTerminalVMs(t *testing.T) {
 }
 
 func TestRunnerPoolReconciler_respectsMaxConcurrent(t *testing.T) {
-	// minIdle=3, maxConcurrent=2 → only 2 VMs should be created
 	pool := &impv1alpha1.ImpVMRunnerPool{
 		ObjectMeta: metav1.ObjectMeta{Name: "ci-pool", Namespace: "ci"},
 		Spec: impv1alpha1.ImpVMRunnerPoolSpec{
 			TemplateName: "ubuntu-runner",
-			Platform: impv1alpha1.RunnerPlatformSpec{
-				Type:              "github-actions",
-				CredentialsSecret: "gh-creds",
+			Platform:     impv1alpha1.RunnerPlatformSpec{Type: "github-actions", CredentialsSecret: "gh-creds"},
+			Scaling: &impv1alpha1.RunnerScalingSpec{
+				Mode:            impv1alpha1.RunnerScalingModeWebhook,
+				MinIdle:         ptrInt32(3),
+				MaxConcurrent:   ptrInt32(2),
+				ScaleUpStep:     ptrInt32(5),
+				CooldownSeconds: ptrInt32(30),
+				Webhook:         &impv1alpha1.RunnerWebhookSpec{SecretRef: "wh"},
 			},
-			Scaling: &impv1alpha1.RunnerScalingSpec{MinIdle: 3, MaxConcurrent: 2},
 		},
 	}
 	tpl := &impv1alpha1.ImpVMTemplate{
@@ -148,17 +164,20 @@ func TestRunnerPoolReconciler_respectsMaxConcurrent(t *testing.T) {
 }
 
 func TestRunnerPoolReconciler_propagatesCompositeLayers(t *testing.T) {
-	minIdle := int32(1)
 	pool := &impv1alpha1.ImpVMRunnerPool{
 		ObjectMeta: metav1.ObjectMeta{Name: "ci-pool", Namespace: "ci"},
 		Spec: impv1alpha1.ImpVMRunnerPoolSpec{
 			TemplateName: "ubuntu-runner",
-			Platform: impv1alpha1.RunnerPlatformSpec{
-				Type:              "github-actions",
-				CredentialsSecret: "gh-creds",
+			Platform:     impv1alpha1.RunnerPlatformSpec{Type: "github-actions", CredentialsSecret: "gh-creds"},
+			RunnerLayer:  "ghcr.io/syscode-labs/imp-runners/github-actions:v1",
+			Scaling: &impv1alpha1.RunnerScalingSpec{
+				Mode:            impv1alpha1.RunnerScalingModeWebhook,
+				MinIdle:         ptrInt32(1),
+				MaxConcurrent:   ptrInt32(5),
+				ScaleUpStep:     ptrInt32(5),
+				CooldownSeconds: ptrInt32(30),
+				Webhook:         &impv1alpha1.RunnerWebhookSpec{SecretRef: "wh"},
 			},
-			RunnerLayer: "ghcr.io/syscode-labs/imp-runners/github-actions:v1",
-			Scaling:     &impv1alpha1.RunnerScalingSpec{MinIdle: minIdle, MaxConcurrent: 5},
 		},
 	}
 	tpl := &impv1alpha1.ImpVMTemplate{
@@ -198,74 +217,25 @@ func TestRunnerPoolReconciler_propagatesCompositeLayers(t *testing.T) {
 	}
 }
 
-func TestRunnerPoolReconciler_scalesFromQueueDepth(t *testing.T) {
-	pool := &impv1alpha1.ImpVMRunnerPool{
-		ObjectMeta: metav1.ObjectMeta{Name: "ci-pool", Namespace: "ci"},
-		Spec: impv1alpha1.ImpVMRunnerPoolSpec{
-			TemplateName: "ubuntu-runner",
-			Platform: impv1alpha1.RunnerPlatformSpec{
-				Type:              "github-actions",
-				CredentialsSecret: "gh-creds",
-			},
-			Scaling: &impv1alpha1.RunnerScalingSpec{MinIdle: 0, MaxConcurrent: 5},
-			JobDetection: &impv1alpha1.RunnerJobDetectionSpec{
-				Polling: &impv1alpha1.RunnerPollingSpec{Enabled: true, IntervalSeconds: 30},
-			},
-		},
-	}
-	tpl := &impv1alpha1.ImpVMTemplate{
-		ObjectMeta: metav1.ObjectMeta{Name: "ubuntu-runner", Namespace: "ci"},
-		Spec:       impv1alpha1.ImpVMTemplateSpec{ClassRef: impv1alpha1.ClusterObjectRef{Name: "standard"}, Image: "ubuntu:22.04"},
-	}
-
-	scheme := newRunnerPoolTestScheme(t)
-	c := fake.NewClientBuilder().WithScheme(scheme).
-		WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
-
-	r := &ImpVMRunnerPoolReconciler{
-		Client: c,
-		Scheme: scheme,
-		DriverFactory: func(
-			_ context.Context, _ client.Client, _ *impv1alpha1.ImpVMRunnerPool,
-		) (runnerQueueDepthReader, error) {
-			return &stubRunnerQueueDepthReader{queueDepth: 3}, nil
-		},
-	}
-
-	_, err := r.Reconcile(context.Background(), reconcile.Request{
-		NamespacedName: types.NamespacedName{Name: "ci-pool", Namespace: "ci"},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	vmList := &impv1alpha1.ImpVMList{}
-	_ = c.List(context.Background(), vmList,
-		client.InNamespace("ci"),
-		client.MatchingLabels{impv1alpha1.LabelRunnerPool: "ci-pool"})
-	if len(vmList.Items) != 3 {
-		t.Fatalf("expected 3 queued-demand VMs, got %d", len(vmList.Items))
-	}
-}
-
-func TestRunnerPoolReconciler_scalesFromWebhookDemandAnnotation(t *testing.T) {
+func TestRunnerPoolReconciler_scalingWebhookUsesStepLimit(t *testing.T) {
 	pool := &impv1alpha1.ImpVMRunnerPool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ci-pool",
 			Namespace: "ci",
 			Annotations: map[string]string{
-				AnnotationRunnerDemand: "2",
+				AnnotationRunnerDemand: "5",
 			},
 		},
 		Spec: impv1alpha1.ImpVMRunnerPoolSpec{
 			TemplateName: "ubuntu-runner",
-			Platform: impv1alpha1.RunnerPlatformSpec{
-				Type:              "github-actions",
-				CredentialsSecret: "gh-creds",
-			},
-			Scaling: &impv1alpha1.RunnerScalingSpec{MinIdle: 0, MaxConcurrent: 5},
-			JobDetection: &impv1alpha1.RunnerJobDetectionSpec{
-				Webhook: &impv1alpha1.RunnerWebhookSpec{Enabled: true},
+			Platform:     impv1alpha1.RunnerPlatformSpec{Type: "github-actions", CredentialsSecret: "gh-creds"},
+			Scaling: &impv1alpha1.RunnerScalingSpec{
+				Mode:            impv1alpha1.RunnerScalingModeWebhook,
+				MinIdle:         ptrInt32(0),
+				MaxConcurrent:   ptrInt32(10),
+				ScaleUpStep:     ptrInt32(2),
+				CooldownSeconds: ptrInt32(30),
+				Webhook:         &impv1alpha1.RunnerWebhookSpec{SecretRef: "gh-webhook"},
 			},
 		},
 	}
@@ -279,11 +249,14 @@ func TestRunnerPoolReconciler_scalesFromWebhookDemandAnnotation(t *testing.T) {
 		WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
 	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme}
 
-	_, err := r.Reconcile(context.Background(), reconcile.Request{
+	result, err := r.Reconcile(context.Background(), reconcile.Request{
 		NamespacedName: types.NamespacedName{Name: "ci-pool", Namespace: "ci"},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter != 30*time.Second {
+		t.Fatalf("expected requeueAfter=30s, got %v", result.RequeueAfter)
 	}
 
 	vmList := &impv1alpha1.ImpVMList{}
@@ -291,7 +264,60 @@ func TestRunnerPoolReconciler_scalesFromWebhookDemandAnnotation(t *testing.T) {
 		client.InNamespace("ci"),
 		client.MatchingLabels{impv1alpha1.LabelRunnerPool: "ci-pool"})
 	if len(vmList.Items) != 2 {
-		t.Fatalf("expected 2 webhook-demand VMs, got %d", len(vmList.Items))
+		t.Fatalf("expected 2 VMs due to scaleUpStep, got %d", len(vmList.Items))
+	}
+}
+
+func TestRunnerPoolReconciler_scalingPollingUsesQueueDepth(t *testing.T) {
+	pool := &impv1alpha1.ImpVMRunnerPool{
+		ObjectMeta: metav1.ObjectMeta{Name: "ci-pool", Namespace: "ci"},
+		Spec: impv1alpha1.ImpVMRunnerPoolSpec{
+			TemplateName: "ubuntu-runner",
+			Platform:     impv1alpha1.RunnerPlatformSpec{Type: "github-actions", CredentialsSecret: "gh-creds"},
+			Scaling: &impv1alpha1.RunnerScalingSpec{
+				Mode:            impv1alpha1.RunnerScalingModePolling,
+				MinIdle:         ptrInt32(0),
+				MaxConcurrent:   ptrInt32(10),
+				ScaleUpStep:     ptrInt32(4),
+				CooldownSeconds: ptrInt32(45),
+				Polling:         &impv1alpha1.RunnerPollingSpec{IntervalSeconds: 15},
+			},
+		},
+	}
+	tpl := &impv1alpha1.ImpVMTemplate{
+		ObjectMeta: metav1.ObjectMeta{Name: "ubuntu-runner", Namespace: "ci"},
+		Spec:       impv1alpha1.ImpVMTemplateSpec{ClassRef: impv1alpha1.ClusterObjectRef{Name: "standard"}, Image: "ubuntu:22.04"},
+	}
+
+	scheme := newRunnerPoolTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
+	r := &ImpVMRunnerPoolReconciler{
+		Client: c,
+		Scheme: scheme,
+		DriverFactory: func(
+			_ context.Context, _ client.Client, _ *impv1alpha1.ImpVMRunnerPool,
+		) (runnerQueueDepthReader, error) {
+			return &stubRunnerQueueDepthReader{queueDepth: 3}, nil
+		},
+	}
+
+	result, err := r.Reconcile(context.Background(), reconcile.Request{
+		NamespacedName: types.NamespacedName{Name: "ci-pool", Namespace: "ci"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.RequeueAfter != 15*time.Second {
+		t.Fatalf("expected requeueAfter=15s from polling interval, got %v", result.RequeueAfter)
+	}
+
+	vmList := &impv1alpha1.ImpVMList{}
+	_ = c.List(context.Background(), vmList,
+		client.InNamespace("ci"),
+		client.MatchingLabels{impv1alpha1.LabelRunnerPool: "ci-pool"})
+	if len(vmList.Items) != 3 {
+		t.Fatalf("expected 3 VMs from polling queue depth, got %d", len(vmList.Items))
 	}
 }
 
@@ -303,3 +329,5 @@ type stubRunnerQueueDepthReader struct {
 func (s *stubRunnerQueueDepthReader) QueueDepth(_ context.Context) (int, error) {
 	return s.queueDepth, s.err
 }
+
+func ptrInt32(v int32) *int32 { return &v }

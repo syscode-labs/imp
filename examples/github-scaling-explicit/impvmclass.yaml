@@ -1,0 +1,8 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMClass
+metadata:
+  name: ci-explicit-small
+  namespace: default
+spec:
+  vcpu: 2
+  memoryMiB: 2048

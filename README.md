@@ -156,14 +156,32 @@ spec:
     credentialsSecret: gh-runner-token
 ```
 
-See [examples/runner-pool-expiration](/Users/giovanni/syscode/git/imp/examples/runner-pool-expiration/README.md) for a complete runnable teaser.
+See [examples/runner-pool-expiration](examples/runner-pool-expiration/README.md) for a complete runnable teaser.
 
 ## GitHub Runner Capacity Signaling
 
 When using `ImpVMRunnerPool` with GitHub Actions, GitHub does not read pool objects directly.
 It only sees registered self-hosted runner instances.
 
-Read: [docs/runner-pool/github-capacity-signaling.md](/Users/giovanni/syscode/git/imp/docs/runner-pool/github-capacity-signaling.md)
+Read: [github-capacity-signaling.md](https://github.com/syscode-labs/syscode-ai-internal-plans/blob/main/projects/imp/docs/runner-pool/github-capacity-signaling.md)
+
+## Runner Scaling Mode (GitHub-First)
+
+`ImpVMRunnerPool` supports explicit mode-driven scaling through `spec.scaling` for GitHub Actions (`platform.type=github-actions`).
+
+Required explicit fields:
+
+- `mode` (`webhook`, `polling`, `hybrid`)
+- `minIdle`
+- `maxConcurrent`
+- `scaleUpStep`
+- `cooldownSeconds`
+
+This avoids hidden capacity assumptions and makes scaling intent explicit.
+
+Example:
+- [examples/github-scaling-explicit](examples/github-scaling-explicit/README.md)
+- [scaling.md](https://github.com/syscode-labs/syscode-ai-internal-plans/blob/main/projects/imp/docs/runner-pool/scaling.md)
 
 ## Development
 

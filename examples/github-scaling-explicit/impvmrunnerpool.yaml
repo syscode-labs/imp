@@ -1,12 +1,12 @@
 apiVersion: imp.dev/v1alpha1
 kind: ImpVMRunnerPool
 metadata:
-  name: ci-runner-pool
+  name: ci-runner-explicit
   namespace: default
   annotations:
-    imp.dev/runner-demand: "2"
+    imp.dev/runner-demand: "5"
 spec:
-  templateName: ci-runner-template
+  templateName: ci-explicit-template
   platform:
     type: github-actions
     scope:
@@ -15,7 +15,7 @@ spec:
   scaling:
     mode: webhook
     minIdle: 0
-    maxConcurrent: 6
+    maxConcurrent: 10
     scaleUpStep: 2
     cooldownSeconds: 30
     webhook:

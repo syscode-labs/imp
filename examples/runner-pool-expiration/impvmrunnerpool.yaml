@@ -14,8 +14,10 @@ spec:
       repo: your-org/your-repo
     credentialsSecret: gh-runner-token
   scaling:
+    mode: webhook
     minIdle: 0
     maxConcurrent: 6
-  jobDetection:
+    scaleUpStep: 2
+    cooldownSeconds: 30
     webhook:
-      enabled: true
+      secretRef: gh-webhook-secret

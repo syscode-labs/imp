@@ -71,8 +71,9 @@ spec:
                 - message: expireAfter must be 0 (disabled) or at least 60s
                   rule: duration(self) == duration('0s') || duration(self) >= duration('60s')
               jobDetection:
-                description: JobDetection configures how the operator discovers queued
-                  jobs.
+                description: |-
+                  JobDetection configures how the operator discovers queued jobs.
+                  Deprecated: use spec.scaling.mode + spec.scaling.webhook/polling instead.
                 properties:
                   polling:
                     description: Polling enables periodic API polling as a fallback.
@@ -118,15 +119,17 @@ spec:
                     properties:
                       org:
                         description: Org registers a runner for the entire organisation.
+                        minLength: 1
                         type: string
                       repo:
                         description: Repo registers a runner for a single repository
                           ("owner/repo").
+                        minLength: 1
                         type: string
                     type: object
                     x-kubernetes-validations:
                     - message: set exactly one of org or repo
-                      rule: (size(self.org) > 0) != (size(self.repo) > 0)
+                      rule: has(self.org) != has(self.repo)
                   serverURL:
                     description: ServerURL is required for GitLab and Forgejo. Leave
                       empty for github.com.
@@ -151,23 +154,63 @@ spec:
               scaling:
                 description: Scaling controls how many runner VMs are maintained.
                 properties:
+                  cooldownSeconds:
+                    description: CooldownSeconds is the minimum wait before next scaling
+                      reconcile cycle.
+                    format: int32
+                    minimum: 10
+                    type: integer
                   maxConcurrent:
-                    default: 10
                     description: MaxConcurrent is the hard cap on simultaneous runner
                       VMs.
                     format: int32
-                    maximum: 100
                     minimum: 1
                     type: integer
                   minIdle:
-                    default: 0
                     description: |-
                       MinIdle is the number of pre-registered idle runner VMs to keep available.
-                      0 means pure on-demand — no idle VMs sit waiting.
+                      0 means pure on-demand - no idle VMs sit waiting.
                     format: int32
-                    maximum: 3
                     minimum: 0
                     type: integer
+                  mode:
+                    description: Mode selects which demand sources are used.
+                    enum:
+                    - webhook
+                    - polling
+                    - hybrid
+                    type: string
+                  polling:
+                    description: Polling config for polling/hybrid mode.
+                    properties:
+                      enabled:
+                        description: Enabled turns on polling-based job detection.
+                        type: boolean
+                      intervalSeconds:
+                        default: 30
+                        description: IntervalSeconds is how often the operator polls
+                          the platform API.
+                        format: int32
+                        minimum: 10
+                        type: integer
+                    type: object
+                  scaleUpStep:
+                    description: ScaleUpStep limits how many new VMs can be created
+                      per reconcile.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  webhook:
+                    description: Webhook config for webhook/hybrid mode.
+                    properties:
+                      enabled:
+                        description: Enabled turns on webhook-based job detection.
+                        type: boolean
+                      secretRef:
+                        description: SecretRef names a Secret containing the HMAC
+                          webhook secret.
+                        type: string
+                    type: object
                 type: object
               templateName:
                 description: TemplateName references an ImpVMTemplate in the same
@@ -177,6 +220,34 @@ spec:
             - platform
             - templateName
             type: object
+            x-kubernetes-validations:
+            - message: scaling is required for github-actions pools
+              rule: self.platform.type != 'github-actions' || has(self.scaling)
+            - message: scaling.mode is required for github-actions pools
+              rule: self.platform.type != 'github-actions' || self.scaling.mode !=
+                ''
+            - message: github-actions scaling requires explicit minIdle, maxConcurrent,
+                scaleUpStep, and cooldownSeconds
+              rule: self.platform.type != 'github-actions' || (has(self.scaling.minIdle)
+                && has(self.scaling.maxConcurrent) && has(self.scaling.scaleUpStep)
+                && has(self.scaling.cooldownSeconds))
+            - message: scaling.minIdle must be <= scaling.maxConcurrent
+              rule: self.platform.type != 'github-actions' || self.scaling.minIdle
+                <= self.scaling.maxConcurrent
+            - message: scaling.polling is required when mode=polling
+              rule: self.platform.type != 'github-actions' || self.scaling.mode !=
+                'polling' || has(self.scaling.polling)
+            - message: scaling.polling is required when mode=hybrid
+              rule: self.platform.type != 'github-actions' || self.scaling.mode !=
+                'hybrid' || has(self.scaling.polling)
+            - message: scaling.webhook.secretRef is required when mode=webhook
+              rule: self.platform.type != 'github-actions' || self.scaling.mode !=
+                'webhook' || (has(self.scaling.webhook) && size(self.scaling.webhook.secretRef)
+                > 0)
+            - message: scaling.webhook.secretRef is required when mode=hybrid
+              rule: self.platform.type != 'github-actions' || self.scaling.mode !=
+                'hybrid' || (has(self.scaling.webhook) && size(self.scaling.webhook.secretRef)
+                > 0)
           status:
             description: ImpVMRunnerPoolStatus reflects the observed pool state.
             properties:

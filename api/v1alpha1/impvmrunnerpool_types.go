@@ -3,6 +3,14 @@ package v1alpha1
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // ImpVMRunnerPoolSpec defines a pool of ephemeral CI runner VMs.
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || has(self.scaling)",message="scaling is required for github-actions pools"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || self.scaling.mode != ”",message="scaling.mode is required for github-actions pools"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || (has(self.scaling.minIdle) && has(self.scaling.maxConcurrent) && has(self.scaling.scaleUpStep) && has(self.scaling.cooldownSeconds))",message="github-actions scaling requires explicit minIdle, maxConcurrent, scaleUpStep, and cooldownSeconds"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || self.scaling.minIdle <= self.scaling.maxConcurrent",message="scaling.minIdle must be <= scaling.maxConcurrent"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || self.scaling.mode != 'polling' || has(self.scaling.polling)",message="scaling.polling is required when mode=polling"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || self.scaling.mode != 'hybrid' || has(self.scaling.polling)",message="scaling.polling is required when mode=hybrid"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || self.scaling.mode != 'webhook' || (has(self.scaling.webhook) && size(self.scaling.webhook.secretRef) > 0)",message="scaling.webhook.secretRef is required when mode=webhook"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || self.scaling.mode != 'hybrid' || (has(self.scaling.webhook) && size(self.scaling.webhook.secretRef) > 0)",message="scaling.webhook.secretRef is required when mode=hybrid"
 type ImpVMRunnerPoolSpec struct {
 	// TemplateName references an ImpVMTemplate in the same namespace.
 	TemplateName string `json:"templateName"`
@@ -25,6 +33,7 @@ type ImpVMRunnerPoolSpec struct {
 	Scaling *RunnerScalingSpec `json:"scaling,omitempty"`
 
 	// JobDetection configures how the operator discovers queued jobs.
+	// Deprecated: use spec.scaling.mode + spec.scaling.webhook/polling instead.
 	// +optional
 	JobDetection *RunnerJobDetectionSpec `json:"jobDetection,omitempty"`
 
@@ -55,33 +64,63 @@ type RunnerPlatformSpec struct {
 
 // RunnerScopeSpec selects org-level or repo-level runner registration.
 // Exactly one of Org or Repo must be set.
-// +kubebuilder:validation:XValidation:rule="(size(self.org) > 0) != (size(self.repo) > 0)",message="set exactly one of org or repo"
+// +kubebuilder:validation:XValidation:rule="has(self.org) != has(self.repo)",message="set exactly one of org or repo"
 type RunnerScopeSpec struct {
 	// Org registers a runner for the entire organisation.
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	Org string `json:"org,omitempty"`
 
 	// Repo registers a runner for a single repository ("owner/repo").
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	Repo string `json:"repo,omitempty"`
 }
 
-// RunnerScalingSpec controls pool size and concurrency.
+// RunnerScalingMode selects demand signal sources.
+// +kubebuilder:validation:Enum=webhook;polling;hybrid
+type RunnerScalingMode string
+
+const (
+	RunnerScalingModeWebhook RunnerScalingMode = "webhook"
+	RunnerScalingModePolling RunnerScalingMode = "polling"
+	RunnerScalingModeHybrid  RunnerScalingMode = "hybrid"
+)
+
+// RunnerScalingSpec controls pool size, demand sources, and pacing.
 type RunnerScalingSpec struct {
-	// MinIdle is the number of pre-registered idle runner VMs to keep available.
-	// 0 means pure on-demand — no idle VMs sit waiting.
+	// Mode selects which demand sources are used.
 	// +optional
-	// +kubebuilder:default=0
+	Mode RunnerScalingMode `json:"mode,omitempty"`
+
+	// MinIdle is the number of pre-registered idle runner VMs to keep available.
+	// 0 means pure on-demand - no idle VMs sit waiting.
+	// +optional
 	// +kubebuilder:validation:Minimum=0
-	// +kubebuilder:validation:Maximum=3
-	MinIdle int32 `json:"minIdle,omitempty"`
+	MinIdle *int32 `json:"minIdle,omitempty"`
 
 	// MaxConcurrent is the hard cap on simultaneous runner VMs.
 	// +optional
-	// +kubebuilder:default=10
 	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=100
-	MaxConcurrent int32 `json:"maxConcurrent,omitempty"`
+	MaxConcurrent *int32 `json:"maxConcurrent,omitempty"`
+
+	// ScaleUpStep limits how many new VMs can be created per reconcile.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	ScaleUpStep *int32 `json:"scaleUpStep,omitempty"`
+
+	// CooldownSeconds is the minimum wait before next scaling reconcile cycle.
+	// +optional
+	// +kubebuilder:validation:Minimum=10
+	CooldownSeconds *int32 `json:"cooldownSeconds,omitempty"`
+
+	// Webhook config for webhook/hybrid mode.
+	// +optional
+	Webhook *RunnerWebhookSpec `json:"webhook,omitempty"`
+
+	// Polling config for polling/hybrid mode.
+	// +optional
+	Polling *RunnerPollingSpec `json:"polling,omitempty"`
 }
 
 // RunnerJobDetectionSpec configures job discovery.
