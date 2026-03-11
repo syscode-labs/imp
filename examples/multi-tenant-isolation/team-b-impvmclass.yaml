@@ -1,0 +1,9 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMClass
+metadata:
+  name: team-b-class
+spec:
+  vcpu: 2
+  memoryMiB: 2048
+  diskGiB: 10
+  arch: multi

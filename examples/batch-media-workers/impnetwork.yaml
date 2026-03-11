@@ -1,0 +1,9 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpNetwork
+metadata:
+  name: media-batch-net
+  namespace: default
+spec:
+  subnet: 192.168.132.0/24
+  nat:
+    enabled: true

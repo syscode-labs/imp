@@ -1,0 +1,16 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVM
+metadata:
+  name: edge-proxy-01
+  namespace: default
+spec:
+  templateRef:
+    name: edge-proxy-template
+  lifecycle: persistent
+  nodeSelector:
+    topology.imp.dev/role: edge
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "edge"
+      effect: "NoSchedule"

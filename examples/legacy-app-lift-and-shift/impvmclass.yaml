@@ -1,0 +1,9 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMClass
+metadata:
+  name: legacy-service-class
+spec:
+  vcpu: 2
+  memoryMiB: 3072
+  diskGiB: 20
+  arch: multi

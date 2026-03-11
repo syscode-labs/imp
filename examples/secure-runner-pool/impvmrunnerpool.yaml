@@ -1,0 +1,20 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMRunnerPool
+metadata:
+  name: ci-runner-pool
+  namespace: default
+  annotations:
+    imp.dev/runner-demand: "2"
+spec:
+  templateName: ci-runner-template
+  platform:
+    type: github-actions
+    scope:
+      repo: your-org/your-repo
+    credentialsSecret: gh-runner-token
+  scaling:
+    minIdle: 0
+    maxConcurrent: 6
+  jobDetection:
+    webhook:
+      enabled: true

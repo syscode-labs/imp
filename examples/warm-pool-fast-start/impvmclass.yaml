@@ -1,0 +1,9 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMClass
+metadata:
+  name: warmpool-small
+spec:
+  vcpu: 2
+  memoryMiB: 2048
+  diskGiB: 12
+  arch: multi

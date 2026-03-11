@@ -1,0 +1,11 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMTemplate
+metadata:
+  name: media-worker-template
+  namespace: default
+spec:
+  classRef:
+    name: media-worker-class
+  networkRef:
+    name: media-batch-net
+  image: ghcr.io/syscode-labs/test:latest

@@ -1,0 +1,15 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVM
+metadata:
+  name: legacy-service-vm
+  namespace: default
+spec:
+  classRef:
+    name: legacy-service-class
+  image: ghcr.io/syscode-labs/test:latest
+  lifecycle: persistent
+  probes:
+    httpCheck:
+      enabled: true
+      path: /healthz
+      port: 8080

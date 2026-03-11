@@ -1,0 +1,19 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVM
+metadata:
+  name: preview-pr-1234
+  namespace: default
+  labels:
+    app.kubernetes.io/name: preview-pr-1234
+spec:
+  classRef:
+    name: preview-small
+  image: ghcr.io/syscode-labs/test:latest
+  lifecycle: ephemeral
+  probes:
+    httpCheck:
+      enabled: true
+      path: /healthz
+      port: 8080
+      intervalSeconds: 10
+      failureThreshold: 3

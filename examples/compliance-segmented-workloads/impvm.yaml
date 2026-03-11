@@ -1,0 +1,14 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVM
+metadata:
+  name: regulated-workload-01
+  namespace: default
+spec:
+  classRef:
+    name: regulated-class
+  networkRef:
+    name: regulated-net
+  image: ghcr.io/syscode-labs/test:latest
+  lifecycle: persistent
+  nodeSelector:
+    compliance.imp.dev/zone: regulated

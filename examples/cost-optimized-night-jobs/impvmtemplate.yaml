@@ -1,0 +1,9 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMTemplate
+metadata:
+  name: nightly-job-template
+  namespace: default
+spec:
+  classRef:
+    name: nightly-job-class
+  image: ghcr.io/syscode-labs/test:latest

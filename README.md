@@ -37,6 +37,11 @@ It provides CRDs for VM lifecycle, VM networking, snapshots, migrations, warm po
 
 Excalidraw source: `docs/diagrams/imp-architecture.excalidraw`
 
+## Limitations
+
+- GPU passthrough is **not supported**.
+  Firecracker in this project is used for CPU/memory/storage-isolated microVM workloads only.
+
 ## Quickstart
 
 ### Prerequisites

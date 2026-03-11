@@ -1,0 +1,9 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpNetwork
+metadata:
+  name: regulated-net
+  namespace: default
+spec:
+  subnet: 192.168.134.0/24
+  nat:
+    enabled: true

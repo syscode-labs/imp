@@ -1,0 +1,9 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMClass
+metadata:
+  name: media-worker-class
+spec:
+  vcpu: 4
+  memoryMiB: 4096
+  diskGiB: 20
+  arch: multi

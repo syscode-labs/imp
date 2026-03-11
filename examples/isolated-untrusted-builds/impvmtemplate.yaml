@@ -1,0 +1,11 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMTemplate
+metadata:
+  name: sandbox-build-template
+  namespace: default
+spec:
+  classRef:
+    name: sandbox-build-class
+  networkRef:
+    name: sandbox-build-net
+  image: ghcr.io/syscode-labs/test:latest

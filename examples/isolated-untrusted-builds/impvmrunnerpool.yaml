@@ -1,0 +1,22 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMRunnerPool
+metadata:
+  name: sandbox-build-pool
+  namespace: default
+  annotations:
+    imp.dev/runner-demand: "1"
+spec:
+  templateName: sandbox-build-template
+  platform:
+    type: gitlab
+    serverURL: https://gitlab.example.com
+    scope:
+      org: sandbox
+    credentialsSecret: gitlab-runner-token
+  scaling:
+    minIdle: 0
+    maxConcurrent: 3
+  jobDetection:
+    polling:
+      enabled: true
+      intervalSeconds: 30

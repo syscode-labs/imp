@@ -1,0 +1,9 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMClass
+metadata:
+  name: preview-small
+spec:
+  vcpu: 1
+  memoryMiB: 1024
+  diskGiB: 8
+  arch: multi

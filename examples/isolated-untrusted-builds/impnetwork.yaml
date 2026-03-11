@@ -1,0 +1,9 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpNetwork
+metadata:
+  name: sandbox-build-net
+  namespace: default
+spec:
+  subnet: 192.168.133.0/24
+  nat:
+    enabled: true

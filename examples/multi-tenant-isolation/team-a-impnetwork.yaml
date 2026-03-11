@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-a
+---
+apiVersion: imp.dev/v1alpha1
+kind: ImpNetwork
+metadata:
+  name: team-a-net
+  namespace: team-a
+spec:
+  subnet: 192.168.130.0/24
+  nat:
+    enabled: true

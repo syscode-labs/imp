@@ -1,0 +1,22 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMRunnerPool
+metadata:
+  name: media-worker-pool
+  namespace: default
+  annotations:
+    imp.dev/runner-demand: "4"
+spec:
+  templateName: media-worker-template
+  platform:
+    type: forgejo
+    serverURL: https://forgejo.example.com
+    scope:
+      org: media
+    credentialsSecret: forgejo-runner-token
+  scaling:
+    minIdle: 0
+    maxConcurrent: 10
+  jobDetection:
+    polling:
+      enabled: true
+      intervalSeconds: 30

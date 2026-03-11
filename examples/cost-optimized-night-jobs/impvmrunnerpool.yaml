@@ -1,0 +1,20 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMRunnerPool
+metadata:
+  name: nightly-job-pool
+  namespace: default
+  annotations:
+    imp.dev/runner-demand: "5"
+spec:
+  templateName: nightly-job-template
+  platform:
+    type: github-actions
+    scope:
+      repo: your-org/your-repo
+    credentialsSecret: nightly-gh-token
+  scaling:
+    minIdle: 0
+    maxConcurrent: 8
+  jobDetection:
+    webhook:
+      enabled: true

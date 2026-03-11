@@ -1,0 +1,9 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpWarmPool
+metadata:
+  name: fast-start-pool
+  namespace: default
+spec:
+  snapshotRef: base-runtime-snapshots
+  templateName: warmpool-template
+  size: 2

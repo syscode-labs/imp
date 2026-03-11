@@ -1,0 +1,12 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVM
+metadata:
+  name: team-a-app
+  namespace: team-a
+spec:
+  classRef:
+    name: team-a-class
+  networkRef:
+    name: team-a-net
+  image: ghcr.io/syscode-labs/test:latest
+  lifecycle: persistent
