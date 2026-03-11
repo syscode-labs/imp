@@ -4,7 +4,7 @@ import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // ImpVMRunnerPoolSpec defines a pool of ephemeral CI runner VMs.
 // +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || has(self.scaling)",message="scaling is required for github-actions pools"
-// +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || self.scaling.mode != ”",message="scaling.mode is required for github-actions pools"
+// +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || size(self.scaling.mode) > 0",message="scaling.mode is required for github-actions pools"
 // +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || (has(self.scaling.minIdle) && has(self.scaling.maxConcurrent) && has(self.scaling.scaleUpStep) && has(self.scaling.cooldownSeconds))",message="github-actions scaling requires explicit minIdle, maxConcurrent, scaleUpStep, and cooldownSeconds"
 // +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || self.scaling.minIdle <= self.scaling.maxConcurrent",message="scaling.minIdle must be <= scaling.maxConcurrent"
 // +kubebuilder:validation:XValidation:rule="self.platform.type != 'github-actions' || self.scaling.mode != 'polling' || has(self.scaling.polling)",message="scaling.polling is required when mode=polling"

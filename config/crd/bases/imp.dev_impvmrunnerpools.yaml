@@ -224,8 +224,8 @@ spec:
             - message: scaling is required for github-actions pools
               rule: self.platform.type != 'github-actions' || has(self.scaling)
             - message: scaling.mode is required for github-actions pools
-              rule: self.platform.type != 'github-actions' || self.scaling.mode !=
-                ''
+              rule: self.platform.type != 'github-actions' || size(self.scaling.mode)
+                > 0
             - message: github-actions scaling requires explicit minIdle, maxConcurrent,
                 scaleUpStep, and cooldownSeconds
               rule: self.platform.type != 'github-actions' || (has(self.scaling.minIdle)
