@@ -225,6 +225,38 @@ func TestFirecrackerDriver_Stop_NotTracked(t *testing.T) {
 	}
 }
 
+func TestFirecrackerDriver_Stop_RemovesAPISocketAndVSock(t *testing.T) {
+	dir := t.TempDir()
+	apiSock := dir + "/vm.sock"
+	vsock := dir + "/vm.vsock"
+	if err := os.WriteFile(apiSock, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write api socket placeholder: %v", err)
+	}
+	if err := os.WriteFile(vsock, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write vsock placeholder: %v", err)
+	}
+
+	d := &FirecrackerDriver{procs: make(map[string]*fcProc)}
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace = "default"
+	vm.Name = "cleanup"
+	d.procs[vmKey(vm)] = &fcProc{
+		socket:    apiSock,
+		vsockPath: vsock,
+	}
+
+	if err := d.Stop(context.Background(), vm); err != nil {
+		t.Fatalf("Stop returned error: %v", err)
+	}
+
+	if _, err := os.Stat(apiSock); !os.IsNotExist(err) {
+		t.Fatalf("api socket still present or unexpected error: %v", err)
+	}
+	if _, err := os.Stat(vsock); !os.IsNotExist(err) {
+		t.Fatalf("vsock socket still present or unexpected error: %v", err)
+	}
+}
+
 func TestFirecrackerDriver_BuildConfig(t *testing.T) {
 	d := &FirecrackerDriver{
 		KernelPath: "/boot/vmlinux",

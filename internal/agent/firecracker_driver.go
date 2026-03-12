@@ -198,6 +198,9 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		return 0, fmt.Errorf("socket dir: %w", err)
 	}
 	sockPath := d.socketPath(vm)
+	vsockPath := vsockPathFromSocket(sockPath)
+	// Best-effort cleanup in case a previous VM instance left stale sockets.
+	cleanupSocketFiles(sockPath, vsockPath)
 
 	// 5. Build Firecracker config.
 	cfg := d.buildConfig(&class, rootfsPath, sockPath, netInfo, gaEnabled)
@@ -238,16 +241,16 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		tracing.RecordError(lSpan, startErr)
 		lSpan.End()
 		if startErr != nil {
-			_ = m.StopVMM()         //nolint:errcheck
-			_ = os.Remove(sockPath) //nolint:errcheck // best-effort cleanup
+			_ = m.StopVMM() //nolint:errcheck
+			cleanupSocketFiles(sockPath, vsockPath)
 			return 0, fmt.Errorf("start machine: %w", startErr)
 		}
 	}
 
 	pid, err := m.PID()
 	if err != nil {
-		_ = m.StopVMM()         //nolint:errcheck
-		_ = os.Remove(sockPath) //nolint:errcheck // best-effort cleanup
+		_ = m.StopVMM() //nolint:errcheck
+		cleanupSocketFiles(sockPath, vsockPath)
 		return 0, fmt.Errorf("get pid: %w", err)
 	}
 
@@ -256,9 +259,8 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	// Capture goroutine args before launch to avoid data race on vm.
 	var probeCtx context.Context
 	var probes *impdevv1alpha1.ProbeSpec
-	var vsockPath, vmNamespace, vmName, className string
+	var vmNamespace, vmName, className string
 	if gaEnabled {
-		vsockPath = strings.TrimSuffix(sockPath, ".sock") + ".vsock"
 		proc.vsockPath = vsockPath
 		probes = vm.Spec.Probes // may be nil — runProbes handles nil probes
 		vmNamespace = vm.Namespace
@@ -326,8 +328,7 @@ func (d *FirecrackerDriver) Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) 
 		_ = proc.machine.StopVMM() //nolint:errcheck // best-effort force stop
 	}
 
-	// Remove the API socket file.
-	_ = os.Remove(proc.socket) //nolint:errcheck // best-effort cleanup
+	cleanupSocketFiles(proc.socket, proc.vsockPath)
 
 	// Tear down networking if this VM had a network attached.
 	// NOTE: NAT rules are not torn down in Phase 1 (they are shared across VMs).
@@ -445,7 +446,7 @@ func (d *FirecrackerDriver) buildConfig(
 		}}
 	}
 	if gaEnabled {
-		vsockPath := strings.TrimSuffix(socketPath, ".sock") + ".vsock"
+		vsockPath := vsockPathFromSocket(socketPath)
 		cfg.VsockDevices = []firecracker.VsockDevice{{
 			ID:   "vsock0",
 			Path: vsockPath,
@@ -453,6 +454,19 @@ func (d *FirecrackerDriver) buildConfig(
 		}}
 	}
 	return cfg
+}
+
+func vsockPathFromSocket(socketPath string) string {
+	return strings.TrimSuffix(socketPath, ".sock") + ".vsock"
+}
+
+func cleanupSocketFiles(paths ...string) {
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		_ = os.Remove(p) //nolint:errcheck // best-effort cleanup
+	}
 }
 
 // setupNetwork fetches the ImpNetwork, allocates an IP, creates the bridge+TAP,
