@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/syscode-labs/imp/compare/v0.2.0...v0.2.1) (2026-03-12)
+
+
+### Bug Fixes
+
+* **operator:** support running with webhooks disabled ([0ac8288](https://github.com/syscode-labs/imp/commit/0ac82881db8f9340c231a312f67105200b3d09c4))
+
 ## [0.2.0](https://github.com/syscode-labs/imp/compare/v0.1.0...v0.2.0) (2026-03-12)
 
 
