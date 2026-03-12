@@ -1,0 +1,8 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpNetwork
+metadata:
+  name: tiny-smoke-net
+  namespace: default
+spec:
+  subnet: 10.251.0.0/24
+  gateway: 10.251.0.1

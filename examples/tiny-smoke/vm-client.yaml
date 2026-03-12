@@ -1,0 +1,12 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVM
+metadata:
+  name: tiny-client
+  namespace: default
+spec:
+  classRef:
+    name: tiny-smoke
+  networkRef:
+    name: tiny-smoke-net
+  image: docker.io/library/nginx:1.27.4-alpine
+  lifecycle: persistent

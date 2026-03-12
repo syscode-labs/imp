@@ -1,0 +1,7 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMClass
+metadata:
+  name: tiny-smoke
+spec:
+  vcpu: 1
+  memoryMiB: 192

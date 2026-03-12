@@ -29,9 +29,11 @@ Each example is designed to be:
 - `isolated-untrusted-builds`: Disposable VM isolation boundary for risky builds
 - `compliance-segmented-workloads`: Sensitive workloads pinned to dedicated nodes
 - `cost-optimized-night-jobs`: Scale-from-zero capacity for periodic spikes
+- `tiny-smoke`: Tiny-footprint classRef boot + two-VM connectivity validation
 
 ## Notes
 
 - These examples intentionally use `ghcr.io/syscode-labs/test:latest` as a neutral placeholder image.
+- `tiny-smoke` uses pinned Docker Hub images so it can run unchanged in public environments.
 - Secrets referenced by runner pool examples must be created separately.
 - GPU passthrough is not supported in `imp`/Firecracker here; examples focus on CPU/memory/storage-isolated workloads.
