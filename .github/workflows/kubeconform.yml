@@ -1,0 +1,56 @@
+name: Manifest Compatibility (kubeconform)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-kubernetes-versions:
+    name: Resolve latest 3 Kubernetes stable versions
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.resolve.outputs.versions_without_v }}
+    steps:
+      - name: Resolve from official Kubernetes release channel
+        id: resolve
+        uses: ./.github/actions/resolve-k8s-versions
+
+  kubeconform:
+    name: kubeconform (K8s ${{ matrix.kubernetes_version }})
+    runs-on: ubuntu-latest
+    needs: resolve-kubernetes-versions
+    strategy:
+      fail-fast: false
+      matrix:
+        kubernetes_version: ${{ fromJSON(needs.resolve-kubernetes-versions.outputs.versions) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Install kubeconform
+        uses: yannh/setup-kubeconform@v1
+
+      - name: Render manifests
+        run: |
+          set -euo pipefail
+          kustomize build config/crd > /tmp/crd.yaml
+          kustomize build config/default > /tmp/default.yaml
+
+      - name: Validate manifests against Kubernetes schema
+        run: |
+          set -euo pipefail
+          kubeconform \
+            -strict \
+            -ignore-missing-schemas \
+            -summary \
+            -kubernetes-version "${{ matrix.kubernetes_version }}" \
+            /tmp/crd.yaml /tmp/default.yaml

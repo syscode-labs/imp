@@ -1,0 +1,80 @@
+name: Resolve Kubernetes Stable Versions
+description: Resolve latest three stable Kubernetes versions from official dl.k8s.io channels
+outputs:
+  latest:
+    description: Latest stable version without leading v
+    value: ${{ steps.resolve.outputs.latest }}
+  previous1:
+    description: Previous stable minor latest patch without leading v
+    value: ${{ steps.resolve.outputs.previous1 }}
+  previous2:
+    description: Two minors back stable latest patch without leading v
+    value: ${{ steps.resolve.outputs.previous2 }}
+  latest_v:
+    description: Latest stable version with leading v
+    value: ${{ steps.resolve.outputs.latest_v }}
+  previous1_v:
+    description: Previous stable minor latest patch with leading v
+    value: ${{ steps.resolve.outputs.previous1_v }}
+  previous2_v:
+    description: Two minors back stable latest patch with leading v
+    value: ${{ steps.resolve.outputs.previous2_v }}
+  versions_without_v:
+    description: JSON array of latest three stable versions without leading v
+    value: ${{ steps.resolve.outputs.versions_without_v }}
+  versions_with_v:
+    description: JSON array of latest three stable versions with leading v
+    value: ${{ steps.resolve.outputs.versions_with_v }}
+runs:
+  using: composite
+  steps:
+    - name: Build weekly cache key
+      id: cache-key
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
+    - name: Restore cached version lookup
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/k8s-stable-versions.env
+        key: k8s-stable-versions-${{ runner.os }}-${{ steps.cache-key.outputs.week }}
+
+    - name: Resolve versions from official release channel
+      id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+        versions_file="${RUNNER_TEMP}/k8s-stable-versions.env"
+
+        if [ ! -s "${versions_file}" ]; then
+          latest_v="$(curl -fsSL https://dl.k8s.io/release/stable.txt | tr -d '\n')"
+          latest_minor="$(printf '%s' "${latest_v}" | sed -E 's/^v1\.([0-9]+)\..*/\1/')"
+          previous_minor_1=$((latest_minor - 1))
+          previous_minor_2=$((latest_minor - 2))
+          previous1_v="$(curl -fsSL "https://dl.k8s.io/release/stable-1.${previous_minor_1}.txt" | tr -d '\n')"
+          previous2_v="$(curl -fsSL "https://dl.k8s.io/release/stable-1.${previous_minor_2}.txt" | tr -d '\n')"
+
+          {
+            printf 'latest_v=%s\n' "${latest_v}"
+            printf 'previous1_v=%s\n' "${previous1_v}"
+            printf 'previous2_v=%s\n' "${previous2_v}"
+          } > "${versions_file}"
+        fi
+
+        # shellcheck disable=SC1090
+        source "${versions_file}"
+
+        latest="${latest_v#v}"
+        previous1="${previous1_v#v}"
+        previous2="${previous2_v#v}"
+
+        echo "latest=${latest}" >> "$GITHUB_OUTPUT"
+        echo "previous1=${previous1}" >> "$GITHUB_OUTPUT"
+        echo "previous2=${previous2}" >> "$GITHUB_OUTPUT"
+        echo "latest_v=${latest_v}" >> "$GITHUB_OUTPUT"
+        echo "previous1_v=${previous1_v}" >> "$GITHUB_OUTPUT"
+        echo "previous2_v=${previous2_v}" >> "$GITHUB_OUTPUT"
+        echo "versions_without_v=[\"${previous2}\",\"${previous1}\",\"${latest}\"]" >> "$GITHUB_OUTPUT"
+        echo "versions_with_v=[\"${previous2_v}\",\"${previous1_v}\",\"${latest_v}\"]" >> "$GITHUB_OUTPUT"

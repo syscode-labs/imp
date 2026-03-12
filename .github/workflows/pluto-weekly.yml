@@ -1,0 +1,52 @@
+name: Deprecation Scan (Pluto)
+
+on:
+  schedule:
+    # Weekly on Monday at 04:00 UTC
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-kubernetes-versions:
+    name: Resolve latest 3 Kubernetes stable versions
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.resolve.outputs.versions_with_v }}
+    steps:
+      - name: Resolve from official Kubernetes release channel
+        id: resolve
+        uses: ./.github/actions/resolve-k8s-versions
+
+  pluto:
+    name: Pluto deprecation scan (${{ matrix.kubernetes_version }})
+    runs-on: ubuntu-latest
+    needs: resolve-kubernetes-versions
+    strategy:
+      fail-fast: false
+      matrix:
+        kubernetes_version: ${{ fromJSON(needs.resolve-kubernetes-versions.outputs.versions) }}
+    env:
+      PLUTO_VERSION: "v5.23.5"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Pluto
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/FairwindsOps/pluto/releases/download/${PLUTO_VERSION}/pluto_${PLUTO_VERSION#v}_linux_amd64.tar.gz" \
+            -o /tmp/pluto.tar.gz
+          tar -xzf /tmp/pluto.tar.gz -C /tmp
+          sudo install -m 0755 /tmp/pluto /usr/local/bin/pluto
+
+      - name: Scan manifests for deprecated APIs
+        run: |
+          set -euo pipefail
+          pluto detect-files \
+            -d config \
+            --target-versions "k8s=${{ matrix.kubernetes_version }}" \
+            -o wide
