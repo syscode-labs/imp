@@ -118,11 +118,13 @@ func (r *cniDetectRunnable) Start(ctx context.Context) error {
 func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
+	var enableWebhooks bool
 	var probeAddr string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
+	flag.BoolVar(&enableWebhooks, "enable-webhooks", true, "Enable admission webhooks.")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -218,26 +220,30 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpVM{}).
-		WithDefaulter(&webhookv1alpha1.ImpVMWebhook{}).
-		WithValidator(&webhookv1alpha1.ImpVMWebhook{}).
-		Complete(); err != nil {
-		setupLog.Error(err, "unable to register webhook", "webhook", "ImpVM")
-		os.Exit(1)
-	}
+	if enableWebhooks {
+		if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpVM{}).
+			WithDefaulter(&webhookv1alpha1.ImpVMWebhook{}).
+			WithValidator(&webhookv1alpha1.ImpVMWebhook{}).
+			Complete(); err != nil {
+			setupLog.Error(err, "unable to register webhook", "webhook", "ImpVM")
+			os.Exit(1)
+		}
 
-	if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpVMClass{}).
-		WithValidator(&webhookv1alpha1.ImpVMClassWebhook{}).
-		Complete(); err != nil {
-		setupLog.Error(err, "unable to register webhook", "webhook", "ImpVMClass")
-		os.Exit(1)
-	}
+		if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpVMClass{}).
+			WithValidator(&webhookv1alpha1.ImpVMClassWebhook{}).
+			Complete(); err != nil {
+			setupLog.Error(err, "unable to register webhook", "webhook", "ImpVMClass")
+			os.Exit(1)
+		}
 
-	if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpVMTemplate{}).
-		WithValidator(&webhookv1alpha1.ImpVMTemplateWebhook{}).
-		Complete(); err != nil {
-		setupLog.Error(err, "unable to register webhook", "webhook", "ImpVMTemplate")
-		os.Exit(1)
+		if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpVMTemplate{}).
+			WithValidator(&webhookv1alpha1.ImpVMTemplateWebhook{}).
+			Complete(); err != nil {
+			setupLog.Error(err, "unable to register webhook", "webhook", "ImpVMTemplate")
+			os.Exit(1)
+		}
+	} else {
+		setupLog.Info("admission webhooks disabled")
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

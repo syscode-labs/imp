@@ -56,3 +56,33 @@ tests:
             name: metrics
             port: 8080
             targetPort: 8080
+
+  - it: disables webhook mount and flag when certManager is disabled
+    template: templates/operator/deployment.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+      webhook.certManager.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: webhook-tls
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: webhook-tls
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --enable-webhooks=false
+
+  - it: omits webhook service port when certManager is disabled
+    template: templates/operator/service.yaml
+    set:
+      webhook.certManager.enabled: false
+    asserts:
+      - notContains:
+          path: spec.ports
+          content:
+            name: webhook
+            port: 9443
+            targetPort: 9443

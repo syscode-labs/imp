@@ -1,3 +1,4 @@
+{{- $webhooksEnabled := and .Values.webhook.enabled .Values.webhook.certManager.enabled }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -11,9 +12,11 @@ spec:
     {{- include "imp.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: operator
   ports:
+  {{- if $webhooksEnabled }}
   - name: webhook
     port: 9443
     targetPort: 9443
+  {{- end }}
   - name: metrics
     port: 8080
     targetPort: 8080

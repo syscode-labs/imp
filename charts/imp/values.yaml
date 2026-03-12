@@ -51,6 +51,8 @@ agent:
       path: /var/lib/imp/images
 
 webhook:
+  # When false, operator admission webhooks are disabled.
+  enabled: true
   certManager:
     enabled: true
     issuerRef: {}
