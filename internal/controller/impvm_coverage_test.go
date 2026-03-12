@@ -117,6 +117,16 @@ var _ = Describe("setReadyFromPhase", func() {
 		Entry("Succeeded → False", impdevv1alpha1.VMPhaseSucceeded, metav1.ConditionFalse),
 		Entry("Pending → Unknown", impdevv1alpha1.VMPhasePending, metav1.ConditionUnknown),
 	)
+
+	It("sets explicit completion reason/message for Succeeded phase", func() {
+		vm := &impdevv1alpha1.ImpVM{}
+		vm.Status.Phase = impdevv1alpha1.VMPhaseSucceeded
+		setReadyFromPhase(vm)
+		c := apimeta.FindStatusCondition(vm.Status.Conditions, ConditionReady)
+		Expect(c).NotTo(BeNil())
+		Expect(c.Reason).To(Equal("Completed"))
+		Expect(c.Message).To(Equal("VM completed successfully"))
+	})
 })
 
 // ─── countRunningVMs ─────────────────────────────────────────────────────────

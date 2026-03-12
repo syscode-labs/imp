@@ -41,8 +41,10 @@ func setReadyFromPhase(vm *impdevv1alpha1.ImpVM) {
 	switch vm.Status.Phase {
 	case impdevv1alpha1.VMPhaseRunning:
 		setCondition(vm, ConditionReady, metav1.ConditionTrue, "Running", "VM is running")
-	case impdevv1alpha1.VMPhaseFailed, impdevv1alpha1.VMPhaseSucceeded:
-		setCondition(vm, ConditionReady, metav1.ConditionFalse, string(vm.Status.Phase), "VM is not running")
+	case impdevv1alpha1.VMPhaseSucceeded:
+		setCondition(vm, ConditionReady, metav1.ConditionFalse, "Completed", "VM completed successfully")
+	case impdevv1alpha1.VMPhaseFailed:
+		setCondition(vm, ConditionReady, metav1.ConditionFalse, "Failed", "VM failed")
 	default:
 		setCondition(vm, ConditionReady, metav1.ConditionUnknown, "Waiting", "Waiting for VM to start")
 	}

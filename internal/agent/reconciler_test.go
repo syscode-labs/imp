@@ -100,6 +100,43 @@ var _ = Describe("ImpVM Agent: ephemeral exit → Succeeded", func() {
 		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseSucceeded))
 		Expect(updated.Spec.NodeName).To(BeEmpty())
 	})
+
+	It("treats empty lifecycle as ephemeral default and marks Succeeded", func() {
+		driver := NewStubDriver()
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "tc2-default-ephemeral", Namespace: "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				NodeName: testNode,
+				// Lifecycle intentionally omitted to verify default behavior on old/un-defaulted objects.
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		pid, err := driver.Start(ctx, vm)
+		Expect(err).NotTo(HaveOccurred())
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+		vm.Status.RuntimePID = pid
+		vm.Status.IP = "192.168.100.11"
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		Expect(driver.Stop(ctx, vm)).To(Succeed())
+
+		_, err = newReconciler(driver).Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "tc2-default-ephemeral", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc2-default-ephemeral", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseSucceeded))
+		Expect(updated.Spec.NodeName).To(BeEmpty())
+	})
 })
 
 var _ = Describe("ImpVM Agent: persistent exit → Failed", func() {

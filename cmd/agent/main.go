@@ -120,6 +120,7 @@ func main() {
 		Metrics:  mc,
 		Net:      prodNet,
 		Alloc:    alloc,
+		Recorder: mgr.GetEventRecorderFor("imp-agent"),
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "Unable to set up ImpVMReconciler")
 		os.Exit(1)

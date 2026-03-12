@@ -12,9 +12,11 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,6 +46,8 @@ type ImpVMReconciler struct {
 	// StartTimeout is how long a VM may remain in Starting before being
 	// transitioned to Failed. Defaults to 5 minutes when zero.
 	StartTimeout time.Duration
+	// Recorder emits lifecycle events for VM completion/failure.
+	Recorder record.EventRecorder
 }
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;update;patch
@@ -266,8 +270,9 @@ func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.
 		}
 	}
 
-	log.Info("VM process exited", "lifecycle", vm.Spec.Lifecycle)
-	if vm.Spec.Lifecycle == impdevv1alpha1.VMLifecycleEphemeral {
+	lifecycle := vmLifecycleOrDefault(vm)
+	log.Info("VM process exited", "lifecycle", lifecycle)
+	if lifecycle == impdevv1alpha1.VMLifecycleEphemeral {
 		return r.finishSucceeded(ctx, vm)
 	}
 	return r.finishFailed(ctx, vm)
@@ -317,10 +322,14 @@ func (r *ImpVMReconciler) finishSucceeded(ctx context.Context, vm *impdevv1alpha
 	// Status patch — take base AFTER spec patch so resourceVersion is current.
 	base := vm.DeepCopy()
 	vm.Status.Phase = impdevv1alpha1.VMPhaseSucceeded
+	vm.Status.StartedAt = nil
 	vm.Status.IP = ""
 	vm.Status.RuntimePID = 0
 	if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
 		return ctrl.Result{}, err
+	}
+	if r.Recorder != nil {
+		r.Recorder.Event(vm, corev1.EventTypeNormal, "Completed", "VM exited and was marked Succeeded")
 	}
 	return ctrl.Result{}, nil
 }
@@ -333,7 +342,17 @@ func (r *ImpVMReconciler) finishFailed(ctx context.Context, vm *impdevv1alpha1.I
 	if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
 		return ctrl.Result{}, err
 	}
+	if r.Recorder != nil {
+		r.Recorder.Event(vm, corev1.EventTypeWarning, "ProcessExited", "VM process exited and was marked Failed")
+	}
 	return ctrl.Result{}, nil
+}
+
+func vmLifecycleOrDefault(vm *impdevv1alpha1.ImpVM) impdevv1alpha1.VMLifecycle {
+	if vm.Spec.Lifecycle == "" {
+		return impdevv1alpha1.VMLifecycleEphemeral
+	}
+	return vm.Spec.Lifecycle
 }
 
 // clearOwnership clears spec.nodeName + status ip/pid after Terminating stop.
