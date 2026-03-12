@@ -40,7 +40,15 @@ jobs:
         uses: imranismail/setup-kustomize@v2
 
       - name: Install kubeconform
-        uses: yannh/setup-kubeconform@v1
+        env:
+          KUBECONFORM_VERSION: "v0.7.0"
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            -o /tmp/kubeconform.tar.gz
+          tar -xzf /tmp/kubeconform.tar.gz -C /tmp
+          sudo install -m 0755 /tmp/kubeconform /usr/local/bin/kubeconform
 
       - name: Render manifests
         run: |
