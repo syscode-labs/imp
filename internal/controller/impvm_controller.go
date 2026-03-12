@@ -94,7 +94,25 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 		return r.handleResetRetries(ctx, vm)
 	}
 
-	// 4. Schedule if not yet assigned
+	// 4. Fail fast on invalid reference wiring even when webhooks are disabled.
+	// This prevents silent "Starting" confusion for missing class/template refs.
+	if specErr := validateImpVMSpecRefs(vm); specErr != nil {
+		msg := specErr.Error()
+		alreadyMarked := vm.Status.Phase == impdevv1alpha1.VMPhaseFailed && hasSpecInvalidCondition(vm, msg)
+		if !alreadyMarked {
+			base := vm.DeepCopy()
+			vm.Status.Phase = impdevv1alpha1.VMPhaseFailed
+			setCondition(vm, ConditionScheduled, metav1.ConditionFalse, EventReasonSpecInvalid, msg)
+			setCondition(vm, ConditionReady, metav1.ConditionFalse, EventReasonSpecInvalid, msg)
+			if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+				return ctrl.Result{}, err
+			}
+			r.Recorder.Event(vm, corev1.EventTypeWarning, EventReasonSpecInvalid, msg)
+		}
+		return ctrl.Result{}, nil
+	}
+
+	// 5. Schedule if not yet assigned
 	if vm.Spec.NodeName == "" {
 		nodeName, err := r.schedule(ctx, vm)
 		if err != nil {
@@ -136,13 +154,13 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 		return ctrl.Result{}, nil
 	}
 
-	// 5. Handle Failed phase — apply restart policy before re-syncing.
+	// 6. Handle Failed phase — apply restart policy before re-syncing.
 	expiryRequeueAfter, done, err := r.reconcileExpiry(ctx, vm)
 	if err != nil || done {
 		return ctrl.Result{}, err
 	}
 
-	// 6. Handle Failed phase — apply restart policy before re-syncing.
+	// 7. Handle Failed phase — apply restart policy before re-syncing.
 	if vm.Status.Phase == impdevv1alpha1.VMPhaseFailed {
 		result, err = r.handleFailed(ctx, vm)
 		if err != nil {
@@ -155,7 +173,7 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 		return result, nil
 	}
 
-	// 7. SyncStatus
+	// 8. SyncStatus
 	result, err = r.syncStatus(ctx, vm)
 	if err != nil {
 		return ctrl.Result{}, err

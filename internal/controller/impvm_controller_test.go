@@ -120,3 +120,45 @@ var _ = Describe("ImpVM Deletion", func() {
 		Expect(errors.IsNotFound(err)).To(BeTrue())
 	})
 })
+
+var _ = Describe("ImpVM Spec Validation Fallback", func() {
+	ctx := context.Background()
+
+	It("marks VM Failed with SpecInvalid when classRef and templateRef are both missing", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "invalid-no-refs", Namespace: "default"},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				Image: "docker.io/library/nginx:1.27-alpine",
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, vm)).To(Or(Succeed(), MatchError(ContainSubstring("not found")))) })
+
+		// First reconcile adds finalizer.
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "invalid-no-refs", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		// Second reconcile applies spec validation fallback.
+		_, err = newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "invalid-no-refs", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "invalid-no-refs", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseFailed))
+		var readyCond *metav1.Condition
+		for i := range updated.Status.Conditions {
+			c := &updated.Status.Conditions[i]
+			if c.Type == ConditionReady {
+				readyCond = c
+				break
+			}
+		}
+		Expect(readyCond).NotTo(BeNil())
+		Expect(readyCond.Reason).To(Equal(EventReasonSpecInvalid))
+		Expect(readyCond.Message).To(Equal("invalid spec: exactly one of classRef or templateRef must be set"))
+	})
+})

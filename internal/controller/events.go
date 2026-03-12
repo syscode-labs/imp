@@ -11,6 +11,7 @@ const (
 	EventReasonExpired              = "Expired"
 	EventReasonHealthCheckFailed    = "HealthCheckFailed"
 	EventReasonHealthCheckRecovered = "HealthCheckRecovered"
+	EventReasonSpecInvalid          = "SpecInvalid"
 	EventReasonCNIDetected          = "CNIDetected"
 	EventReasonCNIAmbiguous         = "CNIAmbiguous"
 	EventReasonBridgeReady          = "BridgeReady"
