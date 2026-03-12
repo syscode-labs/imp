@@ -46,6 +46,9 @@ type ImpVMReconciler struct {
 	// StartTimeout is how long a VM may remain in Starting before being
 	// transitioned to Failed. Defaults to 5 minutes when zero.
 	StartTimeout time.Duration
+	// RetryInterval is how long the agent waits before retrying high-churn
+	// reconcile paths (Starting and Terminating stop errors). Defaults to 5s.
+	RetryInterval time.Duration
 	// Recorder emits lifecycle events for VM completion/failure.
 	Recorder record.EventRecorder
 }
@@ -104,6 +107,13 @@ func (r *ImpVMReconciler) startTimeout() time.Duration {
 	return 5 * time.Minute
 }
 
+func (r *ImpVMReconciler) retryInterval() time.Duration {
+	if r.RetryInterval > 0 {
+		return r.RetryInterval
+	}
+	return 5 * time.Second
+}
+
 func (r *ImpVMReconciler) handleStarting(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	if vm.Status.StartedAt != nil {
@@ -112,7 +122,7 @@ func (r *ImpVMReconciler) handleStarting(ctx context.Context, vm *impdevv1alpha1
 			return r.finishFailed(ctx, vm)
 		}
 	}
-	return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
+	return ctrl.Result{RequeueAfter: r.retryInterval()}, nil
 }
 
 func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha1.ImpVM) (result ctrl.Result, err error) {
@@ -294,7 +304,7 @@ func (r *ImpVMReconciler) handleTerminating(ctx context.Context, vm *impdevv1alp
 
 	if err = r.Driver.Stop(ctx, vm); err != nil {
 		log.Error(err, "Driver Stop failed — will retry")
-		return ctrl.Result{RequeueAfter: 2 * time.Second}, err
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, err
 	}
 
 	if r.Metrics != nil {

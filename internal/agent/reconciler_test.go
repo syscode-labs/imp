@@ -217,10 +217,10 @@ var _ = Describe("ImpVM Agent: Terminating → clears nodeName", func() {
 	})
 })
 
-var _ = Describe("ImpVM Agent: VMPhaseStarting → RequeueAfter 2s", func() {
+var _ = Describe("ImpVM Agent: VMPhaseStarting → RequeueAfter", func() {
 	ctx := context.Background()
 
-	It("returns RequeueAfter=2s and does not mutate status", func() {
+	It("returns RequeueAfter=5s by default and does not mutate status", func() {
 		vm := &impdevv1alpha1.ImpVM{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "tc5-starting", Namespace: "default",
@@ -239,11 +239,35 @@ var _ = Describe("ImpVM Agent: VMPhaseStarting → RequeueAfter 2s", func() {
 			NamespacedName: types.NamespacedName{Name: "tc5-starting", Namespace: "default"},
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.RequeueAfter).To(Equal(2 * time.Second))
+		Expect(result.RequeueAfter).To(Equal(5 * time.Second))
 
 		updated := &impdevv1alpha1.ImpVM{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc5-starting", Namespace: "default"}, updated)).To(Succeed())
 		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseStarting))
+	})
+
+	It("uses explicit RetryInterval when configured", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "tc5-starting-override", Namespace: "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{NodeName: testNode},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseStarting
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		r := newReconciler(NewStubDriver())
+		r.RetryInterval = 9 * time.Second
+		result, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "tc5-starting-override", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(Equal(9 * time.Second))
 	})
 })
 
