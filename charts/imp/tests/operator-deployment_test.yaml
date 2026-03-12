@@ -86,3 +86,14 @@ tests:
             name: webhook
             port: 9443
             targetPort: 9443
+
+  - it: renders explicit false webhook flag when webhook.enabled is absent
+    template: templates/operator/deployment.yaml
+    set:
+      webhook.enabled: null
+      webhook.certManager.enabled: false
+      agent.env.kernelPath: /usr/local/bin/firecracker
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --enable-webhooks=false

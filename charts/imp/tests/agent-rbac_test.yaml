@@ -38,7 +38,25 @@ tests:
           content:
             apiGroups: ["imp.dev"]
             resources: [impvmclasses]
-            verbs: [get]
+            verbs: [get, list, watch]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["imp.dev"]
+            resources: [clusterimpnodeprofiles]
+            verbs: [get, list, watch]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["imp.dev"]
+            resources: [impvmsnapshots]
+            verbs: [get, list, watch, update, patch]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["imp.dev"]
+            resources: [impvmsnapshots/status]
+            verbs: [get, update, patch]
       - contains:
           path: rules
           content:

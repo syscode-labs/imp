@@ -24,9 +24,10 @@ RUN --mount=type=cache,id=guest-gomod,target=/root/go/pkg/mod \
     --mount=type=cache,id=guest-gobuild,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o guest-agent ./cmd/guest-agent
 
-FROM gcr.io/distroless/static:nonroot AS runtime
+FROM alpine:3.21 AS runtime
 WORKDIR /
-COPY --from=agent-builder /workspace/agent .
+RUN apk add --no-cache e2fsprogs
+COPY --from=agent-builder /workspace/agent /agent
 COPY --from=guest-agent-builder /workspace/guest-agent /opt/imp/guest-agent
 USER 65532:65532
 ENTRYPOINT ["/agent"]

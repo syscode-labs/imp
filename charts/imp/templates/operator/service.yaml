@@ -1,4 +1,5 @@
-{{- $webhooksEnabled := and .Values.webhook.enabled .Values.webhook.certManager.enabled }}
+{{- $webhookEnabled := default true .Values.webhook.enabled }}
+{{- $webhooksEnabled := and $webhookEnabled .Values.webhook.certManager.enabled }}
 apiVersion: v1
 kind: Service
 metadata:

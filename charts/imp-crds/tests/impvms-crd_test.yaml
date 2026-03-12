@@ -1,0 +1,12 @@
+suite: impvms CRD schema
+templates:
+  - templates/impvms.yaml
+tests:
+  - it: includes startedAt in ImpVM status schema
+    template: templates/impvms.yaml
+    asserts:
+      - isKind:
+          of: CustomResourceDefinition
+      - equal:
+          path: spec.versions[0].schema.openAPIV3Schema.properties.status.properties.startedAt.type
+          value: string
