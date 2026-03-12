@@ -76,11 +76,11 @@ fi
 echo "[5/6] execute connectivity check from ${CLIENT_VM} -> ${SERVER_IP}"
 REQ_BODY="$(
   cat <<EOF
-{"command":["/bin/sh","-lc","wget -qO- http://${SERVER_IP} | grep -qi nginx"]}
+{"command":["/bin/sh","-lc","ping -c1 -W2 ${SERVER_IP}"]}
 EOF
 )"
 RESP="$(
-  curl -fsS -X POST \
+  curl --max-time 60 -fsS -X POST \
     -H "Content-Type: application/json" \
     --data "${REQ_BODY}" \
     "http://127.0.0.1:${LOCAL_AGENT_PORT}/v1/exec/${NS}/${CLIENT_VM}"

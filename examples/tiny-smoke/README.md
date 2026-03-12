@@ -33,7 +33,7 @@ What `run.sh` does:
 2. Waits for both VMs to reach `Running`.
 3. Finds the `imp-agent` pod on the client VM node.
 4. Port-forwards the agent API.
-5. Executes an HTTP request from client VM to server VM over the ImpNetwork.
+5. Executes a guest-agent command from client VM to server VM (`ping`) over the ImpNetwork.
 6. Fails unless guest-exec returns exit code `0`.
 
 ## Cleanup
