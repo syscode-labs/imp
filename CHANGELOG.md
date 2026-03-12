@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/syscode-labs/imp/compare/v0.2.1...v0.2.2) (2026-03-12)
+
+
+### Bug Fixes
+
+* **runtime:** close bootstrap gaps for clean micro1 validation ([c954eb2](https://github.com/syscode-labs/imp/commit/c954eb277c9df09dcd115d05110e394eac06cffd))
+
 ## [0.2.1](https://github.com/syscode-labs/imp/compare/v0.2.0...v0.2.1) (2026-03-12)
 
 
