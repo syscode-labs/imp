@@ -1,9 +1,14 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to publish (e.g. v0.2.0)"
+        required: false
+        type: string
 
 env:
   GO_VERSION: "1.24"
@@ -14,7 +19,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
       packages: write
 
     steps:
@@ -48,7 +53,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.IMAGE_BASE }}/imp-operator:${{ github.ref_name }}
+            ${{ env.IMAGE_BASE }}/imp-operator:${{ github.event.release.tag_name || inputs.release_tag }}
             ${{ env.IMAGE_BASE }}/imp-operator:latest
 
       - name: Build and push node agent image
@@ -59,11 +64,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.IMAGE_BASE }}/imp-agent:${{ github.ref_name }}
+            ${{ env.IMAGE_BASE }}/imp-agent:${{ github.event.release.tag_name || inputs.release_tag }}
             ${{ env.IMAGE_BASE }}/imp-agent:latest
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: config/crd/bases/*.yaml
