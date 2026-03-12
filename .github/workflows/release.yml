@@ -16,8 +16,16 @@ env:
   IMAGE_BASE: ghcr.io/syscode-labs
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  release-arch:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
@@ -28,9 +36,6 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -47,26 +52,69 @@ jobs:
 
       - name: Build context note
         run: |
-          echo "::notice title=Multi-arch build note::linux/arm64 is built via QEMU emulation on an amd64 runner. This phase can be slow and may appear quiet for several minutes."
+          echo "::notice title=Build context::Building linux/${{ matrix.arch }} on native runner ${{ matrix.runner }}."
 
       - name: Build and push operator image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.operator
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/${{ matrix.arch }}
           push: true
           tags: |
-            ${{ env.IMAGE_BASE }}/imp-operator:${{ github.event.release.tag_name || inputs.release_tag }}
-            ${{ env.IMAGE_BASE }}/imp-operator:latest
+            ${{ env.IMAGE_BASE }}/imp-operator:${{ github.event.release.tag_name || inputs.release_tag }}-${{ matrix.arch }}
+            ${{ env.IMAGE_BASE }}/imp-operator:latest-${{ matrix.arch }}
 
       - name: Build and push node agent image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: Dockerfile.agent
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/${{ matrix.arch }}
           push: true
           tags: |
-            ${{ env.IMAGE_BASE }}/imp-agent:${{ github.event.release.tag_name || inputs.release_tag }}
-            ${{ env.IMAGE_BASE }}/imp-agent:latest
+            ${{ env.IMAGE_BASE }}/imp-agent:${{ github.event.release.tag_name || inputs.release_tag }}-${{ matrix.arch }}
+            ${{ env.IMAGE_BASE }}/imp-agent:latest-${{ matrix.arch }}
+
+  merge-manifests:
+    runs-on: ubuntu-latest
+    needs: [release-arch]
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create multi-arch manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name || inputs.release_tag }}"
+
+          docker buildx imagetools create \
+            -t "${{ env.IMAGE_BASE }}/imp-operator:${TAG}" \
+            "${{ env.IMAGE_BASE }}/imp-operator:${TAG}-amd64" \
+            "${{ env.IMAGE_BASE }}/imp-operator:${TAG}-arm64"
+
+          docker buildx imagetools create \
+            -t "${{ env.IMAGE_BASE }}/imp-operator:latest" \
+            "${{ env.IMAGE_BASE }}/imp-operator:latest-amd64" \
+            "${{ env.IMAGE_BASE }}/imp-operator:latest-arm64"
+
+          docker buildx imagetools create \
+            -t "${{ env.IMAGE_BASE }}/imp-agent:${TAG}" \
+            "${{ env.IMAGE_BASE }}/imp-agent:${TAG}-amd64" \
+            "${{ env.IMAGE_BASE }}/imp-agent:${TAG}-arm64"
+
+          docker buildx imagetools create \
+            -t "${{ env.IMAGE_BASE }}/imp-agent:latest" \
+            "${{ env.IMAGE_BASE }}/imp-agent:latest-amd64" \
+            "${{ env.IMAGE_BASE }}/imp-agent:latest-arm64"
