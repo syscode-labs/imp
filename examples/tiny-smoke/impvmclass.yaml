@@ -5,3 +5,4 @@ metadata:
 spec:
   vcpu: 1
   memoryMiB: 192
+  diskGiB: 2
