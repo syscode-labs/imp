@@ -45,6 +45,10 @@ jobs:
       - name: Generate CRD manifests
         run: make manifests
 
+      - name: Build context note
+        run: |
+          echo "::notice title=Multi-arch build note::linux/arm64 is built via QEMU emulation on an amd64 runner. This phase can be slow and may appear quiet for several minutes."
+
       - name: Build and push operator image
         uses: docker/build-push-action@v6
         with:
