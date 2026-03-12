@@ -17,6 +17,9 @@ jobs:
     outputs:
       versions: ${{ steps.resolve.outputs.versions_without_v }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - name: Resolve from official Kubernetes release channel
         id: resolve
         uses: ./.github/actions/resolve-k8s-versions
