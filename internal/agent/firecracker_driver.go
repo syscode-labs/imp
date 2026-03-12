@@ -22,6 +22,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -166,6 +167,9 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	if gaEnabled {
 		buildOpts = append(buildOpts, rootfs.WithGuestAgent(d.guestAgentPath()))
 	}
+	if env := resolveVMEnv(vm.Spec.Env); len(env) > 0 {
+		buildOpts = append(buildOpts, rootfs.WithEnv(env))
+	}
 	var rootfsPath string
 	{
 		rCtx, rSpan := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.rootfs_build",
@@ -282,6 +286,23 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	}
 
 	return int64(pid), nil
+}
+
+func resolveVMEnv(vars []corev1.EnvVar) map[string]string {
+	if len(vars) == 0 {
+		return nil
+	}
+	env := make(map[string]string, len(vars))
+	for _, v := range vars {
+		if v.Name == "" || v.ValueFrom != nil {
+			continue
+		}
+		env[v.Name] = v.Value
+	}
+	if len(env) == 0 {
+		return nil
+	}
+	return env
 }
 
 func (d *FirecrackerDriver) buildRootfs(

@@ -32,7 +32,7 @@ func writeInit(img v1.Image, dir string) error {
 		quoted[i] = fmt.Sprintf("%q", a)
 	}
 
-	script := "#!/bin/sh\nexec " + strings.Join(quoted, " ") + " \"$@\"\n"
+	script := "#!/bin/sh\n[ -f /.imp/env ] && . /.imp/env\nexec " + strings.Join(quoted, " ") + " \"$@\"\n"
 
 	initPath := filepath.Join(dir, "sbin", "init")
 	if err := os.MkdirAll(filepath.Dir(initPath), 0o755); err != nil { //nolint:gosec // G301: sbin directory must be world-traversable in the VM rootfs

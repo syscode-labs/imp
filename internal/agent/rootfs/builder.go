@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -90,8 +91,8 @@ func (b *Builder) buildFromImage(ctx context.Context, img v1.Image, opts ...Buil
 
 	// Check cache — return immediately if already built.
 	cacheKey := digest.Hex
-	if len(opts) > 0 {
-		cacheKey += "-ga"
+	if suffix := optionsCacheKey(opts); suffix != "" {
+		cacheKey += "-" + suffix
 	}
 	dest := b.cachePath(cacheKey)
 	if _, err := os.Stat(dest); err == nil {
@@ -116,7 +117,7 @@ func (b *Builder) buildFromImage(ctx context.Context, img v1.Image, opts ...Buil
 
 	// Apply build options (e.g. guest agent injection).
 	for _, opt := range opts {
-		if err := opt(tmpDir); err != nil {
+		if err := opt.Apply(tmpDir); err != nil {
 			return "", fmt.Errorf("build option: %w", err)
 		}
 	}
@@ -157,6 +158,21 @@ func (b *Builder) cachePath(digestHex string) string {
 // ensureCacheDir creates the cache directory if it does not exist.
 func (b *Builder) ensureCacheDir() error {
 	return os.MkdirAll(b.CacheDir, 0o750)
+}
+
+func optionsCacheKey(opts []BuildOption) string {
+	if len(opts) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(opts))
+	for _, opt := range opts {
+		key := strings.TrimSpace(opt.CacheKey())
+		if key == "" {
+			continue
+		}
+		keys = append(keys, key)
+	}
+	return strings.Join(keys, "-")
 }
 
 // pullImage fetches the image manifest from the registry.

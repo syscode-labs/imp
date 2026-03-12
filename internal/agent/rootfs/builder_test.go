@@ -425,10 +425,45 @@ func TestWriteInit(t *testing.T) {
 			}
 			if tc.wantInit {
 				content, _ := os.ReadFile(initPath)
+				if !strings.Contains(string(content), "[ -f /.imp/env ] && . /.imp/env") {
+					t.Fatalf("init script should source /.imp/env, got %q", content)
+				}
 				if !strings.Contains(string(content), tc.wantScript) {
 					t.Errorf("init script = %q, want to contain %q", content, tc.wantScript)
 				}
 			}
 		})
+	}
+}
+
+func TestWithEnv(t *testing.T) {
+	dir := t.TempDir()
+	opt := WithEnv(map[string]string{
+		"PORT":     "8080",
+		"GREETING": "hello world",
+	})
+	if err := opt.Apply(dir); err != nil {
+		t.Fatalf("WithEnv: %v", err)
+	}
+
+	envPath := filepath.Join(dir, ".imp", "env")
+	content, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("read env file: %v", err)
+	}
+	got := string(content)
+	if !strings.Contains(got, "export PORT=\"8080\"") {
+		t.Fatalf("env file missing PORT export: %q", got)
+	}
+	if !strings.Contains(got, "export GREETING=\"hello world\"") {
+		t.Fatalf("env file missing GREETING export: %q", got)
+	}
+	if !strings.HasPrefix(opt.CacheKey(), "env-") {
+		t.Fatalf("unexpected env cache key: %q", opt.CacheKey())
+	}
+
+	opt2 := WithEnv(map[string]string{"PORT": "9090"})
+	if opt.CacheKey() == opt2.CacheKey() {
+		t.Fatalf("expected different env cache keys, got %q", opt.CacheKey())
 	}
 }

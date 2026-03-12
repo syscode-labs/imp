@@ -15,6 +15,7 @@ import (
 	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"google.golang.org/grpc"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -82,6 +83,28 @@ func hasKVM() bool {
 
 func TestFirecrackerDriverPlaceholder(t *testing.T) {
 	t.Log("FirecrackerDriver test file compiles correctly")
+}
+
+func TestResolveVMEnv(t *testing.T) {
+	got := resolveVMEnv([]corev1.EnvVar{
+		{Name: "PORT", Value: "8080"},
+		{Name: "PORT", Value: "9090"},
+		{Name: "FROM", ValueFrom: &corev1.EnvVarSource{}},
+		{Name: "", Value: "skip"},
+		{Name: "GREETING", Value: "hello"},
+	})
+	if got["PORT"] != "9090" {
+		t.Fatalf("PORT=%q, want %q", got["PORT"], "9090")
+	}
+	if got["GREETING"] != "hello" {
+		t.Fatalf("GREETING=%q, want %q", got["GREETING"], "hello")
+	}
+	if _, ok := got["FROM"]; ok {
+		t.Fatalf("expected ValueFrom env var to be ignored")
+	}
+	if _, ok := got[""]; ok {
+		t.Fatalf("expected empty env name to be ignored")
+	}
 }
 
 func TestFirecrackerDriver_buildRootfs_UsesBuildWhenNoExtraLayers(t *testing.T) {
