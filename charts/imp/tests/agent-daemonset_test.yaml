@@ -94,6 +94,27 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].securityContext.privileged
           value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 0
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsGroup
+          value: 0
+
+  - it: supports overriding agent security context
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+      agent.securityContext.privileged: true
+      agent.securityContext.runAsUser: 65532
+      agent.securityContext.runAsGroup: 65532
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 65532
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsGroup
+          value: 65532
 
   - it: injects NODE_NAME from downward API
     template: templates/agent/daemonset.yaml

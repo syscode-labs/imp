@@ -49,6 +49,12 @@ tests:
               - impvmmigrations/status
               - impvmrunnerpools/status
             verbs: [get, update, patch]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["apps"]
+            resources: [daemonsets]
+            verbs: [get, list, watch]
 
   - it: does not create full ClusterRole by default
     template: templates/operator/clusterrole-full.yaml

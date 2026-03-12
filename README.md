@@ -97,7 +97,7 @@ metadata:
   name: quick-vm
   namespace: default
 spec:
-  image: ghcr.io/syscode-labs/imp-guestbook:latest
+  image: docker.io/library/nginx:1.27-alpine
   networkRef:
     name: quick-net
 EOF
