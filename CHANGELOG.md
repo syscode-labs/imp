@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.0](https://github.com/syscode-labs/imp/compare/v0.2.2...v0.3.0) (2026-03-12)
+
+
+### Features
+
+* **examples:** add tiny smoke assets and validation ([37667bd](https://github.com/syscode-labs/imp/commit/37667bd9ec951cdb7dca0cdcde8e456d91758ed7))
+
+
+### Bug Fixes
+
+* **agent:** cleanup stale vsock sockets on stop/start paths ([7817371](https://github.com/syscode-labs/imp/commit/7817371bbc646d3be8545bdc3be57d82769a1987))
+* **agent:** propagate vm env into init and guest-agent ([9c44325](https://github.com/syscode-labs/imp/commit/9c44325eadca1e7037c3b9539a0c69607eb08793))
+* **agent:** reduce reconcile churn with configurable retry interval ([5059cf4](https://github.com/syscode-labs/imp/commit/5059cf42228ac077e617becbcf5c8a39e5ef9739))
+* **chart:** default agent root security context and daemonset rbac ([b17743f](https://github.com/syscode-labs/imp/commit/b17743f4bc6b2d6f1902f46b5eab4315abe14e8c))
+* **controller:** fail fast on invalid ImpVM reference wiring ([c258c24](https://github.com/syscode-labs/imp/commit/c258c244bd78517d31d046c8df24350c1e5b4d9d))
+* **lifecycle:** clarify one-shot completion semantics ([5d978ba](https://github.com/syscode-labs/imp/commit/5d978bae49afbf7b9d5186f10a9612105f9b5195))
+* **rootfs:** preserve absolute symlinks during layer extract ([98dc836](https://github.com/syscode-labs/imp/commit/98dc836a0f33ad35bd897509ec48807866fbb701))
+* **rootfs:** preserve tar hardlinks during layer extract ([b106962](https://github.com/syscode-labs/imp/commit/b10696272a6a3e8d765ae7193cfb191fd2c5d101))
+
 ## [0.2.2](https://github.com/syscode-labs/imp/compare/v0.2.1...v0.2.2) (2026-03-12)
 
 
