@@ -73,6 +73,15 @@ func untar(dir string, r io.Reader) error {
 				continue // symlink target escapes rootfs directory — skip
 			}
 			_ = os.Symlink(hdr.Linkname, target) // best effort
+		case tar.TypeLink:
+			linkTarget := filepath.Join(dir, hdr.Linkname) //nolint:gosec // G305: validated before linking
+			if !pathWithinDir(dir, linkTarget) {
+				continue // hardlink target escapes rootfs directory — skip
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil { //nolint:gosec // G301: rootfs dirs must be world-traversable
+				return err
+			}
+			_ = os.Link(linkTarget, target) //nolint:errcheck // best effort for tar hardlinks
 		}
 	}
 	return nil
