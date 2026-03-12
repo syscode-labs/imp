@@ -59,7 +59,19 @@ trap cleanup EXIT
 echo "[4/6] port-forward agent API via pod/${AGENT_POD}"
 kubectl -n "${IMP_NS}" port-forward "pod/${AGENT_POD}" "${LOCAL_AGENT_PORT}:9091" >/tmp/imp-tiny-smoke-portforward.log 2>&1 &
 PF_PID=$!
-sleep 2
+
+for _ in $(seq 1 40); do
+  if ss -lnt | awk '{print $4}' | grep -q ":${LOCAL_AGENT_PORT}$"; then
+    break
+  fi
+  sleep 0.5
+done
+
+if ! ss -lnt | awk '{print $4}' | grep -q ":${LOCAL_AGENT_PORT}$"; then
+  echo "agent API port-forward did not become ready" >&2
+  cat /tmp/imp-tiny-smoke-portforward.log >&2 || true
+  exit 1
+fi
 
 echo "[5/6] execute connectivity check from ${CLIENT_VM} -> ${SERVER_IP}"
 REQ_BODY="$(
