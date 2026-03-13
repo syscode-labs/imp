@@ -1,5 +1,9 @@
 # Imp
 
+<p align="left">
+  <img src=".github/assets/impvm-dev-mascot-trans.png" alt="IMP mascot icon" width="64" />
+</p>
+
 ```text
   )\  /(
  (  \/  )    ╦╔╦╗╔═╗
