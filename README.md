@@ -16,7 +16,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 <p>
-  <img align="left" src=".github/assets/impvm-dev-mascot-trans.png" alt="IMP mascot icon" width="288" />
+  <img align="left" src=".github/assets/impvm-dev-mascot-trans-cropped.png" alt="IMP mascot icon" width="288" />
 </p>
 
 **Imp is a Kubernetes operator and node agent for running Firecracker microVM workloads as first-class Kubernetes resources.**
