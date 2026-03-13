@@ -1,7 +1,7 @@
 # Imp
 
 <p align="left">
-  <img src=".github/assets/impvm-dev-mascot-trans.png" alt="IMP mascot icon" width="64" />
+  <img src=".github/assets/impvm-dev-mascot-trans.png" alt="IMP mascot icon" width="88" />
 </p>
 
 ```text
