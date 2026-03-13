@@ -17,8 +17,8 @@
 
 <table>
   <tr>
-    <td width="116" valign="top">
-      <img src=".github/assets/impvm-dev-mascot-trans.png" alt="IMP mascot icon" width="96" />
+    <td width="308" valign="top">
+      <img src=".github/assets/impvm-dev-mascot-trans.png" alt="IMP mascot icon" width="288" />
     </td>
     <td valign="top">
       <p><strong>Imp is a Kubernetes operator and node agent for running Firecracker microVM workloads as first-class Kubernetes resources.</strong></p>
