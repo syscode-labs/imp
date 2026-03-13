@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.1](https://github.com/syscode-labs/imp/compare/v0.3.0...v0.3.1) (2026-03-13)
+
+
+### Bug Fixes
+
+* **ci:** address lint deprecation and retry interval tests ([b89e84f](https://github.com/syscode-labs/imp/commit/b89e84fe33da8bfa86c7e2f0e4870f4430b2cdb6))
+* **ci:** use legacy recorder API with staticcheck waiver ([fc25e7c](https://github.com/syscode-labs/imp/commit/fc25e7cb3dcebadc6b3136dc946632c79e72bd76))
+* **examples:** add required diskGiB to tiny-smoke class ([8c2d17e](https://github.com/syscode-labs/imp/commit/8c2d17ed2d6c6f495ab845cf11b9100e1dd3ee40))
+* **examples:** make tiny-smoke connectivity check bounded and app-agnostic ([91e3050](https://github.com/syscode-labs/imp/commit/91e305028b1a8e7ee8add170b0cdfb5812238978))
+* **examples:** wait for agent port-forward before exec ([d518dfd](https://github.com/syscode-labs/imp/commit/d518dfd4031821ded418f9261fa785a4a4e99d88))
+
 ## [0.3.0](https://github.com/syscode-labs/imp/compare/v0.2.2...v0.3.0) (2026-03-12)
 
 
