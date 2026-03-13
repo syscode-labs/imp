@@ -1,9 +1,5 @@
 # Imp
 
-<p align="left">
-  <img src=".github/assets/impvm-dev-mascot-trans.png" alt="IMP mascot icon" width="88" />
-</p>
-
 ```text
   )\  /(
  (  \/  )    ╦╔╦╗╔═╗
@@ -19,9 +15,18 @@
 [![Go Version](https://img.shields.io/badge/go-1.25.6-00ADD8?logo=go)](https://go.dev/doc/devel/release)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Imp is a Kubernetes operator and node agent for running Firecracker microVM workloads as first-class Kubernetes resources.
-In plain terms: it gives you lightweight mini-VMs that behave like disposable app sandboxes, so you can run risky or isolated workloads without giving them access to your whole host.
-A microVM is a very small virtual machine with stronger isolation than a container, and Firecracker is the open-source microVM runtime Imp uses to start those sandboxes quickly.
+<table>
+  <tr>
+    <td width="116" valign="top">
+      <img src=".github/assets/impvm-dev-mascot-trans.png" alt="IMP mascot icon" width="96" />
+    </td>
+    <td valign="top">
+      <p><strong>Imp is a Kubernetes operator and node agent for running Firecracker microVM workloads as first-class Kubernetes resources.</strong></p>
+      <p>In plain terms: it gives you lightweight mini-VMs that behave like disposable app sandboxes, so you can run risky or isolated workloads without giving them access to your whole host.</p>
+      <p>A microVM is a very small virtual machine with stronger isolation than a container, and Firecracker is the open-source microVM runtime Imp uses to start those sandboxes quickly.</p>
+    </td>
+  </tr>
+</table>
 
 It provides CRDs for VM lifecycle, VM networking, snapshots, migrations, warm pools, and runner pools, with Cilium-first networking support, VXLAN fallback for non-Cilium CNIs, and built-in metrics for VM state, latency, and health.
 
