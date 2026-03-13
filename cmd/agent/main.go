@@ -120,7 +120,7 @@ func main() {
 		Metrics:  mc,
 		Net:      prodNet,
 		Alloc:    alloc,
-		Recorder: mgr.GetEventRecorder("imp-agent"),
+		Recorder: mgr.GetEventRecorderFor("imp-agent"), //nolint:staticcheck // controller-runtime returns legacy recorder type expected by reconciler
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "Unable to set up ImpVMReconciler")
 		os.Exit(1)
