@@ -675,7 +675,7 @@ var _ = Describe("ImpVM Agent: Starting — stuck timeout", func() {
 			NamespacedName: types.NamespacedName{Name: "tc-starting-notimeout", Namespace: "default"},
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.RequeueAfter).To(Equal(2 * time.Second))
+		Expect(result.RequeueAfter).To(Equal(r.retryInterval()))
 
 		updated := &impdevv1alpha1.ImpVM{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc-starting-notimeout", Namespace: "default"}, updated)).To(Succeed())
@@ -709,7 +709,7 @@ var _ = Describe("ImpVM Agent: Starting — stuck timeout", func() {
 			NamespacedName: types.NamespacedName{Name: "tc-starting-nostartedat", Namespace: "default"},
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(result.RequeueAfter).To(Equal(2 * time.Second))
+		Expect(result.RequeueAfter).To(Equal(r.retryInterval()))
 	})
 })
 
