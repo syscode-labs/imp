@@ -55,7 +55,7 @@ jobs:
           echo "::notice title=Build context::Building linux/${{ matrix.arch }} on native runner ${{ matrix.runner }}."
 
       - name: Build and push operator image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.operator
@@ -66,7 +66,7 @@ jobs:
             ${{ env.IMAGE_BASE }}/imp-operator:latest-${{ matrix.arch }}
 
       - name: Build and push node agent image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.agent
