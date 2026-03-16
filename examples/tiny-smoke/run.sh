@@ -61,13 +61,13 @@ kubectl -n "${IMP_NS}" port-forward "pod/${AGENT_POD}" "${LOCAL_AGENT_PORT}:9091
 PF_PID=$!
 
 for _ in $(seq 1 40); do
-  if ss -lnt | awk '{print $4}' | grep -q ":${LOCAL_AGENT_PORT}$"; then
+  if curl --max-time 1 -sS -o /dev/null "http://127.0.0.1:${LOCAL_AGENT_PORT}/"; then
     break
   fi
   sleep 0.5
 done
 
-if ! ss -lnt | awk '{print $4}' | grep -q ":${LOCAL_AGENT_PORT}$"; then
+if ! curl --max-time 1 -sS -o /dev/null "http://127.0.0.1:${LOCAL_AGENT_PORT}/"; then
   echo "agent API port-forward did not become ready" >&2
   cat /tmp/imp-tiny-smoke-portforward.log >&2 || true
   exit 1
@@ -92,4 +92,4 @@ echo "${RESP}" | grep -q '"stream":"exit","code":0' || {
   exit 1
 }
 
-echo "[6/6] smoke PASS: classRef boot + VM-to-VM HTTP connectivity validated"
+echo "[6/6] smoke PASS: classRef boot + VM-to-VM connectivity validated"
