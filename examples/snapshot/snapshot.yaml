@@ -1,0 +1,17 @@
+# Example: one-shot ImpVMSnapshot with node-local storage and 3-execution retention.
+# Prerequisites: a running ImpVM named "my-vm" in namespace "default".
+# After applying, watch: kubectl get impvmsnapshot -n default -w
+# Elect a base: kubectl imp elect my-snap <child-name>
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMSnapshot
+metadata:
+  name: my-snap
+  namespace: default
+spec:
+  sourceVMName: my-vm
+  sourceVMNamespace: default
+  storage:
+    type: node-local
+    nodeLocal:
+      path: /var/lib/imp/snapshots
+  retention: 3

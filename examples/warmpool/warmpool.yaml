@@ -1,0 +1,15 @@
+# Example: ImpWarmPool keeping 3 pre-booted VMs from an elected snapshot.
+# Prerequisites:
+#   - ImpVMSnapshot "my-snap" with a baseSnapshot elected
+#   - ImpVMTemplate "standard-runner" in namespace "default"
+# After applying, watch: kubectl get impwarmpool -n default -w
+apiVersion: imp.dev/v1alpha1
+kind: ImpWarmPool
+metadata:
+  name: fast-pool
+  namespace: default
+spec:
+  snapshotRef: my-snap
+  templateName: standard-runner
+  size: 3
+  expireAfter: 1h
