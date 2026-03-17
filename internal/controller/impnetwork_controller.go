@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -80,6 +81,54 @@ func (r *ImpNetworkReconciler) handleDeletion(ctx context.Context, net *impdevv1
 	return ctrl.Result{}, r.Update(ctx, net)
 }
 
+// reconcileCiliumPool creates or updates the CiliumPodIPPool owned by this ImpNetwork.
+// No-op when spec.ipam.provider is not "cilium" or poolRef is unset.
+func (r *ImpNetworkReconciler) reconcileCiliumPool(ctx context.Context, net *impdevv1alpha1.ImpNetwork) error {
+	if net.Spec.IPAM == nil || net.Spec.IPAM.Provider != "cilium" {
+		return nil
+	}
+	if net.Spec.IPAM.Cilium == nil || net.Spec.IPAM.Cilium.PoolRef == "" {
+		return nil
+	}
+
+	cidr := net.Spec.Subnet
+	if net.Spec.IPAM.Cilium.Cidr != "" {
+		cidr = net.Spec.IPAM.Cilium.Cidr
+	}
+
+	pool := &unstructured.Unstructured{}
+	pool.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "cilium.io",
+		Version: "v2alpha1",
+		Kind:    "CiliumPodIPPool",
+	})
+	pool.SetName(net.Spec.IPAM.Cilium.PoolRef)
+
+	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, pool, func() error {
+		// CiliumPodIPPool is cluster-scoped; owner references from a namespace-scoped
+		// resource are not allowed. Use labels for tracking instead.
+		labels := pool.GetLabels()
+		if labels == nil {
+			labels = make(map[string]string)
+		}
+		labels["imp.dev/network"] = net.Name
+		labels["imp.dev/namespace"] = net.Namespace
+		pool.SetLabels(labels)
+		return unstructured.SetNestedSlice(pool.Object, []interface{}{
+			map[string]interface{}{"cidr": cidr},
+		}, "spec", "ipv4", "cidrs")
+	})
+	if err != nil {
+		// If CiliumPodIPPool CRD is not installed, log and skip rather than failing.
+		if apimeta.IsNoMatchError(err) {
+			logf.FromContext(ctx).Info("CiliumPodIPPool CRD not found, skipping pool reconcile")
+			return nil
+		}
+		return fmt.Errorf("reconcile CiliumPodIPPool %q: %w", net.Spec.IPAM.Cilium.PoolRef, err)
+	}
+	return nil
+}
+
 func (r *ImpNetworkReconciler) sync(ctx context.Context, net *impdevv1alpha1.ImpNetwork) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
@@ -104,6 +153,11 @@ func (r *ImpNetworkReconciler) sync(ctx context.Context, net *impdevv1alpha1.Imp
 				net.Spec.Subnet)
 			log.Info("CiliumConfigMissing", "subnet", net.Spec.Subnet)
 		}
+	}
+
+	// Auto-create/update CiliumPodIPPool when using Cilium IPAM.
+	if err := r.reconcileCiliumPool(ctx, net); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// GC stale VTEP entries (VMs that are no longer Running on this network).
