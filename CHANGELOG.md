@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/syscode-labs/imp/compare/v0.3.1...v0.3.2) (2026-03-17)
+
+
+### Bug Fixes
+
+* **examples:** use curl for port-forward readiness check (cross-platform) ([71b151c](https://github.com/syscode-labs/imp/commit/71b151c7fd84b29af1d794ff12987c88126ceb92))
+
 ## [0.3.1](https://github.com/syscode-labs/imp/compare/v0.3.0...v0.3.1) (2026-03-13)
 
 
