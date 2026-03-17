@@ -45,6 +45,7 @@ type ImpNetworkReconciler struct {
 // +kubebuilder:rbac:groups=imp.dev,resources=impnetworks/finalizers,verbs=update
 // +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cilium.io,resources=ciliumexternalworkloads,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=cilium.io,resources=ciliumpodippools,verbs=get;list;watch;create;update;patch;delete
 
 func (r *ImpNetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	net := &impdevv1alpha1.ImpNetwork{}

@@ -30,6 +30,7 @@ rules:
   - cilium.io
   resources:
   - ciliumexternalworkloads
+  - ciliumpodippools
   verbs:
   - create
   - delete
