@@ -77,6 +77,24 @@ func (r *ImpNetworkReconciler) handleDeletion(ctx context.Context, net *impdevv1
 	if !controllerutil.ContainsFinalizer(net, finalizerImpNetwork) {
 		return ctrl.Result{}, nil
 	}
+
+	// GC the CiliumPodIPPool if Cilium IPAM is configured.
+	// CiliumPodIPPool is cluster-scoped so owner references are not possible;
+	// we track it with labels instead and delete it explicitly here.
+	if net.Spec.IPAM != nil && net.Spec.IPAM.Provider == "cilium" &&
+		net.Spec.IPAM.Cilium != nil && net.Spec.IPAM.Cilium.PoolRef != "" {
+		pool := &unstructured.Unstructured{}
+		pool.SetGroupVersionKind(schema.GroupVersionKind{
+			Group:   "cilium.io",
+			Version: "v2alpha1",
+			Kind:    "CiliumPodIPPool",
+		})
+		pool.SetName(net.Spec.IPAM.Cilium.PoolRef)
+		if err := r.Delete(ctx, pool); err != nil && !apierrors.IsNotFound(err) && !apimeta.IsNoMatchError(err) {
+			return ctrl.Result{}, err
+		}
+	}
+
 	controllerutil.RemoveFinalizer(net, finalizerImpNetwork)
 	return ctrl.Result{}, r.Update(ctx, net)
 }

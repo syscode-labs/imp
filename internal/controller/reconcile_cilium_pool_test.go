@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -102,5 +103,12 @@ func TestReconcileCiliumPool_NoopWhenNotCiliumProvider(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().WithScheme(testScheme()).WithObjects(net).Build()
 	r := &ImpNetworkReconciler{Client: fakeClient, Scheme: testScheme()}
 	assert.NoError(t, r.reconcileCiliumPool(context.Background(), net))
-	// No pool should have been created.
+
+	// Confirm no pool was created.
+	pool := &unstructured.Unstructured{}
+	pool.SetGroupVersionKind(schema.GroupVersionKind{
+		Group: "cilium.io", Version: "v2alpha1", Kind: "CiliumPodIPPool",
+	})
+	err := fakeClient.Get(context.Background(), client.ObjectKey{Name: "any-pool"}, pool)
+	assert.True(t, apierrors.IsNotFound(err), "expected no pool to be created")
 }
