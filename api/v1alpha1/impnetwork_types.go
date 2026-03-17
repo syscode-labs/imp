@@ -77,7 +77,14 @@ type IPAMSpec struct {
 // CiliumIPAMSpec configures Cilium pool-based IP allocation.
 type CiliumIPAMSpec struct {
 	// PoolRef is the name of the CiliumPodIPPool resource to allocate from.
+	// Imp creates and owns this pool automatically; it need not exist beforehand.
 	PoolRef string `json:"poolRef"`
+
+	// Cidr overrides the CIDR used when Imp auto-creates the CiliumPodIPPool.
+	// Defaults to ImpNetwork.spec.subnet when unset.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$`
+	Cidr string `json:"cidr,omitempty"`
 }
 
 // NetworkGroupSpec defines a named group of VMs sharing a subnet within an ImpNetwork.
