@@ -412,3 +412,85 @@ var _ = Describe("ImpNetwork Controller: CiliumConfigMissing", func() {
 		}, 200*time.Millisecond, 50*time.Millisecond).ShouldNot(ContainSubstring(EventReasonCiliumConfigMissing))
 	})
 })
+
+var _ = Describe("ImpNetwork Controller: group CIDR allocation", func() {
+	ctx := context.Background()
+
+	It("populates status.groupCIDRs from spec.groups on reconcile", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "group-net-1", Namespace: "default"},
+			Spec: impdevv1alpha1.ImpNetworkSpec{
+				Subnet: "10.55.0.0/24",
+				Groups: []impdevv1alpha1.NetworkGroupSpec{
+					{Name: "workers", ExpectedSize: 14},
+					{Name: "controllers", ExpectedSize: 4},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		r, _ := newNetworkReconciler(unknownStore())
+		// First reconcile: adds finalizer.
+		_, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "group-net-1", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		// Second reconcile: runs sync, populates groupCIDRs.
+		_, err = r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "group-net-1", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "group-net-1", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Status.GroupCIDRs).To(HaveLen(2))
+
+		byName := make(map[string]string)
+		for _, gc := range updated.Status.GroupCIDRs {
+			byName[gc.Name] = gc.CIDR
+		}
+		// "controllers" sorted first: /29 at 10.55.0.0
+		Expect(byName["controllers"]).To(Equal("10.55.0.0/29"))
+		// "workers": /28 aligned after /29 block → 10.55.0.16
+		Expect(byName["workers"]).To(Equal("10.55.0.16/28"))
+	})
+
+	It("clears status.groupCIDRs when spec.groups is removed", func() {
+		net := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "group-net-2", Namespace: "default"},
+			Spec: impdevv1alpha1.ImpNetworkSpec{
+				Subnet: "10.56.0.0/24",
+				Groups: []impdevv1alpha1.NetworkGroupSpec{
+					{Name: "a", ExpectedSize: 4},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, net)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, net) }) //nolint:errcheck
+
+		r, _ := newNetworkReconciler(unknownStore())
+		for i := 0; i < 2; i++ {
+			_, err := r.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{Name: "group-net-2", Namespace: "default"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+		}
+
+		// Remove groups from spec.
+		updated := &impdevv1alpha1.ImpNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "group-net-2", Namespace: "default"}, updated)).To(Succeed())
+		updated.Spec.Groups = nil
+		Expect(k8sClient.Update(ctx, updated)).To(Succeed())
+
+		// Reconcile again.
+		_, err := r.Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "group-net-2", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		final := &impdevv1alpha1.ImpNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "group-net-2", Namespace: "default"}, final)).To(Succeed())
+		Expect(final.Status.GroupCIDRs).To(BeEmpty())
+	})
+})

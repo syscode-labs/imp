@@ -18,6 +18,7 @@ const (
 	EventReasonIPAllocated          = "IPAllocated"
 	EventReasonNATRulesApplied      = "NATRulesApplied"
 	EventReasonCiliumConfigMissing  = "CiliumConfigMissing"
+	EventReasonGroupCIDRError       = "GroupCIDRError"
 )
 
 // ImpVM condition type constants.

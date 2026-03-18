@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -183,6 +184,11 @@ func (r *ImpNetworkReconciler) sync(ctx context.Context, net *impdevv1alpha1.Imp
 		return ctrl.Result{}, err
 	}
 
+	// Allocate and record group subnets.
+	if err := r.reconcileGroupCIDRs(ctx, net); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Enroll Running VMs as Cilium external workloads (no-op if Cilium absent).
 	if err := r.reconcileCiliumEnrollment(ctx, net); err != nil {
 		return ctrl.Result{}, err
@@ -282,6 +288,27 @@ func (r *ImpNetworkReconciler) ciliumPresent() bool {
 		Resource: impdevv1alpha1.CiliumEWResource,
 	})
 	return err == nil
+}
+
+// reconcileGroupCIDRs derives subnet CIDRs for each network group in spec.groups
+// and stores the result in status.groupCIDRs. Idempotent: skips the status patch
+// when the computed CIDRs match what is already recorded.
+func (r *ImpNetworkReconciler) reconcileGroupCIDRs(ctx context.Context, net *impdevv1alpha1.ImpNetwork) error {
+	desired, err := carveGroupCIDRs(net.Spec.Subnet, net.Spec.Groups)
+	if err != nil {
+		logf.FromContext(ctx).Error(err, "group CIDR carving failed", "network", net.Name)
+		r.Recorder.Eventf(net, corev1.EventTypeWarning, EventReasonGroupCIDRError,
+			"Group CIDR carving failed: %v", err)
+		return nil // don't block reconcile for this — operator continues without group CIDRs
+	}
+
+	if reflect.DeepEqual(net.Status.GroupCIDRs, desired) {
+		return nil
+	}
+
+	base := net.DeepCopy()
+	net.Status.GroupCIDRs = desired
+	return r.Status().Patch(ctx, net, client.MergeFrom(base))
 }
 
 // reconcileCiliumEnrollment creates CiliumExternalWorkload objects for Running VMs
