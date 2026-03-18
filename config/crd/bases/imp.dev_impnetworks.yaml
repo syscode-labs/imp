@@ -123,9 +123,16 @@ spec:
                     description: Cilium configures Cilium IPAM. Required when Provider
                       is "cilium".
                     properties:
+                      cidr:
+                        description: |-
+                          Cidr overrides the CIDR used when Imp auto-creates the CiliumPodIPPool.
+                          Defaults to ImpNetwork.spec.subnet when unset.
+                        pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$
+                        type: string
                       poolRef:
-                        description: PoolRef is the name of the CiliumPodIPPool resource
-                          to allocate from.
+                        description: |-
+                          PoolRef is the name of the CiliumPodIPPool resource to allocate from.
+                          Imp creates and owns this pool automatically; it need not exist beforehand.
                         type: string
                     required:
                     - poolRef
