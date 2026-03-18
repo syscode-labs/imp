@@ -501,6 +501,13 @@ spec:
                         type: integer
                     type: object
                 type: object
+              rescheduleOnNodeLoss:
+                description: |-
+                  RescheduleOnNodeLoss opts this VM into automatic rescheduling when its
+                  assigned node becomes unhealthy. Only takes effect when spec.lifecycle is
+                  "persistent". The VM is NOT rescheduled if any PersistentVolumeClaim is
+                  owned by it (PVCs cannot follow the VM to a new node).
+                type: boolean
               restartPolicy:
                 description: |-
                   RestartPolicy overrides restart policy for this specific VM.

@@ -261,7 +261,30 @@ func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.Imp
 				"Ephemeral VM rescheduled after node loss")
 			return ctrl.Result{}, nil
 		}
-		// Persistent → fail.
+		// Persistent → reschedule if opted in and no PVC attached, otherwise fail.
+		if vm.Spec.RescheduleOnNodeLoss {
+			attached, err := r.hasPVCAttached(ctx, vm)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if !attached {
+				specPatch := client.MergeFrom(vm.DeepCopy())
+				vm.Spec.NodeName = ""
+				if err2 := r.Patch(ctx, vm, specPatch); err2 != nil {
+					return ctrl.Result{}, err2
+				}
+				vmCopy := vm.DeepCopy()
+				setNodeUnhealthy(vm, reason)
+				vm.Status.Phase = impdevv1alpha1.VMPhasePending
+				setUnscheduled(vm)
+				if err2 := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err2 != nil {
+					return ctrl.Result{}, err2
+				}
+				r.Recorder.Event(vm, corev1.EventTypeNormal, EventReasonRescheduling,
+					"Persistent VM rescheduled after node loss (no PVC attached)")
+				return ctrl.Result{}, nil
+			}
+		}
 		vmCopy := vm.DeepCopy()
 		setNodeUnhealthy(vm, reason)
 		vm.Status.Phase = impdevv1alpha1.VMPhaseFailed
@@ -347,6 +370,24 @@ func (r *ImpVMReconciler) handleDeletion(ctx context.Context, vm *impdevv1alpha1
 	}
 
 	return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+}
+
+// hasPVCAttached returns true if any PVC in vm.Namespace has an owner reference
+// pointing to this ImpVM. Used to gate automatic reschedule on node loss
+// (PVCs cannot follow the VM to a new node).
+func (r *ImpVMReconciler) hasPVCAttached(ctx context.Context, vm *impdevv1alpha1.ImpVM) (bool, error) {
+	var pvcList corev1.PersistentVolumeClaimList
+	if err := r.List(ctx, &pvcList, client.InNamespace(vm.Namespace)); err != nil {
+		return false, err
+	}
+	for _, pvc := range pvcList.Items {
+		for _, ref := range pvc.OwnerReferences {
+			if ref.UID == vm.UID {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func (r *ImpVMReconciler) globalHTTPCheck(ctx context.Context) *impdevv1alpha1.HTTPCheckSpec {

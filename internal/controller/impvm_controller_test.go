@@ -21,7 +21,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -93,6 +95,117 @@ var _ = Describe("ImpVM SyncStatus", func() {
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "sync-no-node", Namespace: "default"}, updated)).To(Succeed())
 		Expect(updated.Spec.NodeName).To(BeEmpty())
 		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhasePending))
+	})
+
+	It("reschedules persistent VM after node loss when RescheduleOnNodeLoss=true and no PVC", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "reschedule-no-pvc",
+				Namespace:  "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				NodeName:             "ghost-node",
+				Lifecycle:            impdevv1alpha1.VMLifecyclePersistent,
+				RescheduleOnNodeLoss: true,
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "reschedule-no-pvc", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "reschedule-no-pvc", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Spec.NodeName).To(BeEmpty())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhasePending))
+	})
+
+	It("leaves persistent VM Failed when RescheduleOnNodeLoss=true but PVC is attached", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "reschedule-with-pvc",
+				Namespace:  "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				NodeName:             "ghost-node",
+				Lifecycle:            impdevv1alpha1.VMLifecyclePersistent,
+				RescheduleOnNodeLoss: true,
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		// Re-fetch to get the UID assigned by envtest.
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "reschedule-with-pvc", Namespace: "default"}, vm)).To(Succeed())
+
+		isController := true
+		pvc := &corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "vm-disk",
+				Namespace: "default",
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: impdevv1alpha1.GroupVersion.String(),
+						Kind:       "ImpVM",
+						Name:       vm.Name,
+						UID:        vm.UID,
+						Controller: &isController,
+					},
+				},
+			},
+			Spec: corev1.PersistentVolumeClaimSpec{
+				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+				Resources: corev1.VolumeResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceStorage: resource.MustParse("1Gi"),
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, pvc)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, pvc) }) //nolint:errcheck
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "reschedule-with-pvc", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "reschedule-with-pvc", Namespace: "default"}, updated)).To(Succeed())
+		// NodeName is NOT cleared — VM stays Failed.
+		Expect(updated.Spec.NodeName).To(Equal("ghost-node"))
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseFailed))
+	})
+
+	It("leaves persistent VM Failed when RescheduleOnNodeLoss=false (default behavior unchanged)", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "persistent-no-reschedule",
+				Namespace:  "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				NodeName:  "ghost-node",
+				Lifecycle: impdevv1alpha1.VMLifecyclePersistent,
+				// RescheduleOnNodeLoss defaults to false
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "persistent-no-reschedule", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "persistent-no-reschedule", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseFailed))
 	})
 })
 
