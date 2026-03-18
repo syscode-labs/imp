@@ -107,6 +107,14 @@ type NetworkGroupSpec struct {
 	ExpectedSize int32 `json:"expectedSize,omitempty"`
 }
 
+// GroupCIDR records the subnet CIDR allocated to a named network group.
+type GroupCIDR struct {
+	// Name is the group name (matches spec.groups[].name).
+	Name string `json:"name"`
+	// CIDR is the subnet allocated for this group (e.g. "10.44.0.0/28").
+	CIDR string `json:"cidr"`
+}
+
 // VTEPEntry maps a VM's IP and MAC to the node IP that hosts it.
 // Used by the VXLAN FDB to route cross-node VM traffic.
 type VTEPEntry struct {
@@ -136,6 +144,13 @@ type ImpNetworkStatus struct {
 	// +listType=map
 	// +listMapKey=vmIP
 	VTEPTable []VTEPEntry `json:"vtepTable,omitempty"`
+
+	// GroupCIDRs contains the allocated subnet CIDR for each network group in spec.groups.
+	// Populated and maintained by the controller; do not edit manually.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	GroupCIDRs []GroupCIDR `json:"groupCIDRs,omitempty"`
 }
 
 // +kubebuilder:object:root=true

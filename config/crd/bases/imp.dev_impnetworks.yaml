@@ -238,6 +238,29 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              groupCIDRs:
+                description: |-
+                  GroupCIDRs contains the allocated subnet CIDR for each network group in spec.groups.
+                  Populated and maintained by the controller; do not edit manually.
+                items:
+                  description: GroupCIDR records the subnet CIDR allocated to a named
+                    network group.
+                  properties:
+                    cidr:
+                      description: CIDR is the subnet allocated for this group (e.g.
+                        "10.44.0.0/28").
+                      type: string
+                    name:
+                      description: Name is the group name (matches spec.groups[].name).
+                      type: string
+                  required:
+                  - cidr
+                  - name
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               vtepTable:
                 description: |-
                   VTEPTable contains VTEP entries for cross-node VXLAN FDB population.
