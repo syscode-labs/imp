@@ -30,11 +30,15 @@ func resolveAllocationSubnet(
 	if impNet.Spec.IPAM.Provider != "cilium" {
 		return impNet.Spec.Subnet, nil
 	}
-	if c == nil {
-		return "", fmt.Errorf("cilium ipam requires kubernetes client")
-	}
 	if impNet.Spec.IPAM.Cilium == nil || impNet.Spec.IPAM.Cilium.PoolRef == "" {
 		return "", fmt.Errorf("cilium ipam requires spec.ipam.cilium.poolRef")
+	}
+	// When Cidr override is set, use it directly (operator manages the pool).
+	if impNet.Spec.IPAM.Cilium.Cidr != "" {
+		return impNet.Spec.IPAM.Cilium.Cidr, nil
+	}
+	if c == nil {
+		return "", fmt.Errorf("cilium ipam requires kubernetes client")
 	}
 	return resolveCiliumPoolCIDR(ctx, c, impNet.Spec.IPAM.Cilium.PoolRef)
 }

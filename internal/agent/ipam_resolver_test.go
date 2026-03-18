@@ -72,6 +72,30 @@ func TestResolveAllocationSubnet_UsesCiliumPoolCIDR(t *testing.T) {
 	}
 }
 
+func TestResolveAllocationSubnet_CiliumWithOverrideCidr(t *testing.T) {
+	net := &impdevv1alpha1.ImpNetwork{
+		Spec: impdevv1alpha1.ImpNetworkSpec{
+			Subnet: "10.100.0.0/24",
+			IPAM: &impdevv1alpha1.IPAMSpec{
+				Provider: "cilium",
+				Cilium: &impdevv1alpha1.CiliumIPAMSpec{
+					PoolRef: "my-pool",
+					Cidr:    "10.200.0.0/24",
+				},
+			},
+		},
+	}
+	// When Cidr override is set, should use it without fetching pool from API.
+	// Pass nil client to prove it doesn't touch the API.
+	subnet, err := resolveAllocationSubnet(context.Background(), nil, net)
+	if err != nil {
+		t.Fatalf("resolveAllocationSubnet: %v", err)
+	}
+	if subnet != "10.200.0.0/24" {
+		t.Fatalf("got %q, want %q", subnet, "10.200.0.0/24")
+	}
+}
+
 func TestResolveAllocationSubnet_CiliumPoolMissingReturnsError(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
