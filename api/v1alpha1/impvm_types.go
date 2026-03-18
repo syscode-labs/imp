@@ -120,6 +120,13 @@ type ImpVMSpec struct {
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="duration(self) == duration('0s') || duration(self) >= duration('60s')",message="expireAfter must be 0 (disabled) or at least 60s"
 	ExpireAfter *metav1.Duration `json:"expireAfter,omitempty"`
+
+	// RescheduleOnNodeLoss opts this VM into automatic rescheduling when its
+	// assigned node becomes unhealthy. Only takes effect when spec.lifecycle is
+	// "persistent". The VM is NOT rescheduled if any PersistentVolumeClaim is
+	// owned by it (PVCs cannot follow the VM to a new node).
+	// +optional
+	RescheduleOnNodeLoss bool `json:"rescheduleOnNodeLoss,omitempty"`
 }
 
 // UserDataSource references a ConfigMap containing cloud-init user-data.
