@@ -507,7 +507,7 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 	tapName := network.TAPName(vKey)
 	macAddr := network.MACAddr(vKey)
 
-	allocSubnet, err := resolveAllocationSubnet(ctx, d.Client, &impNet)
+	allocSubnet, err := resolveAllocationSubnet(ctx, d.Client, &impNet, vm.Spec.NetworkGroup)
 	if err != nil {
 		return nil, fmt.Errorf("resolve allocation subnet: %w", err)
 	}

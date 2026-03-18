@@ -27,7 +27,7 @@ func TestResolveAllocationSubnet_DefaultsToImpSubnet(t *testing.T) {
 		},
 	}
 
-	got, err := resolveAllocationSubnet(context.Background(), c, impNet)
+	got, err := resolveAllocationSubnet(context.Background(), c, impNet, "")
 	if err != nil {
 		t.Fatalf("resolveAllocationSubnet: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestResolveAllocationSubnet_UsesCiliumPoolCIDR(t *testing.T) {
 		},
 	}
 
-	got, err := resolveAllocationSubnet(context.Background(), c, impNet)
+	got, err := resolveAllocationSubnet(context.Background(), c, impNet, "")
 	if err != nil {
 		t.Fatalf("resolveAllocationSubnet: %v", err)
 	}
@@ -87,12 +87,62 @@ func TestResolveAllocationSubnet_CiliumWithOverrideCidr(t *testing.T) {
 	}
 	// When Cidr override is set, should use it without fetching pool from API.
 	// Pass nil client to prove it doesn't touch the API.
-	subnet, err := resolveAllocationSubnet(context.Background(), nil, net)
+	subnet, err := resolveAllocationSubnet(context.Background(), nil, net, "")
 	if err != nil {
 		t.Fatalf("resolveAllocationSubnet: %v", err)
 	}
 	if subnet != "10.200.0.0/24" {
 		t.Fatalf("got %q, want %q", subnet, "10.200.0.0/24")
+	}
+}
+
+func TestResolveAllocationSubnet_UsesGroupCIDRFromStatus(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	impNet := &impdevv1alpha1.ImpNetwork{
+		ObjectMeta: metav1.ObjectMeta{Name: "net1", Namespace: "default"},
+		Spec: impdevv1alpha1.ImpNetworkSpec{
+			Subnet: "10.44.0.0/24",
+			Groups: []impdevv1alpha1.NetworkGroupSpec{
+				{Name: "workers", ExpectedSize: 14},
+			},
+		},
+	}
+	impNet.Status.GroupCIDRs = []impdevv1alpha1.GroupCIDR{
+		{Name: "workers", CIDR: "10.44.0.0/28"},
+	}
+
+	got, err := resolveAllocationSubnet(context.Background(), c, impNet, "workers")
+	if err != nil {
+		t.Fatalf("resolveAllocationSubnet: %v", err)
+	}
+	if got != "10.44.0.0/28" {
+		t.Fatalf("got %q, want %q", got, "10.44.0.0/28")
+	}
+}
+
+func TestResolveAllocationSubnet_GroupNotAllocatedYetReturnsError(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("scheme: %v", err)
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+
+	impNet := &impdevv1alpha1.ImpNetwork{
+		ObjectMeta: metav1.ObjectMeta{Name: "net1", Namespace: "default"},
+		Spec: impdevv1alpha1.ImpNetworkSpec{
+			Subnet: "10.44.0.0/24",
+		},
+		// Status.GroupCIDRs is empty — controller hasn't reconciled yet.
+	}
+
+	_, err := resolveAllocationSubnet(context.Background(), c, impNet, "workers")
+	if err == nil {
+		t.Fatal("expected error for unallocated group CIDR")
 	}
 }
 
@@ -114,7 +164,7 @@ func TestResolveAllocationSubnet_CiliumPoolMissingReturnsError(t *testing.T) {
 		},
 	}
 
-	_, err := resolveAllocationSubnet(context.Background(), c, impNet)
+	_, err := resolveAllocationSubnet(context.Background(), c, impNet, "")
 	if err == nil {
 		t.Fatal("expected error for missing CiliumPodIPPool")
 	}

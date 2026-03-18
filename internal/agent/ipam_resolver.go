@@ -22,8 +22,18 @@ func ciliumPoolGVK(version string) schema.GroupVersionKind {
 }
 
 func resolveAllocationSubnet(
-	ctx context.Context, c ctrlclient.Client, impNet *impdevv1alpha1.ImpNetwork,
+	ctx context.Context, c ctrlclient.Client, impNet *impdevv1alpha1.ImpNetwork, networkGroup string,
 ) (string, error) {
+	// If VM is in a named group, return the group's allocated CIDR from network status.
+	if networkGroup != "" {
+		for _, gc := range impNet.Status.GroupCIDRs {
+			if gc.Name == networkGroup {
+				return gc.CIDR, nil
+			}
+		}
+		return "", fmt.Errorf("network group %q has no allocated CIDR yet (network controller may not have reconciled)", networkGroup)
+	}
+
 	if impNet.Spec.IPAM == nil || impNet.Spec.IPAM.Provider == "" || impNet.Spec.IPAM.Provider == "internal" {
 		return impNet.Spec.Subnet, nil
 	}
