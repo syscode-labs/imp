@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.4.0](https://github.com/syscode-labs/imp/compare/v0.3.2...v0.4.0) (2026-03-18)
+
+
+### Features
+
+* **agent:** short-circuit Cilium IPAM resolution when Cidr override is set ([1405000](https://github.com/syscode-labs/imp/commit/1405000aebeaadb85cb3f42bd486e7fd6fe9c052))
+* **api:** add CiliumIPAMSpec.Cidr override field ([f93f83a](https://github.com/syscode-labs/imp/commit/f93f83af1492549b90b1babfffd2de5e01ef1b0b))
+* **api:** add ImpVMSpec.RescheduleOnNodeLoss opt-in field ([d57cfac](https://github.com/syscode-labs/imp/commit/d57cfacda5807d0027b0714a763a1636dfa49c8a))
+* **controller:** auto-create CiliumPodIPPool as owned child of ImpNetwork ([3b1848a](https://github.com/syscode-labs/imp/commit/3b1848a31e967d579e682fd3b86d11eab6f47e97))
+* **controller:** reschedule persistent VM on node loss when RescheduleOnNodeLoss=true and no PVC ([6226982](https://github.com/syscode-labs/imp/commit/622698246325ab80a9b08508107a16140d0d880b))
+* **crd:** add cidr field to CiliumIPAMSpec in generated CRD manifest ([89feb5a](https://github.com/syscode-labs/imp/commit/89feb5af14770383d689089caf7baf5a21172b82))
+* **rbac:** grant operator CiliumPodIPPool CRUD ([9df428a](https://github.com/syscode-labs/imp/commit/9df428a67d4ec209e2b2a10c794deb5452dd0c6b))
+
+
+### Bug Fixes
+
+* **controller:** delete CiliumPodIPPool on ImpNetwork deletion and strengthen noop test ([ccfb574](https://github.com/syscode-labs/imp/commit/ccfb5747d98c449601284b0880b6858d7f7fc0c6))
+
 ## [0.3.2](https://github.com/syscode-labs/imp/compare/v0.3.1...v0.3.2) (2026-03-17)
 
 
