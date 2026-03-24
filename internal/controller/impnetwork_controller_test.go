@@ -82,7 +82,7 @@ var _ = Describe("ImpNetwork Controller: core", func() {
 
 		updated := &impdevv1alpha1.ImpNetwork{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "core-net-2", Namespace: "default"}, updated)).To(Succeed())
-		c := apimeta.FindStatusCondition(updated.Status.Conditions, ConditionNetworkReady)
+		c := apimeta.FindStatusCondition(updated.Status.Conditions, impdevv1alpha1.ConditionNetworkReady)
 		Expect(c).NotTo(BeNil())
 		Expect(c.Status).To(Equal(metav1.ConditionTrue))
 	})

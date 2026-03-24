@@ -265,7 +265,7 @@ var _ = Describe("ImpVM Spec Validation Fallback", func() {
 		var readyCond *metav1.Condition
 		for i := range updated.Status.Conditions {
 			c := &updated.Status.Conditions[i]
-			if c.Type == ConditionReady {
+			if c.Type == impdevv1alpha1.ConditionReady {
 				readyCond = c
 				break
 			}

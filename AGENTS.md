@@ -301,6 +301,15 @@ export IMG=<registry>/<project>:<version>
 make docker-build docker-push IMG=$IMG
 ```
 
+## Quality Gate
+
+**All work on this codebase must comply with the kubebuilder good practices guide:**
+https://book.kubebuilder.io/reference/good-practices
+
+Before marking any task complete, verify compliance with every applicable practice on that page. This is a hard requirement, not a suggestion.
+
+---
+
 ## References
 
 ### Essential Reading

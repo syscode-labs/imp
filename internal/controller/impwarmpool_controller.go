@@ -67,7 +67,7 @@ func (r *ImpWarmPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Pool stays idle until a base snapshot has been elected.
 	baseSnapshot := snap.Status.BaseSnapshot
 	if baseSnapshot == "" {
-		log.Info("no base snapshot elected yet, pool idle", "pool", pool.Name, "snapshotRef", pool.Spec.SnapshotRef)
+		log.Info("No base snapshot elected yet, pool idle", "pool", pool.Name, "snapshotRef", pool.Spec.SnapshotRef)
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	}
 
@@ -120,7 +120,7 @@ func (r *ImpWarmPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 	if toCreate > 0 {
-		log.Info("created pool members", "pool", pool.Name, "count", toCreate, "baseSnapshot", baseSnapshot)
+		log.Info("Created pool members", "pool", pool.Name, "count", toCreate, "baseSnapshot", baseSnapshot)
 	}
 
 	// Patch status.readyCount.

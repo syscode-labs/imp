@@ -133,11 +133,11 @@ func (r *ImpVMReconciler) handleFailed(ctx context.Context, vm *impdevv1alpha1.I
 	// Check if it's time yet
 	if vm.Status.NextRetryAfter != nil && time.Now().Before(vm.Status.NextRetryAfter.Time) {
 		remaining := time.Until(vm.Status.NextRetryAfter.Time)
-		log.V(1).Info("waiting for restart window", "vm", vm.Name, "remaining", remaining)
+		log.V(1).Info("Waiting for restart window", "vm", vm.Name, "remaining", remaining)
 		return ctrl.Result{RequeueAfter: remaining}, nil
 	}
 
-	log.Info("restarting VM", "vm", vm.Name, "restartCount", vm.Status.RestartCount,
+	log.Info("VM restart initiated", "vm", vm.Name, "restartCount", vm.Status.RestartCount,
 		"mode", policy.Mode, "nextDelay", delay)
 
 	base := vm.DeepCopy()
@@ -180,13 +180,13 @@ func (r *ImpVMReconciler) handleResetRetries(ctx context.Context, vm *impdevv1al
 	case impdevv1alpha1.VMPhaseFailed, impdevv1alpha1.VMPhaseRetryExhausted:
 		// allowed
 	default:
-		log.V(1).Info("ignoring reset-retries annotation on non-terminal VM", "vm", vm.Name, "phase", vm.Status.Phase)
+		log.V(1).Info("Ignoring reset-retries annotation on non-terminal VM", "vm", vm.Name, "phase", vm.Status.Phase)
 		base := vm.DeepCopy()
 		delete(vm.Annotations, AnnotationResetRetries)
 		return ctrl.Result{}, r.Patch(ctx, vm, client.MergeFrom(base))
 	}
 
-	log.Info("resetting retry counter via annotation", "vm", vm.Name)
+	log.Info("Retry counter reset via annotation", "vm", vm.Name)
 
 	// Remove annotation first
 	base := vm.DeepCopy()

@@ -33,7 +33,7 @@ func validateImpVMSpecRefs(vm *impdevv1alpha1.ImpVM) error {
 }
 
 func hasSpecInvalidCondition(vm *impdevv1alpha1.ImpVM, msg string) bool {
-	ready := apimeta.FindStatusCondition(vm.Status.Conditions, ConditionReady)
+	ready := apimeta.FindStatusCondition(vm.Status.Conditions, impdevv1alpha1.ConditionReady)
 	if ready == nil {
 		return false
 	}

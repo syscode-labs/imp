@@ -75,7 +75,7 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Design rule 2: serialization gate — if any child has TerminatedAt == nil, requeue.
 	for i := range children {
 		if children[i].Status.TerminatedAt == nil {
-			log.Info("active child exists, requeueing", "parent", snap.Name)
+			log.Info("Active child exists, requeueing", "parent", snap.Name)
 			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 	}
@@ -106,7 +106,7 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 					retSpan.End()
 					return ctrl.Result{}, err
 				}
-				log.Info("pruned old child", "parent", snap.Name, "child", toDelete[i].Name)
+				log.Info("Pruned old child", "parent", snap.Name, "child", toDelete[i].Name)
 			}
 			// Re-list from API server to get an accurate post-prune view (accounts for
 			// baseSnapshot children that were skipped during deletion).
@@ -135,7 +135,7 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 					if err := r.Status().Patch(ctx, snap, client.MergeFrom(base)); err != nil {
 						return ctrl.Result{}, err
 					}
-					log.Info("set status.baseSnapshot", "parent", snap.Name, "child", snap.Spec.BaseSnapshot)
+					log.Info("Set status.baseSnapshot", "parent", snap.Name, "child", snap.Spec.BaseSnapshot)
 				}
 				break
 			}
@@ -157,7 +157,7 @@ func (r *ImpVMSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Scheduled: parse cron and decide whether to create.
 	sched, err := cronParser.Parse(snap.Spec.Schedule)
 	if err != nil {
-		log.Error(err, "invalid cron schedule", "schedule", snap.Spec.Schedule)
+		log.Error(err, "Invalid cron schedule", "schedule", snap.Spec.Schedule)
 		return ctrl.Result{}, nil // non-retriable config error
 	}
 	now := time.Now()
@@ -224,7 +224,7 @@ func (r *ImpVMSnapshotReconciler) createChild(ctx context.Context, parent *impv1
 		return err
 	}
 
-	log.Info("created child execution", "parent", parent.Name, "child", childName)
+	log.Info("Created child execution", "parent", parent.Name, "child", childName)
 
 	// Update lastExecutionRef on parent.
 	base := parent.DeepCopy()

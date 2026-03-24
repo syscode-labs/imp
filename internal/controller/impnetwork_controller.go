@@ -67,8 +67,9 @@ func (r *ImpNetworkReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	if !controllerutil.ContainsFinalizer(net, finalizerImpNetwork) {
+		patch := client.MergeFrom(net.DeepCopy())
 		controllerutil.AddFinalizer(net, finalizerImpNetwork)
-		return ctrl.Result{}, r.Update(ctx, net)
+		return ctrl.Result{}, r.Patch(ctx, net, patch)
 	}
 
 	return r.sync(ctx, net)
@@ -96,8 +97,9 @@ func (r *ImpNetworkReconciler) handleDeletion(ctx context.Context, net *impdevv1
 		}
 	}
 
+	patch := client.MergeFrom(net.DeepCopy())
 	controllerutil.RemoveFinalizer(net, finalizerImpNetwork)
-	return ctrl.Result{}, r.Update(ctx, net)
+	return ctrl.Result{}, r.Patch(ctx, net, patch)
 }
 
 // reconcileCiliumPool creates or updates the CiliumPodIPPool owned by this ImpNetwork.
@@ -170,7 +172,7 @@ func (r *ImpNetworkReconciler) sync(ctx context.Context, net *impdevv1alpha1.Imp
 			r.Recorder.Eventf(net, corev1.EventTypeWarning, EventReasonCiliumConfigMissing,
 				"Cilium ipMasqAgent not configured for subnet %s — see docs/networking/cilium.md",
 				net.Spec.Subnet)
-			log.Info("CiliumConfigMissing", "subnet", net.Spec.Subnet)
+			log.Info("Cilium ipMasqAgent config missing", "subnet", net.Spec.Subnet)
 		}
 	}
 
@@ -249,7 +251,7 @@ func (r *ImpNetworkReconciler) reconcileVTEPTable(ctx context.Context, net *impd
 		return nil // no change
 	}
 
-	logf.FromContext(ctx).Info("GCing stale VTEP entries",
+	logf.FromContext(ctx).Info("Removed stale VTEP entries",
 		"network", net.Name, "before", len(net.Status.VTEPTable), "after", len(filtered))
 
 	net.Status.VTEPTable = filtered
@@ -262,7 +264,7 @@ func (r *ImpNetworkReconciler) hasCiliumMasqConfig(ctx context.Context, subnet s
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: "kube-system", Name: "ip-masq-agent"}, cm); err != nil {
 		if !apierrors.IsNotFound(err) {
-			logf.FromContext(ctx).V(1).Info("ip-masq-agent ConfigMap lookup failed", "err", err)
+			logf.FromContext(ctx).V(1).Info("IP masq agent ConfigMap lookup failed", "err", err)
 		}
 		return false
 	}
@@ -272,7 +274,7 @@ func (r *ImpNetworkReconciler) hasCiliumMasqConfig(ctx context.Context, subnet s
 // setNetworkReady sets the Ready condition to True on an ImpNetwork.
 func setNetworkReady(net *impdevv1alpha1.ImpNetwork) {
 	apimeta.SetStatusCondition(&net.Status.Conditions, metav1.Condition{
-		Type:               ConditionNetworkReady,
+		Type:               impdevv1alpha1.ConditionNetworkReady,
 		Status:             metav1.ConditionTrue,
 		Reason:             "Reconciled",
 		Message:            "ImpNetwork reconciled successfully",
@@ -296,7 +298,7 @@ func (r *ImpNetworkReconciler) ciliumPresent() bool {
 func (r *ImpNetworkReconciler) reconcileGroupCIDRs(ctx context.Context, net *impdevv1alpha1.ImpNetwork) error {
 	desired, err := carveGroupCIDRs(net.Spec.Subnet, net.Spec.Groups)
 	if err != nil {
-		logf.FromContext(ctx).Error(err, "group CIDR carving failed", "network", net.Name)
+		logf.FromContext(ctx).Error(err, "Group CIDR carving failed", "network", net.Name)
 		r.Recorder.Eventf(net, corev1.EventTypeWarning, EventReasonGroupCIDRError,
 			"Group CIDR carving failed: %v", err)
 		return nil // don't block reconcile for this — operator continues without group CIDRs
@@ -379,7 +381,7 @@ func (r *ImpNetworkReconciler) reconcileCiliumEnrollment(ctx context.Context, ne
 		cew := &cewList.Items[i]
 		vmKey := cew.GetLabels()["imp.dev/vm-key"] // namespace/name
 		if _, ok := runningVMs[vmKey]; !ok {
-			log.Info("deleting stale CiliumExternalWorkload", "cew", cew.GetName(), "vmKey", vmKey)
+			log.Info("Deleted stale CiliumExternalWorkload", "cew", cew.GetName(), "vmKey", vmKey)
 			if err := r.Delete(ctx, cew); err != nil && !apierrors.IsNotFound(err) {
 				return err
 			}
@@ -411,11 +413,11 @@ func (r *ImpNetworkReconciler) reconcileCiliumEnrollment(ctx context.Context, ne
 		})
 		if vm.Status.IP != "" {
 			if err := unstructured.SetNestedField(cew.Object, vm.Status.IP+"/32", "spec", "ipv4AllocCIDR"); err != nil {
-				log.Error(err, "failed to set ipv4AllocCIDR", "vm", vm.Name)
+				log.Error(err, "Failed to set IPv4 alloc CIDR", "vm", vm.Name)
 			}
 		}
 
-		log.Info("creating CiliumExternalWorkload", "cew", cewName, "vm", vm.Name)
+		log.Info("Created CiliumExternalWorkload", "cew", cewName, "vm", vm.Name)
 		if err := r.Create(ctx, cew); err != nil && !apierrors.IsAlreadyExists(err) {
 			return err
 		}

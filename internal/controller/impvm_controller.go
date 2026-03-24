@@ -85,8 +85,9 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 
 	// 2. Ensure finalizer
 	if !controllerutil.ContainsFinalizer(vm, finalizerImp) {
+		patch := client.MergeFrom(vm.DeepCopy())
 		controllerutil.AddFinalizer(vm, finalizerImp)
-		return ctrl.Result{}, r.Update(ctx, vm)
+		return ctrl.Result{}, r.Patch(ctx, vm, patch)
 	}
 
 	// 3. Handle manual retry reset annotation
@@ -102,8 +103,8 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 		if !alreadyMarked {
 			base := vm.DeepCopy()
 			vm.Status.Phase = impdevv1alpha1.VMPhaseFailed
-			setCondition(vm, ConditionScheduled, metav1.ConditionFalse, EventReasonSpecInvalid, msg)
-			setCondition(vm, ConditionReady, metav1.ConditionFalse, EventReasonSpecInvalid, msg)
+			setCondition(vm, impdevv1alpha1.ConditionScheduled, metav1.ConditionFalse, EventReasonSpecInvalid, msg)
+			setCondition(vm, impdevv1alpha1.ConditionReady, metav1.ConditionFalse, EventReasonSpecInvalid, msg)
 			if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -119,7 +120,7 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 			return ctrl.Result{}, err
 		}
 		if nodeName == "" {
-			log.Info("no node available", "vm", vm.Name)
+			log.Info("No node available", "vm", vm.Name)
 			vmCopy := vm.DeepCopy()
 			vm.Status.Phase = impdevv1alpha1.VMPhasePending
 			setUnscheduled(vm)
@@ -240,7 +241,7 @@ func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.Imp
 		if err == nil {
 			reason = "node is not Ready"
 		}
-		log.Info("assigned node unhealthy", "node", vm.Spec.NodeName, "reason", reason)
+		log.Info("Assigned node unhealthy", "node", vm.Spec.NodeName, "reason", reason)
 
 		if vm.Spec.Lifecycle == impdevv1alpha1.VMLifecycleEphemeral {
 			// Clear assignment — spec patch first.
@@ -345,8 +346,9 @@ func (r *ImpVMReconciler) handleDeletion(ctx context.Context, vm *impdevv1alpha1
 
 	// Agent already cleaned up (cleared spec.nodeName + set Succeeded)
 	if vm.Spec.NodeName == "" {
+		patch := client.MergeFrom(vm.DeepCopy())
 		controllerutil.RemoveFinalizer(vm, finalizerImp)
-		return ctrl.Result{}, r.Update(ctx, vm)
+		return ctrl.Result{}, r.Patch(ctx, vm, patch)
 	}
 
 	// Check for termination timeout
@@ -354,8 +356,9 @@ func (r *ImpVMReconciler) handleDeletion(ctx context.Context, vm *impdevv1alpha1
 	if time.Now().After(deadline) {
 		r.Recorder.Event(vm, corev1.EventTypeWarning, EventReasonTerminationTimeout,
 			"Finalizer force-removed after 2min termination timeout")
+		patch := client.MergeFrom(vm.DeepCopy())
 		controllerutil.RemoveFinalizer(vm, finalizerImp)
-		return ctrl.Result{}, r.Update(ctx, vm)
+		return ctrl.Result{}, r.Patch(ctx, vm, patch)
 	}
 
 	// Signal agent by setting phase=Terminating

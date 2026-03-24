@@ -68,7 +68,7 @@ var _ = Describe("setScheduled / setUnscheduled", func() {
 	It("sets Scheduled condition to True with correct reason", func() {
 		vm := &impdevv1alpha1.ImpVM{}
 		setScheduled(vm, "node-1")
-		c := apimeta.FindStatusCondition(vm.Status.Conditions, ConditionScheduled)
+		c := apimeta.FindStatusCondition(vm.Status.Conditions, impdevv1alpha1.ConditionScheduled)
 		Expect(c).NotTo(BeNil())
 		Expect(c.Status).To(Equal(metav1.ConditionTrue))
 		Expect(c.Reason).To(Equal("NodeAssigned"))
@@ -77,7 +77,7 @@ var _ = Describe("setScheduled / setUnscheduled", func() {
 	It("sets Scheduled condition to False via setUnscheduled", func() {
 		vm := &impdevv1alpha1.ImpVM{}
 		setUnscheduled(vm)
-		c := apimeta.FindStatusCondition(vm.Status.Conditions, ConditionScheduled)
+		c := apimeta.FindStatusCondition(vm.Status.Conditions, impdevv1alpha1.ConditionScheduled)
 		Expect(c).NotTo(BeNil())
 		Expect(c.Status).To(Equal(metav1.ConditionFalse))
 	})
@@ -87,7 +87,7 @@ var _ = Describe("setNodeHealthy / setNodeUnhealthy", func() {
 	It("sets NodeHealthy=True", func() {
 		vm := &impdevv1alpha1.ImpVM{}
 		setNodeHealthy(vm)
-		c := apimeta.FindStatusCondition(vm.Status.Conditions, ConditionNodeHealthy)
+		c := apimeta.FindStatusCondition(vm.Status.Conditions, impdevv1alpha1.ConditionNodeHealthy)
 		Expect(c).NotTo(BeNil())
 		Expect(c.Status).To(Equal(metav1.ConditionTrue))
 	})
@@ -95,7 +95,7 @@ var _ = Describe("setNodeHealthy / setNodeUnhealthy", func() {
 	It("sets NodeHealthy=False with reason", func() {
 		vm := &impdevv1alpha1.ImpVM{}
 		setNodeUnhealthy(vm, "node not found")
-		c := apimeta.FindStatusCondition(vm.Status.Conditions, ConditionNodeHealthy)
+		c := apimeta.FindStatusCondition(vm.Status.Conditions, impdevv1alpha1.ConditionNodeHealthy)
 		Expect(c).NotTo(BeNil())
 		Expect(c.Status).To(Equal(metav1.ConditionFalse))
 		Expect(c.Message).To(Equal("node not found"))
@@ -108,7 +108,7 @@ var _ = Describe("setReadyFromPhase", func() {
 			vm := &impdevv1alpha1.ImpVM{}
 			vm.Status.Phase = phase
 			setReadyFromPhase(vm)
-			c := apimeta.FindStatusCondition(vm.Status.Conditions, ConditionReady)
+			c := apimeta.FindStatusCondition(vm.Status.Conditions, impdevv1alpha1.ConditionReady)
 			Expect(c).NotTo(BeNil())
 			Expect(c.Status).To(Equal(expectedStatus))
 		},
@@ -122,7 +122,7 @@ var _ = Describe("setReadyFromPhase", func() {
 		vm := &impdevv1alpha1.ImpVM{}
 		vm.Status.Phase = impdevv1alpha1.VMPhaseSucceeded
 		setReadyFromPhase(vm)
-		c := apimeta.FindStatusCondition(vm.Status.Conditions, ConditionReady)
+		c := apimeta.FindStatusCondition(vm.Status.Conditions, impdevv1alpha1.ConditionReady)
 		Expect(c).NotTo(BeNil())
 		Expect(c.Reason).To(Equal("Completed"))
 		Expect(c.Message).To(Equal("VM completed successfully"))
@@ -291,7 +291,7 @@ var _ = Describe("applyHTTPCheck", func() {
 		changed := r.applyHTTPCheck(ctx, vm, spec)
 		Expect(changed).To(BeTrue())
 		Expect(vm.Annotations["imp/httpcheck-failures"]).To(Equal("0"))
-		c := apimeta.FindStatusCondition(vm.Status.Conditions, ConditionReady)
+		c := apimeta.FindStatusCondition(vm.Status.Conditions, impdevv1alpha1.ConditionReady)
 		Expect(c).NotTo(BeNil())
 		Expect(c.Status).To(Equal(metav1.ConditionTrue))
 	})
@@ -311,7 +311,7 @@ var _ = Describe("applyHTTPCheck", func() {
 		r.applyHTTPCheck(ctx, vm, spec)
 		Expect(vm.Annotations["imp/httpcheck-failures"]).To(Equal("1"))
 		// Not yet at threshold — Ready should not be False.
-		c := apimeta.FindStatusCondition(vm.Status.Conditions, ConditionReady)
+		c := apimeta.FindStatusCondition(vm.Status.Conditions, impdevv1alpha1.ConditionReady)
 		Expect(c).NotTo(BeNil())
 		Expect(c.Status).NotTo(Equal(metav1.ConditionFalse))
 	})
@@ -330,7 +330,7 @@ var _ = Describe("applyHTTPCheck", func() {
 
 		r.applyHTTPCheck(ctx, vm, spec)
 		Expect(vm.Annotations["imp/httpcheck-failures"]).To(Equal("1"))
-		c := apimeta.FindStatusCondition(vm.Status.Conditions, ConditionReady)
+		c := apimeta.FindStatusCondition(vm.Status.Conditions, impdevv1alpha1.ConditionReady)
 		Expect(c).NotTo(BeNil())
 		Expect(c.Status).To(Equal(metav1.ConditionFalse))
 		Expect(c.Reason).To(Equal("HealthCheckFailed"))
@@ -887,7 +887,7 @@ var _ = Describe("ImpVM syncStatus: node healthy", func() {
 
 		updated := &impdevv1alpha1.ImpVM{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "sync-healthy-vm", Namespace: "default"}, updated)).To(Succeed())
-		c := apimeta.FindStatusCondition(updated.Status.Conditions, ConditionNodeHealthy)
+		c := apimeta.FindStatusCondition(updated.Status.Conditions, impdevv1alpha1.ConditionNodeHealthy)
 		Expect(c).NotTo(BeNil())
 		Expect(c.Status).To(Equal(metav1.ConditionTrue))
 	})

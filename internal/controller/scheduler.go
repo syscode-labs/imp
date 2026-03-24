@@ -38,7 +38,7 @@ func Schedule(log logr.Logger, vcpu int32, memMiB int64, nodes []NodeInfo) (stri
 		freeVCPU := n.VCPUCapacity - n.UsedVCPU
 		freeMemMiB := n.MemoryMiB - n.UsedMemoryMiB
 		fits := freeVCPU >= vcpu && freeMemMiB >= memMiB
-		log.V(1).Info("scheduling candidate",
+		log.V(1).Info("Scheduling candidate",
 			"node", n.NodeName,
 			"freeVCPU", freeVCPU,
 			"freeMemMiB", freeMemMiB,

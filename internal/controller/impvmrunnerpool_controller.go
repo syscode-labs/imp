@@ -101,7 +101,7 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			if err := r.Delete(ctx, vm); err != nil && !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, err
 			}
-			log.Info("deleted terminal runner VM", "vm", vm.Name, "phase", vm.Status.Phase)
+			log.Info("Deleted terminal runner VM", "vm", vm.Name, "phase", vm.Status.Phase)
 		}
 	}
 
@@ -129,7 +129,7 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	queueDepth, err := r.queueDepth(ctx, pool, scaling.pollingEnabled)
 	if err != nil {
-		log.Info("could not fetch runner queue depth; falling back to current desired", "pool", pool.Name, "err", err)
+		log.Info("Could not fetch runner queue depth; falling back to current desired", "pool", pool.Name, "err", err)
 	} else if int32(queueDepth) > desiredCount { //nolint:gosec
 		desiredCount = int32(queueDepth) //nolint:gosec
 	}
@@ -158,7 +158,7 @@ func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		}
 	}
 	if toCreate > 0 {
-		log.Info("created runner VMs", "pool", pool.Name, "count", toCreate)
+		log.Info("Created runner VMs", "pool", pool.Name, "count", toCreate)
 	}
 
 	// Patch status.

@@ -56,7 +56,7 @@ func (r *ImpVMReconciler) applyHTTPCheck(ctx context.Context, vm *impdevv1alpha1
 				"HTTP probe passing again")
 		}
 		vm.Annotations["imp/httpcheck-failures"] = "0"
-		setCondition(vm, ConditionReady, metav1.ConditionTrue, "Running", "VM is running and HTTP probe passing")
+		setCondition(vm, impdevv1alpha1.ConditionReady, metav1.ConditionTrue, "Running", "VM is running and HTTP probe passing")
 		return prev != "0" // annotation changed if it wasn't already "0"
 	}
 
@@ -66,7 +66,7 @@ func (r *ImpVMReconciler) applyHTTPCheck(ctx context.Context, vm *impdevv1alpha1
 	vm.Annotations["imp/httpcheck-failures"] = fmt.Sprintf("%d", failures)
 
 	if failures >= threshold {
-		setCondition(vm, ConditionReady, metav1.ConditionFalse, "HealthCheckFailed", msg)
+		setCondition(vm, impdevv1alpha1.ConditionReady, metav1.ConditionFalse, "HealthCheckFailed", msg)
 		r.Recorder.Event(vm, corev1.EventTypeWarning, EventReasonHealthCheckFailed,
 			fmt.Sprintf("HTTP probe failed %d consecutive times: %s", failures, msg))
 	} else {
