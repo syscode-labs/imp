@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.5.0](https://github.com/syscode-labs/imp/compare/v0.4.0...v0.5.0) (2026-03-24)
+
+
+### Features
+
+* **agent:** use group CIDR from network status when VM has spec.networkGroup set ([14a9201](https://github.com/syscode-labs/imp/commit/14a92010c724919c70df5a095f92a1476103e464))
+* **api:** add GroupCIDR type and ImpNetworkStatus.GroupCIDRs field ([d2958f6](https://github.com/syscode-labs/imp/commit/d2958f6ac0ab6039110eb8d2cab12536f5dbe8f7))
+* **controller:** add carveGroupCIDRs pure function for network group CIDR allocation ([a4fc2a0](https://github.com/syscode-labs/imp/commit/a4fc2a0f82c600ec5c3a2a3ff7b64059c9339a14))
+* **controller:** reconcile group CIDRs into ImpNetwork status ([8a071c7](https://github.com/syscode-labs/imp/commit/8a071c766c8bb8d422a8210f181138e4e47d9ce7))
+
 ## [0.4.0](https://github.com/syscode-labs/imp/compare/v0.3.2...v0.4.0) (2026-03-18)
 
 
