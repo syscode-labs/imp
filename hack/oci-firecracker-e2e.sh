@@ -187,10 +187,78 @@ terminate_instance() {
     --preserve-boot-volume false >/dev/null
 }
 
+resolve_base_image_ocid() {
+  local base_os="${OCI_BASE_OS:-Canonical Ubuntu}"
+  local base_os_version="${OCI_BASE_OS_VERSION:-24.04}"
+  oci compute image list \
+    --compartment-id "$OCI_COMPARTMENT_OCID" \
+    --all \
+    --operating-system "$base_os" \
+    --operating-system-version "$base_os_version" \
+    --output json \
+    | jq -r '
+      .data
+      | map(select(."lifecycle-state" == "AVAILABLE" and (."display-name" | ascii_downcase | contains("aarch64") | not)))
+      | sort_by(."size-in-mbs")
+      | .[0].id // empty
+    '
+}
+
+resolve_overlay_key() {
+  local required_go
+  required_go="$(awk '/^go /{print $2; exit}' "$REPO_ROOT/go.mod")"
+  # VM.Standard.E2.1.Micro is x86_64/amd64; update when adding arm support
+  echo "imp-e2e/imp-fc-overlay-${FIRECRACKER_VERSION}-go${required_go}-amd64.tar.gz"
+}
+
+overlay_exists() {
+  local ns="$1" key="$2"
+  oci os object head \
+    --namespace "$ns" \
+    --bucket-name "$OCI_OVERLAY_BUCKET" \
+    --name "$key" >/dev/null 2>&1
+}
+
+overlay_preauth_url() {
+  local ns="$1" key="$2" region="$3"
+  local expires full_path
+  expires="$(python3 -c 'import datetime; print((datetime.datetime.utcnow() + datetime.timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ"))')"
+  full_path="$(oci os preauth-request create \
+    --namespace "$ns" \
+    --bucket-name "$OCI_OVERLAY_BUCKET" \
+    --name "$key" \
+    --access-type ObjectRead \
+    --time-expires "$expires" \
+    --query 'data."full-path"' \
+    --raw-output)"
+  echo "https://objectstorage.${region}.oraclecloud.com${full_path}"
+}
+
 ensure_image_ocid() {
   if [[ -n "${OCI_IMAGE_OCID:-}" ]]; then
     return 0
   fi
+
+  if [[ -n "${OCI_OVERLAY_BUCKET:-}" ]]; then
+    local overlay_ns overlay_key
+    overlay_ns="${OCI_OVERLAY_NS:-$(oci os ns get --query 'data' --raw-output)}"
+    overlay_key="$(resolve_overlay_key)"
+    if overlay_exists "$overlay_ns" "$overlay_key"; then
+      log "Found overlay: $overlay_key — resolving base Ubuntu image"
+      resolve_compartment
+      OCI_OVERLAY_NS="$overlay_ns"
+      OCI_ACTIVE_OVERLAY_KEY="$overlay_key"
+      OCI_IMAGE_OCID="$(resolve_base_image_ocid)"
+      if [[ -z "${OCI_IMAGE_OCID:-}" ]]; then
+        echo "could not resolve base Ubuntu image OCID" >&2
+        exit 2
+      fi
+      log "Using base image OCID: $OCI_IMAGE_OCID"
+      return 0
+    fi
+    log "No overlay found for key: $overlay_key — will build golden image"
+  fi
+
   if [[ "${OCI_AUTO_BUILD_GOLDEN_IMAGE:-true}" != "true" ]]; then
     echo "OCI_IMAGE_OCID is missing and OCI_AUTO_BUILD_GOLDEN_IMAGE=false" >&2
     exit 2
@@ -308,16 +376,40 @@ run_remote_smoke() {
   log "Uploading source bundle"
   scp "${ssh_opts[@]}" "$bundle" "${OCI_SSH_USER}@${host}:/tmp/imp-src.tar.gz" >/dev/null
 
+  local overlay_url=""
+  if [[ -n "${OCI_ACTIVE_OVERLAY_KEY:-}" && -n "${OCI_OVERLAY_NS:-}" ]]; then
+    local region
+    region="$(awk -v p="$OCI_PROFILE" '
+      BEGIN{in_p=0}
+      $0=="["p"]"{in_p=1;next}
+      /^\[/{in_p=0}
+      in_p && /^[[:space:]]*region[[:space:]]*=/{split($0,a,"="); gsub(/[[:space:]]/,"",a[2]); print a[2]; exit}
+    ' "${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}")"
+    log "Generating pre-auth URL for overlay (2h TTL)"
+    overlay_url="$(overlay_preauth_url "$OCI_OVERLAY_NS" "$OCI_ACTIVE_OVERLAY_KEY" "$region")"
+  fi
+
   log "Running remote Firecracker smoke"
   # shellcheck disable=SC2029
   ssh "${ssh_opts[@]}" "${OCI_SSH_USER}@${host}" \
-    "FIRECRACKER_VERSION='${FIRECRACKER_VERSION}' bash -s" <<'REMOTE_EOF'
+    "FIRECRACKER_VERSION='${FIRECRACKER_VERSION}' OVERLAY_URL='${overlay_url}' bash -s" <<'REMOTE_EOF'
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
 sudo apt-get update -y
 sudo apt-get install -y curl ca-certificates jq git build-essential qemu-utils iptables tar
+
+# Apply pre-built overlay from Object Storage if available.
+if [[ -n "${OVERLAY_URL:-}" ]]; then
+  echo "Applying pre-built overlay..."
+  curl -fL "$OVERLAY_URL" | sudo tar xz -C /
+  sudo systemctl daemon-reload
+  if [[ -f /etc/systemd/system/k3s.service ]]; then
+    sudo systemctl enable k3s --now || true
+  fi
+  echo "Overlay applied."
+fi
 
 if ! command -v k3s >/dev/null 2>&1; then
   curl -sfL https://get.k3s.io | sh -s - --write-kubeconfig-mode 644
@@ -512,6 +604,11 @@ main() {
   FIRECRACKER_VERSION="${FIRECRACKER_VERSION:-v1.9.0}"
   OCI_COMPARTMENT_NAME="${OCI_COMPARTMENT_NAME:-${IMP_OCI_COMPARTMENT_NAME:-homelab}}"
   OCI_DOMAIN_NAME="${OCI_DOMAIN_NAME:-${IMP_OCI_DOMAIN_NAME:-homelab}}"
+  OCI_OVERLAY_BUCKET="${OCI_OVERLAY_BUCKET:-}"
+  OCI_OVERLAY_NS="${OCI_OVERLAY_NS:-}"
+  OCI_ACTIVE_OVERLAY_KEY=""
+  OCI_BASE_OS="${OCI_BASE_OS:-Canonical Ubuntu}"
+  OCI_BASE_OS_VERSION="${OCI_BASE_OS_VERSION:-24.04}"
 
   ensure_image_ocid
   resolve_compartment

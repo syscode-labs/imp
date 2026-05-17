@@ -629,6 +629,64 @@ resolve_smallest_base_image() {
   '
 }
 
+resolve_os_namespace() {
+  oci os ns get --query 'data' --raw-output
+}
+
+build_and_upload_overlay() {
+  local host="$1" required_go="$2"
+  local ns overlay_key overlay_tmp overlay_arch overlay_size_mb
+
+  overlay_arch="$(ssh -i "$OCI_SSH_PRIVATE_KEY_FILE" \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    "${OCI_SSH_USER}@${host}" 'uname -m' 2>/dev/null || echo x86_64)"
+  case "$overlay_arch" in
+    x86_64)  overlay_arch="amd64" ;;
+    aarch64) overlay_arch="arm64" ;;
+  esac
+
+  ns="$(resolve_os_namespace)"
+  overlay_key="imp-e2e/imp-fc-overlay-${FIRECRACKER_VERSION}-go${required_go}-${overlay_arch}.tar.gz"
+  overlay_tmp="$(mktemp /tmp/imp-overlay-XXXXXX.tar.gz)"
+
+  log "Creating overlay tarball on builder (arch=${overlay_arch})"
+  ssh -i "$OCI_SSH_PRIVATE_KEY_FILE" \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    "${OCI_SSH_USER}@${host}" \
+    'sudo tar czf /tmp/imp-overlay.tar.gz \
+      /usr/local/go \
+      /usr/local/bin/firecracker \
+      /usr/local/bin/k3s \
+      /usr/local/bin/kubectl \
+      /usr/local/bin/crictl \
+      /etc/systemd/system/k3s.service \
+      /var/lib/imp/vmlinux \
+      2>/dev/null; true'
+
+  log "Downloading overlay from builder"
+  scp -i "$OCI_SSH_PRIVATE_KEY_FILE" \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    "${OCI_SSH_USER}@${host}:/tmp/imp-overlay.tar.gz" "$overlay_tmp"
+
+  overlay_size_mb="$(du -m "$overlay_tmp" | cut -f1)"
+  log "Overlay size: ${overlay_size_mb} MB"
+
+  log "Uploading overlay to $OCI_OVERLAY_BUCKET/$overlay_key"
+  oci os object put \
+    --namespace "$ns" \
+    --bucket-name "$OCI_OVERLAY_BUCKET" \
+    --name "$overlay_key" \
+    --file "$overlay_tmp" \
+    --force
+  rm -f "$overlay_tmp"
+
+  log "Overlay ready: $overlay_key"
+  if [[ -n "${OCI_OUTPUT_ENV_FILE:-}" ]]; then
+    printf 'OCI_OVERLAY_BUCKET=%s\nOCI_OVERLAY_NS=%s\nOCI_OVERLAY_KEY=%s\n' \
+      "$OCI_OVERLAY_BUCKET" "$ns" "$overlay_key" >>"$OCI_OUTPUT_ENV_FILE"
+  fi
+}
+
 main() {
   local sanitize_only=false
   if [[ "${1:-}" == "--sanitize-only" ]]; then
@@ -668,6 +726,12 @@ main() {
   OCI_GOLDEN_ZERO_FILL="${OCI_GOLDEN_ZERO_FILL:-false}"
   OCI_COMPARTMENT_NAME="${OCI_COMPARTMENT_NAME:-${IMP_OCI_COMPARTMENT_NAME:-homelab}}"
   OCI_DOMAIN_NAME="${OCI_DOMAIN_NAME:-${IMP_OCI_DOMAIN_NAME:-homelab}}"
+  OCI_OVERLAY_BUCKET="${OCI_OVERLAY_BUCKET:-}"
+  OCI_BUILD_OVERLAY="${OCI_BUILD_OVERLAY:-}"
+  OCI_SKIP_CUSTOM_IMAGE="${OCI_SKIP_CUSTOM_IMAGE:-false}"
+  if [[ -n "$OCI_OVERLAY_BUCKET" && -z "$OCI_BUILD_OVERLAY" ]]; then
+    OCI_BUILD_OVERLAY=true
+  fi
 
   if [[ "$sanitize_only" != "true" ]]; then
     if [[ ! -f "$OCI_SSH_PUBLIC_KEY_FILE" ]]; then
@@ -873,6 +937,26 @@ fi
 
 echo "builder provisioning complete"
 REMOTE_EOF
+
+  if [[ "${OCI_BUILD_OVERLAY:-false}" == "true" ]]; then
+    if [[ -z "${OCI_OVERLAY_BUCKET:-}" ]]; then
+      echo "OCI_OVERLAY_BUCKET is required when OCI_BUILD_OVERLAY=true" >&2
+      exit 2
+    fi
+    build_and_upload_overlay "$public_ip" "$required_go"
+  fi
+
+  if [[ "${OCI_SKIP_CUSTOM_IMAGE:-false}" == "true" ]]; then
+    test_rc=0
+    if [[ -n "${OCI_OUTPUT_ENV_FILE:-}" ]]; then
+      cat >>"$OCI_OUTPUT_ENV_FILE" <<EOF
+OCI_COMPARTMENT_OCID=$OCI_COMPARTMENT_OCID
+OCI_AVAILABILITY_DOMAIN=$OCI_AVAILABILITY_DOMAIN
+OCI_SUBNET_OCID=$OCI_SUBNET_OCID
+EOF
+    fi
+    return 0
+  fi
 
   log "Creating OCI custom image: $image_name"
   image_id="$(oci compute image create \
