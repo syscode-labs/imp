@@ -48,7 +48,7 @@ jobs:
           cilium status --wait
 
       - name: Install Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
       - name: Build local E2E images
         run: |

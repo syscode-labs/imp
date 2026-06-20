@@ -165,7 +165,7 @@ jobs:
           cluster_name: imp-e2e
 
       - name: Install Helm CLI
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
       - name: Build local E2E images
         run: |
