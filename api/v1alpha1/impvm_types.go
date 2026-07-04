@@ -127,6 +127,13 @@ type ImpVMSpec struct {
 	// owned by it (PVCs cannot follow the VM to a new node).
 	// +optional
 	RescheduleOnNodeLoss bool `json:"rescheduleOnNodeLoss,omitempty"`
+
+	// DesiredState is the requested run state. When set to "Suspended" the agent
+	// snapshots the VM to node-local storage and frees its memory; setting it back
+	// to "Running" resumes it from that snapshot on the same node.
+	// +optional
+	// +kubebuilder:default=Running
+	DesiredState VMDesiredState `json:"desiredState,omitempty"`
 }
 
 // UserDataSource references a ConfigMap containing cloud-init user-data.
@@ -169,6 +176,16 @@ type ImpVMStatus struct {
 	// Used to detect and time out stuck start attempts.
 	// +optional
 	StartedAt *metav1.Time `json:"startedAt,omitempty"`
+
+	// SuspendSnapshotPath is the node-local directory holding the VM's suspend
+	// snapshot (vm.state + vm.mem). Set when the VM is Suspended; the resume path
+	// restores from here. Empty when the VM is not suspended.
+	// +optional
+	SuspendSnapshotPath string `json:"suspendSnapshotPath,omitempty"`
+
+	// SuspendedAt is the time the VM last transitioned to phase Suspended.
+	// +optional
+	SuspendedAt *metav1.Time `json:"suspendedAt,omitempty"`
 
 	// RestartCount is the cumulative number of times this VM has been restarted.
 	// +optional

@@ -1094,6 +1094,10 @@ func (in *ImpVMStatus) DeepCopyInto(out *ImpVMStatus) {
 		in, out := &in.StartedAt, &out.StartedAt
 		*out = (*in).DeepCopy()
 	}
+	if in.SuspendedAt != nil {
+		in, out := &in.SuspendedAt, &out.SuspendedAt
+		*out = (*in).DeepCopy()
+	}
 	if in.NextRetryAfter != nil {
 		in, out := &in.NextRetryAfter, &out.NextRetryAfter
 		*out = (*in).DeepCopy()
