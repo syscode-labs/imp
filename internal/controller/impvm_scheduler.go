@@ -35,8 +35,11 @@ import (
 
 const labelImpEnabled = "imp/enabled"
 
-// sumUsedResources returns (usedVCPU, usedMemMiB) per node for active VMs.
-// VMs in Failed, Succeeded, or Terminating phase are excluded.
+// sumUsedResources returns (usedVCPU, usedMemMiB) per node for VMs that are
+// resident on the node. VMs in Failed, Succeeded, or Terminating phase are
+// excluded (vacating or gone), and so are Suspended VMs: their memory is freed
+// to node-local disk, so they no longer consume schedulable capacity. This lets
+// the scheduler overcommit — packing new VMs into the RAM freed by suspension.
 // VMs whose class cannot be resolved are skipped (best-effort).
 func sumUsedResources(ctx context.Context, c client.Client, vms []impdevv1alpha1.ImpVM) map[string][2]int64 {
 	result := make(map[string][2]int64)
@@ -44,7 +47,8 @@ func sumUsedResources(ctx context.Context, c client.Client, vms []impdevv1alpha1
 		switch vm.Status.Phase {
 		case impdevv1alpha1.VMPhaseFailed,
 			impdevv1alpha1.VMPhaseSucceeded,
-			impdevv1alpha1.VMPhaseTerminating:
+			impdevv1alpha1.VMPhaseTerminating,
+			impdevv1alpha1.VMPhaseSuspended:
 			continue
 		}
 		if vm.Spec.NodeName == "" {
@@ -319,14 +323,17 @@ func filterSchedulable(nodes []corev1.Node) []corev1.Node {
 }
 
 // countRunningVMs counts VMs per node that are actively occupying capacity.
-// Excludes Failed, Succeeded, and Terminating — all of which are vacating or already gone.
+// Excludes Failed, Succeeded, and Terminating (vacating or already gone) and
+// Suspended (memory freed to disk), so suspended VMs do not count against the
+// per-node VM cap and the scheduler can overcommit into their freed capacity.
 func countRunningVMs(vms []impdevv1alpha1.ImpVM) map[string]int {
 	counts := make(map[string]int)
 	for _, vm := range vms {
 		switch vm.Status.Phase {
 		case impdevv1alpha1.VMPhaseFailed,
 			impdevv1alpha1.VMPhaseSucceeded,
-			impdevv1alpha1.VMPhaseTerminating:
+			impdevv1alpha1.VMPhaseTerminating,
+			impdevv1alpha1.VMPhaseSuspended:
 			continue
 		}
 		if vm.Spec.NodeName != "" {
