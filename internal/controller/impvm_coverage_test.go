@@ -144,6 +144,17 @@ var _ = Describe("countRunningVMs", func() {
 		counts := countRunningVMs(vms)
 		Expect(counts["n1"]).To(Equal(3))
 	})
+
+	It("skips Suspended (memory freed) but counts Suspending/Resuming (still resident)", func() {
+		vms := []impdevv1alpha1.ImpVM{
+			{Spec: impdevv1alpha1.ImpVMSpec{NodeName: "n1"}, Status: impdevv1alpha1.ImpVMStatus{Phase: impdevv1alpha1.VMPhaseRunning}},
+			{Spec: impdevv1alpha1.ImpVMSpec{NodeName: "n1"}, Status: impdevv1alpha1.ImpVMStatus{Phase: impdevv1alpha1.VMPhaseSuspended}},
+			{Spec: impdevv1alpha1.ImpVMSpec{NodeName: "n1"}, Status: impdevv1alpha1.ImpVMStatus{Phase: impdevv1alpha1.VMPhaseSuspending}},
+			{Spec: impdevv1alpha1.ImpVMSpec{NodeName: "n1"}, Status: impdevv1alpha1.ImpVMStatus{Phase: impdevv1alpha1.VMPhaseResuming}},
+		}
+		// Running + Suspending + Resuming are resident (3); Suspended is not counted.
+		Expect(countRunningVMs(vms)["n1"]).To(Equal(3))
+	})
 })
 
 // ─── filterByNodeSelector ────────────────────────────────────────────────────
