@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -51,6 +53,23 @@ type ImpVMReconciler struct {
 	RetryInterval time.Duration
 	// Recorder emits lifecycle events for VM completion/failure.
 	Recorder record.EventRecorder
+	// SuspendDir is the node-local base directory under which suspend snapshots
+	// are written (one subdir per VM). Defaults to /var/lib/imp/suspend when empty.
+	SuspendDir string
+}
+
+// suspendBaseDir returns the configured suspend snapshot base directory,
+// defaulting to /var/lib/imp/suspend.
+func (r *ImpVMReconciler) suspendBaseDir() string {
+	if r.SuspendDir != "" {
+		return r.SuspendDir
+	}
+	return "/var/lib/imp/suspend"
+}
+
+// suspendDirFor returns the node-local directory holding vm's suspend snapshot.
+func (r *ImpVMReconciler) suspendDirFor(vm *impdevv1alpha1.ImpVM) string {
+	return filepath.Join(r.suspendBaseDir(), vm.Namespace+"_"+vm.Name)
 }
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;update;patch
@@ -94,6 +113,12 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 		return r.handleRunning(ctx, vm)
 	case impdevv1alpha1.VMPhaseStarting:
 		return r.handleStarting(ctx, vm)
+	case impdevv1alpha1.VMPhaseSuspending:
+		return r.handleSuspending(ctx, vm)
+	case impdevv1alpha1.VMPhaseSuspended:
+		return r.handleSuspended(ctx, vm)
+	case impdevv1alpha1.VMPhaseResuming:
+		return r.handleResuming(ctx, vm)
 	default:
 		// Pending, Succeeded, Failed — not our concern.
 		return ctrl.Result{}, nil
@@ -211,6 +236,20 @@ func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha
 func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
+	// Suspend requested: transition to Suspending so the VM is snapshotted and
+	// its memory freed. The Suspending handler does the actual work.
+	if vm.Spec.DesiredState == impdevv1alpha1.VMDesiredStateSuspended {
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseSuspending
+		if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	state, err := r.Driver.Inspect(ctx, vm)
 	if err != nil {
 		log.Error(err, "Driver Inspect failed")
@@ -318,7 +357,155 @@ func (r *ImpVMReconciler) handleTerminating(ctx context.Context, vm *impdevv1alp
 		}
 	}
 
+	// Remove any node-local suspend snapshot so it does not outlive the VM.
+	if err := os.RemoveAll(r.suspendDirFor(vm)); err != nil {
+		log.Error(err, "failed to remove suspend snapshot dir", "dir", r.suspendDirFor(vm))
+	}
+
 	return r.clearOwnership(ctx, vm)
+}
+
+// handleSuspending snapshots the running VM to node-local storage, then stops its
+// runtime process to free memory. The snapshot MUST succeed before the process is
+// stopped, otherwise the VM state would be lost.
+func (r *ImpVMReconciler) handleSuspending(ctx context.Context, vm *impdevv1alpha1.ImpVM) (result ctrl.Result, err error) {
+	log := logf.FromContext(ctx)
+
+	ctx, span := tracing.SpanFromVM(ctx, vm, "agent.impvm.suspend",
+		trace.WithAttributes(
+			attribute.String("vm.name", vm.Name),
+			attribute.String("vm.namespace", vm.Namespace),
+			attribute.String("vm.node", r.NodeName),
+		),
+	)
+	defer func() {
+		tracing.RecordError(span, err)
+		span.End()
+	}()
+
+	destDir := r.suspendDirFor(vm)
+	if err = os.MkdirAll(destDir, 0o750); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Snapshot first — never stop the process before the snapshot is durable.
+	if _, err = r.Driver.Snapshot(ctx, vm, destDir); err != nil {
+		log.Error(err, "Snapshot failed during suspend — will retry")
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, err
+	}
+
+	// Deregister VTEP so other nodes stop routing to the VM about to be stopped.
+	if vm.Spec.NetworkRef != nil && vm.Status.IP != "" {
+		if derr := r.deregisterVTEP(ctx, vm); derr != nil {
+			log.Error(derr, "deregisterVTEP failed during suspend")
+		}
+	}
+
+	// Stop the runtime process — frees memory and tears down the TAP. The
+	// snapshot files on disk persist for resume.
+	if err = r.Driver.Stop(ctx, vm); err != nil {
+		log.Error(err, "Driver Stop failed during suspend — will retry")
+		return ctrl.Result{RequeueAfter: r.retryInterval()}, err
+	}
+
+	base := vm.DeepCopy()
+	vm.Status.Phase = impdevv1alpha1.VMPhaseSuspended
+	vm.Status.SuspendSnapshotPath = destDir
+	now := metav1.Now()
+	vm.Status.SuspendedAt = &now
+	vm.Status.RuntimePID = 0
+	if err = r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	if r.Metrics != nil {
+		r.Metrics.SetVMState(vm.Namespace+"/"+vm.Name, "Suspended", r.NodeName)
+	}
+	log.Info("VM suspended", "snapshotPath", destDir)
+	return ctrl.Result{}, nil
+}
+
+// handleSuspended holds the VM in the Suspended state until desiredState flips
+// back to Running, at which point it advances to Resuming.
+func (r *ImpVMReconciler) handleSuspended(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
+	if vm.Spec.DesiredState == impdevv1alpha1.VMDesiredStateSuspended {
+		return ctrl.Result{}, nil // steady state
+	}
+	base := vm.DeepCopy()
+	vm.Status.Phase = impdevv1alpha1.VMPhaseResuming
+	if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
+}
+
+// handleResuming restores the VM from its node-local suspend snapshot and brings
+// it back to Running, re-establishing VTEP/FDB network state.
+func (r *ImpVMReconciler) handleResuming(ctx context.Context, vm *impdevv1alpha1.ImpVM) (result ctrl.Result, err error) {
+	log := logf.FromContext(ctx)
+
+	ctx, span := tracing.SpanFromVM(ctx, vm, "agent.impvm.resume",
+		trace.WithAttributes(
+			attribute.String("vm.name", vm.Name),
+			attribute.String("vm.namespace", vm.Namespace),
+			attribute.String("vm.node", r.NodeName),
+		),
+	)
+	defer func() {
+		tracing.RecordError(span, err)
+		span.End()
+	}()
+
+	// Start restores from status.suspendSnapshotPath (set on suspend).
+	pid, err := r.Driver.Start(ctx, vm)
+	if err != nil {
+		log.Error(err, "Driver Start failed during resume")
+		return ctrl.Result{}, err
+	}
+
+	state, err := r.Driver.Inspect(ctx, vm)
+	if err != nil {
+		log.Error(err, "Driver Inspect after resume failed")
+		return ctrl.Result{}, err
+	}
+
+	base := vm.DeepCopy()
+	vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+	vm.Status.IP = state.IP
+	vm.Status.RuntimePID = pid
+	// Clear the suspend snapshot reference so a later crash-restart cold-boots
+	// rather than resuming from a now-stale snapshot.
+	vm.Status.SuspendSnapshotPath = ""
+	vm.Status.SuspendedAt = nil
+	if err = r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+		if apierrors.IsConflict(err) {
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	if r.Metrics != nil {
+		r.Metrics.SetVMState(vm.Namespace+"/"+vm.Name, "Running", r.NodeName)
+	}
+
+	// Re-register VTEP + sync FDB so other nodes route to the resumed VM.
+	if vm.Spec.NetworkRef != nil && state.IP != "" && r.NodeIP != "" {
+		macAddr := network.MACAddr(vm.Namespace + "/" + vm.Name)
+		if vtepErr := r.registerVTEP(ctx, vm, state.IP, macAddr); vtepErr != nil {
+			log.Error(vtepErr, "registerVTEP after resume failed — FDB sync may be incomplete")
+		} else if fdbErr := r.syncFDB(ctx, vm); fdbErr != nil {
+			log.Error(fdbErr, "syncFDB after resume failed")
+		}
+	}
+
+	log.Info("VM resumed", "pid", pid, "ip", state.IP)
+	return ctrl.Result{}, nil
 }
 
 // finishSucceeded clears spec.nodeName (triggers operator finalizer) + sets phase=Succeeded.
