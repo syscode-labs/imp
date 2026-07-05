@@ -19,6 +19,13 @@ CONTAINER_TOOL ?= docker
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+# A stale GOROOT inherited from the host shell (e.g. a Homebrew Go install
+# pointing at a different version than the `go` binary on PATH) causes
+# "compile: version X does not match go tool version Y". Strip it so every
+# recipe uses the go binary's own GOROOT. The toolchain version is pinned
+# reproducibly via .mise.toml and go.mod, independent of the host's Go.
+unexport GOROOT
+
 .PHONY: all
 all: build
 

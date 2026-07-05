@@ -1,3 +1,11 @@
 [tools]
-go = "1.25.8"
+go = "1.26.4"
 kind = "0.20.0"
+
+# Unset any GOROOT exported by the host shell so mise's managed Go toolchain is
+# always used, independent of the host's Go install. A host GOROOT pointing at a
+# different Go version than the pinned toolchain causes "compile: version
+# mismatch" errors. The Makefile also does `unexport GOROOT` for make-driven
+# builds that don't go through mise activation.
+[env]
+GOROOT = false

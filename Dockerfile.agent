@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.25-alpine AS agent-builder
+FROM golang:1.26-alpine AS agent-builder
 WORKDIR /workspace
 COPY go.mod go.sum ./
 RUN --mount=type=cache,id=agent-gomod,target=/root/go/pkg/mod go mod download
@@ -12,7 +12,7 @@ RUN --mount=type=cache,id=agent-gomod,target=/root/go/pkg/mod \
     --mount=type=cache,id=agent-gobuild,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o agent ./cmd/agent
 
-FROM golang:1.25-alpine AS guest-agent-builder
+FROM golang:1.26-alpine AS guest-agent-builder
 WORKDIR /workspace
 COPY go.mod go.sum ./
 RUN --mount=type=cache,id=guest-gomod,target=/root/go/pkg/mod go mod download
