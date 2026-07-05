@@ -74,6 +74,16 @@ spec:
                 required:
                 - name
                 type: object
+              desiredState:
+                default: Running
+                description: |-
+                  DesiredState is the requested run state. When set to "Suspended" the agent
+                  snapshots the VM to node-local storage and frees its memory; setting it back
+                  to "Running" resumes it from that snapshot on the same node.
+                enum:
+                - Running
+                - Suspended
+                type: string
               env:
                 description: Env sets environment variables inside the VM via the
                   guest agent.
@@ -748,6 +758,9 @@ spec:
                 - Succeeded
                 - Failed
                 - RetryExhausted
+                - Suspending
+                - Suspended
+                - Resuming
                 type: string
               restartCount:
                 description: RestartCount is the cumulative number of times this VM
@@ -772,6 +785,17 @@ spec:
                 description: |-
                   StartedAt is the time the VM last transitioned to phase Starting.
                   Used to detect and time out stuck start attempts.
+                format: date-time
+                type: string
+              suspendSnapshotPath:
+                description: |-
+                  SuspendSnapshotPath is the node-local directory holding the VM's suspend
+                  snapshot (vm.state + vm.mem). Set when the VM is Suspended; the resume path
+                  restores from here. Empty when the VM is not suspended.
+                type: string
+              suspendedAt:
+                description: SuspendedAt is the time the VM last transitioned to phase
+                  Suspended.
                 format: date-time
                 type: string
             type: object

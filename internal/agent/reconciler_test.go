@@ -5,6 +5,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -56,6 +57,113 @@ var _ = Describe("ImpVM Agent: Scheduled → Running", func() {
 		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseRunning))
 		Expect(updated.Status.IP).NotTo(BeEmpty())
 		Expect(updated.Status.RuntimePID).To(BeNumerically(">", 0))
+	})
+})
+
+var _ = Describe("ImpVM Agent: suspend / resume", func() {
+	ctx := context.Background()
+
+	It("transitions Running(desiredState=Suspended) through Suspending to Suspended", func() {
+		driver := NewStubDriver()
+		r := &ImpVMReconciler{Client: k8sClient, NodeName: testNode, Driver: driver, SuspendDir: GinkgoT().TempDir()}
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "tc-suspend", Namespace: "default", Finalizers: []string{"imp/finalizer"}},
+			Spec:       impdevv1alpha1.ImpVMSpec{NodeName: testNode, DesiredState: impdevv1alpha1.VMDesiredStateSuspended},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		// Prime: VM running in the driver + status.
+		pid, err := driver.Start(ctx, vm)
+		Expect(err).NotTo(HaveOccurred())
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+		vm.Status.RuntimePID = pid
+		vm.Status.IP = "192.168.100.50"
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "tc-suspend", Namespace: "default"}}
+
+		// #1: Running(desired=Suspended) → Suspending.
+		_, err = r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, req.NamespacedName, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseSuspending))
+
+		// #2: Suspending → snapshot + stop → Suspended.
+		_, err = r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, req.NamespacedName, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseSuspended))
+		Expect(updated.Status.SuspendSnapshotPath).NotTo(BeEmpty())
+		Expect(updated.Status.SuspendedAt).NotTo(BeNil())
+		Expect(updated.Status.RuntimePID).To(BeZero())
+	})
+
+	It("transitions Suspended(desiredState=Running) through Resuming to Running and clears the snapshot ref", func() {
+		driver := NewStubDriver()
+		suspendDir := GinkgoT().TempDir()
+		r := &ImpVMReconciler{Client: k8sClient, NodeName: testNode, Driver: driver, SuspendDir: suspendDir}
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "tc-resume", Namespace: "default", Finalizers: []string{"imp/finalizer"}},
+			Spec:       impdevv1alpha1.ImpVMSpec{NodeName: testNode, DesiredState: impdevv1alpha1.VMDesiredStateRunning},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseSuspended
+		vm.Status.SuspendSnapshotPath = filepath.Join(suspendDir, "default_tc-resume")
+		now := metav1.Now()
+		vm.Status.SuspendedAt = &now
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "tc-resume", Namespace: "default"}}
+
+		// #1: Suspended(desired=Running) → Resuming.
+		_, err := r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, req.NamespacedName, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseResuming))
+
+		// #2: Resuming → start (restore) → Running, snapshot ref cleared.
+		_, err = r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, req.NamespacedName, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseRunning))
+		Expect(updated.Status.IP).NotTo(BeEmpty())
+		Expect(updated.Status.RuntimePID).To(BeNumerically(">", 0))
+		Expect(updated.Status.SuspendSnapshotPath).To(BeEmpty())
+		Expect(updated.Status.SuspendedAt).To(BeNil())
+	})
+
+	It("stays in Suspending when the snapshot fails — never frees memory without a durable snapshot", func() {
+		driver := NewStubDriver() // VM never Started in the driver → Snapshot fails
+		r := &ImpVMReconciler{Client: k8sClient, NodeName: testNode, Driver: driver, SuspendDir: GinkgoT().TempDir()}
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "tc-suspend-fail", Namespace: "default", Finalizers: []string{"imp/finalizer"}},
+			Spec:       impdevv1alpha1.ImpVMSpec{NodeName: testNode, DesiredState: impdevv1alpha1.VMDesiredStateSuspended},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseSuspending
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "tc-suspend-fail", Namespace: "default"}}
+		_, err := r.Reconcile(ctx, req)
+		Expect(err).To(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, req.NamespacedName, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseSuspending))
+		Expect(updated.Status.SuspendSnapshotPath).To(BeEmpty())
 	})
 })
 

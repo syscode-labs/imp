@@ -255,6 +255,10 @@ func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.Imp
 			setNodeUnhealthy(vm, reason)
 			vm.Status.Phase = impdevv1alpha1.VMPhasePending
 			setUnscheduled(vm)
+			// The node-local suspend snapshot died with the node; clear it so the
+			// rescheduled VM cold-boots instead of failing to resume from a lost path.
+			vm.Status.SuspendSnapshotPath = ""
+			vm.Status.SuspendedAt = nil
 			if err2 := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err2 != nil {
 				return ctrl.Result{}, err2
 			}
@@ -278,6 +282,10 @@ func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.Imp
 				setNodeUnhealthy(vm, reason)
 				vm.Status.Phase = impdevv1alpha1.VMPhasePending
 				setUnscheduled(vm)
+				// Node-local suspend snapshot is gone with the node; clear it so the
+				// rescheduled VM cold-boots instead of failing to resume.
+				vm.Status.SuspendSnapshotPath = ""
+				vm.Status.SuspendedAt = nil
 				if err2 := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err2 != nil {
 					return ctrl.Result{}, err2
 				}

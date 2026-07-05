@@ -79,7 +79,7 @@ const (
 )
 
 // VMPhase is the current lifecycle phase of an ImpVM.
-// +kubebuilder:validation:Enum=Pending;Scheduled;Starting;Running;Terminating;Succeeded;Failed;RetryExhausted
+// +kubebuilder:validation:Enum=Pending;Scheduled;Starting;Running;Terminating;Succeeded;Failed;RetryExhausted;Suspending;Suspended;Resuming
 type VMPhase string
 
 const (
@@ -93,6 +93,27 @@ const (
 	// VMPhaseRetryExhausted means all restart attempts are exhausted with onExhaustion="manual-reset".
 	// The VM will not restart until the retry counter is cleared via the imp/reset-retries annotation.
 	VMPhaseRetryExhausted VMPhase = "RetryExhausted"
+
+	// VMPhaseSuspending means the VM is being snapshotted to node-local storage
+	// before its runtime process is stopped to free memory.
+	VMPhaseSuspending VMPhase = "Suspending"
+	// VMPhaseSuspended means the VM's state is captured on node-local disk and its
+	// runtime process is stopped (no resident memory). It can be resumed on the same node.
+	VMPhaseSuspended VMPhase = "Suspended"
+	// VMPhaseResuming means the VM is being restored from its node-local suspend snapshot.
+	VMPhaseResuming VMPhase = "Resuming"
+)
+
+// VMDesiredState is the operator/user-requested run state for an ImpVM.
+// The agent drives the observed Phase toward this target.
+// +kubebuilder:validation:Enum=Running;Suspended
+type VMDesiredState string
+
+const (
+	// VMDesiredStateRunning keeps the VM running (default).
+	VMDesiredStateRunning VMDesiredState = "Running"
+	// VMDesiredStateSuspended requests the VM be snapshotted and its memory freed.
+	VMDesiredStateSuspended VMDesiredState = "Suspended"
 )
 
 // Arch is the CPU architecture for a VM class.

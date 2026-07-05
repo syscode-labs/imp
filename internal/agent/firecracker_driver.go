@@ -209,8 +209,14 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	// 5. Build Firecracker config.
 	cfg := d.buildConfig(&class, rootfsPath, sockPath, netInfo, gaEnabled)
 
-	// 5a. Apply snapshot-based boot if requested.
-	if vm.Spec.SnapshotRef != "" {
+	// 5a. Apply snapshot-based boot. Resuming from a node-local suspend snapshot
+	// (status.suspendSnapshotPath) takes priority over a cold snapshot boot from
+	// an ImpVMSnapshot object (spec.snapshotRef).
+	switch {
+	case vm.Status.SuspendSnapshotPath != "":
+		configureSnapshotBoot(&cfg, vm.Status.SuspendSnapshotPath)
+		logf.FromContext(ctx).Info("configured resume from suspend snapshot", "path", vm.Status.SuspendSnapshotPath)
+	case vm.Spec.SnapshotRef != "":
 		if err := d.applySnapshotBoot(ctx, vm, &cfg); err != nil {
 			return 0, fmt.Errorf("apply snapshot boot: %w", err)
 		}
@@ -711,13 +717,20 @@ func (d *FirecrackerDriver) applySnapshotBoot(ctx context.Context, vm *impdevv1a
 		log.Info("snapshot has no node-local path, skipping snapshot boot", "snapshot", snap.Name)
 		return nil
 	}
-	cfg.Snapshot = firecracker.SnapshotConfig{
-		SnapshotPath: filepath.Join(snap.Status.SnapshotPath, "vm.state"),
-		MemFilePath:  filepath.Join(snap.Status.SnapshotPath, "vm.mem"),
-		ResumeVM:     true,
-	}
+	configureSnapshotBoot(cfg, snap.Status.SnapshotPath)
 	log.Info("configured snapshot-based boot", "snapshotPath", cfg.Snapshot.SnapshotPath)
 	return nil
+}
+
+// configureSnapshotBoot points cfg at the node-local snapshot files (vm.state +
+// vm.mem) in dir and enables resume-on-load. dir must be a directory previously
+// written by Driver.Snapshot (which uses the same filenames).
+func configureSnapshotBoot(cfg *firecracker.Config, dir string) {
+	cfg.Snapshot = firecracker.SnapshotConfig{
+		SnapshotPath: filepath.Join(dir, "vm.state"),
+		MemFilePath:  filepath.Join(dir, "vm.mem"),
+		ResumeVM:     true,
+	}
 }
 
 // IsAlive reports whether the process with the given PID is still running.
