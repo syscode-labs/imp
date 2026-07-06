@@ -988,3 +988,57 @@ var _ = Describe("ImpVM expiration", func() {
 		Expect(updated.DeletionTimestamp).NotTo(BeNil())
 	})
 })
+
+// ─── sumUsedResources ─────────────────────────────────────────────────────────
+
+var _ = Describe("sumUsedResources", func() {
+	ctx := context.Background()
+
+	It("excludes Terminating VMs; counts Suspended as reserved-only, Running as both", func() {
+		class := &impdevv1alpha1.ImpVMClass{
+			ObjectMeta: metav1.ObjectMeta{Name: "sum-res-small"},
+			Spec: impdevv1alpha1.ImpVMClassSpec{
+				VCPU:      2,
+				MemoryMiB: 1024,
+				DiskGiB:   10,
+			},
+		}
+		Expect(k8sClient.Create(ctx, class)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, class) }) //nolint:errcheck
+
+		classRef := &impdevv1alpha1.ClusterObjectRef{Name: "sum-res-small"}
+		const nodeName = "node-sum-res"
+
+		vms := []impdevv1alpha1.ImpVM{
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "vm-running-sr", Namespace: "default"},
+				Spec:       impdevv1alpha1.ImpVMSpec{NodeName: nodeName, ClassRef: classRef},
+				Status:     impdevv1alpha1.ImpVMStatus{Phase: impdevv1alpha1.VMPhaseRunning},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "vm-suspended-sr", Namespace: "default"},
+				Spec:       impdevv1alpha1.ImpVMSpec{NodeName: nodeName, ClassRef: classRef},
+				Status:     impdevv1alpha1.ImpVMStatus{Phase: impdevv1alpha1.VMPhaseSuspended},
+			},
+			{
+				ObjectMeta: metav1.ObjectMeta{Name: "vm-terminating-sr", Namespace: "default"},
+				Spec:       impdevv1alpha1.ImpVMSpec{NodeName: nodeName, ClassRef: classRef},
+				Status:     impdevv1alpha1.ImpVMStatus{Phase: impdevv1alpha1.VMPhaseTerminating},
+			},
+		}
+
+		got := sumUsedResources(ctx, k8sClient, vms)[nodeName]
+
+		// Running VM: resident + reserved.
+		// Suspended VM: reserved only (memory freed to disk).
+		// Terminating VM: excluded from both.
+		Expect(got.residentVCPU).To(Equal(int32(2)),
+			"only the Running VM contributes to resident (1 × 2 VCPU)")
+		Expect(got.residentMem).To(Equal(int64(1024)),
+			"only the Running VM contributes to resident (1 × 1024 MiB)")
+		Expect(got.reservedVCPU).To(Equal(int32(4)),
+			"Running + Suspended contribute to reserved (2 × 2 VCPU)")
+		Expect(got.reservedMem).To(Equal(int64(2048)),
+			"Running + Suspended contribute to reserved (2 × 1024 MiB)")
+	})
+})

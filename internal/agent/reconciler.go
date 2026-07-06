@@ -359,7 +359,7 @@ func (r *ImpVMReconciler) handleTerminating(ctx context.Context, vm *impdevv1alp
 
 	// Remove any node-local suspend snapshot so it does not outlive the VM.
 	if err := os.RemoveAll(r.suspendDirFor(vm)); err != nil {
-		log.Error(err, "failed to remove suspend snapshot dir", "dir", r.suspendDirFor(vm))
+		log.Error(err, "Failed to remove suspend snapshot dir", "dir", r.suspendDirFor(vm))
 	}
 
 	return r.clearOwnership(ctx, vm)
@@ -397,7 +397,7 @@ func (r *ImpVMReconciler) handleSuspending(ctx context.Context, vm *impdevv1alph
 	// Deregister VTEP so other nodes stop routing to the VM about to be stopped.
 	if vm.Spec.NetworkRef != nil && vm.Status.IP != "" {
 		if derr := r.deregisterVTEP(ctx, vm); derr != nil {
-			log.Error(derr, "deregisterVTEP failed during suspend")
+			log.Error(derr, "Failed to deregister VTEP during suspend")
 		}
 	}
 
@@ -498,9 +498,9 @@ func (r *ImpVMReconciler) handleResuming(ctx context.Context, vm *impdevv1alpha1
 	if vm.Spec.NetworkRef != nil && state.IP != "" && r.NodeIP != "" {
 		macAddr := network.MACAddr(vm.Namespace + "/" + vm.Name)
 		if vtepErr := r.registerVTEP(ctx, vm, state.IP, macAddr); vtepErr != nil {
-			log.Error(vtepErr, "registerVTEP after resume failed — FDB sync may be incomplete")
+			log.Error(vtepErr, "Failed to register VTEP after resume — FDB sync may be incomplete")
 		} else if fdbErr := r.syncFDB(ctx, vm); fdbErr != nil {
-			log.Error(fdbErr, "syncFDB after resume failed")
+			log.Error(fdbErr, "Failed to sync FDB after resume")
 		}
 	}
 

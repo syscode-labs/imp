@@ -35,20 +35,29 @@ import (
 
 const labelImpEnabled = "imp/enabled"
 
-// sumUsedResources returns (usedVCPU, usedMemMiB) per node for VMs that are
-// resident on the node. VMs in Failed, Succeeded, or Terminating phase are
-// excluded (vacating or gone), and so are Suspended VMs: their memory is freed
-// to node-local disk, so they no longer consume schedulable capacity. This lets
-// the scheduler overcommit — packing new VMs into the RAM freed by suspension.
+// nodeResourceUsage holds per-node resident and reserved usage. Resident is the
+// scheduling constraint; reserved is tracked for over-subscription visibility.
+type nodeResourceUsage struct {
+	residentVCPU int32
+	residentMem  int64
+	reservedVCPU int32
+	reservedMem  int64
+}
+
+// sumUsedResources returns per-node resident and reserved usage. VMs in Failed,
+// Succeeded, or Terminating phase are excluded from both (vacating or gone).
+// Suspended VMs are excluded from RESIDENT usage (their memory is freed to
+// node-local disk, so they free schedulable capacity) but counted in RESERVED
+// (they retain a logical claim on the node). The scheduler gates on resident to
+// overcommit suspended capacity; reserved surfaces how oversubscribed a node is.
 // VMs whose class cannot be resolved are skipped (best-effort).
-func sumUsedResources(ctx context.Context, c client.Client, vms []impdevv1alpha1.ImpVM) map[string][2]int64 {
-	result := make(map[string][2]int64)
+func sumUsedResources(ctx context.Context, c client.Client, vms []impdevv1alpha1.ImpVM) map[string]nodeResourceUsage {
+	result := make(map[string]nodeResourceUsage)
 	for _, vm := range vms {
 		switch vm.Status.Phase {
 		case impdevv1alpha1.VMPhaseFailed,
 			impdevv1alpha1.VMPhaseSucceeded,
-			impdevv1alpha1.VMPhaseTerminating,
-			impdevv1alpha1.VMPhaseSuspended:
+			impdevv1alpha1.VMPhaseTerminating:
 			continue
 		}
 		if vm.Spec.NodeName == "" {
@@ -59,8 +68,12 @@ func sumUsedResources(ctx context.Context, c client.Client, vms []impdevv1alpha1
 			continue // best-effort
 		}
 		cur := result[vm.Spec.NodeName]
-		cur[0] += int64(spec.VCPU)
-		cur[1] += int64(spec.MemoryMiB)
+		cur.reservedVCPU += spec.VCPU
+		cur.reservedMem += int64(spec.MemoryMiB)
+		if vm.Status.Phase != impdevv1alpha1.VMPhaseSuspended {
+			cur.residentVCPU += spec.VCPU
+			cur.residentMem += int64(spec.MemoryMiB)
+		}
 		result[vm.Spec.NodeName] = cur
 	}
 	return result
@@ -136,11 +149,13 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 		}
 		used := usedResources[node.Name]
 		explicitNodes = append(explicitNodes, NodeInfo{
-			NodeName:      node.Name,
-			VCPUCapacity:  profile.Spec.VCPUCapacity,
-			MemoryMiB:     profile.Spec.MemoryMiB,
-			UsedVCPU:      int32(used[0]), //nolint:gosec
-			UsedMemoryMiB: used[1],
+			NodeName:          node.Name,
+			VCPUCapacity:      profile.Spec.VCPUCapacity,
+			MemoryMiB:         profile.Spec.MemoryMiB,
+			UsedVCPU:          used.residentVCPU,
+			UsedMemoryMiB:     used.residentMem,
+			ReservedVCPU:      used.reservedVCPU,
+			ReservedMemoryMiB: used.reservedMem,
 		})
 	}
 	if len(explicitNodes) > 0 && vmVCPU > 0 {
