@@ -165,6 +165,68 @@ var _ = Describe("ImpVM Agent: suspend / resume", func() {
 		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseSuspending))
 		Expect(updated.Status.SuspendSnapshotPath).To(BeEmpty())
 	})
+
+	It("post-resume: VTEP entry registered in ImpNetwork when NetworkRef and NodeIP are set", func() {
+		const nodeIP = "10.0.0.1"
+		driver := NewStubDriver()
+		suspendDir := GinkgoT().TempDir()
+		r := &ImpVMReconciler{
+			Client:     k8sClient,
+			NodeName:   testNode,
+			Driver:     driver,
+			SuspendDir: suspendDir,
+			NodeIP:     nodeIP,
+		}
+
+		impNet := &impdevv1alpha1.ImpNetwork{
+			ObjectMeta: metav1.ObjectMeta{Name: "vtep-net", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpNetworkSpec{Subnet: "192.168.200.0/24"},
+		}
+		Expect(k8sClient.Create(ctx, impNet)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, impNet) }) //nolint:errcheck
+
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "tc-resume-vtep", Namespace: "default", Finalizers: []string{"imp/finalizer"}},
+			Spec: impdevv1alpha1.ImpVMSpec{
+				NodeName:     testNode,
+				DesiredState: impdevv1alpha1.VMDesiredStateRunning,
+				NetworkRef:   &impdevv1alpha1.LocalObjectRef{Name: "vtep-net"},
+			},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { k8sClient.Delete(ctx, vm) }) //nolint:errcheck
+
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseSuspended
+		vm.Status.SuspendSnapshotPath = filepath.Join(suspendDir, "default_tc-resume-vtep")
+		now := metav1.Now()
+		vm.Status.SuspendedAt = &now
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "tc-resume-vtep", Namespace: "default"}}
+
+		// #1: Suspended(desired=Running) → Resuming.
+		_, err := r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, req.NamespacedName, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseResuming))
+
+		// #2: Resuming → Running; VTEP registered in ImpNetwork.
+		_, err = r.Reconcile(ctx, req)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(k8sClient.Get(ctx, req.NamespacedName, updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseRunning))
+		Expect(updated.Status.IP).NotTo(BeEmpty())
+		Expect(updated.Status.SuspendSnapshotPath).To(BeEmpty())
+
+		// Verify the VTEP entry was written to ImpNetwork.status.vtepTable.
+		gotNet := &impdevv1alpha1.ImpNetwork{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "vtep-net", Namespace: "default"}, gotNet)).To(Succeed())
+		Expect(gotNet.Status.VTEPTable).To(HaveLen(1))
+		Expect(gotNet.Status.VTEPTable[0].NodeIP).To(Equal(nodeIP))
+		Expect(gotNet.Status.VTEPTable[0].VMIP).To(Equal(updated.Status.IP))
+	})
 })
 
 var _ = Describe("ImpVM Agent: ephemeral exit → Succeeded", func() {

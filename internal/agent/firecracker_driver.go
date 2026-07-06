@@ -215,7 +215,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	switch {
 	case vm.Status.SuspendSnapshotPath != "":
 		configureSnapshotBoot(&cfg, vm.Status.SuspendSnapshotPath)
-		logf.FromContext(ctx).Info("configured resume from suspend snapshot", "path", vm.Status.SuspendSnapshotPath)
+		logf.FromContext(ctx).Info("Configured resume from suspend snapshot", "path", vm.Status.SuspendSnapshotPath)
 	case vm.Spec.SnapshotRef != "":
 		if err := d.applySnapshotBoot(ctx, vm, &cfg); err != nil {
 			return 0, fmt.Errorf("apply snapshot boot: %w", err)
