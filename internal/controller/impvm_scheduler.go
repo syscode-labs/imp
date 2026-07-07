@@ -152,8 +152,8 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 			NodeName:          node.Name,
 			VCPUCapacity:      profile.Spec.VCPUCapacity,
 			MemoryMiB:         profile.Spec.MemoryMiB,
-			UsedVCPU:          used.residentVCPU,
-			UsedMemoryMiB:     used.residentMem,
+			ResidentVCPU:      used.residentVCPU,
+			ResidentMemoryMiB: used.residentMem,
 			ReservedVCPU:      used.reservedVCPU,
 			ReservedMemoryMiB: used.reservedMem,
 		})

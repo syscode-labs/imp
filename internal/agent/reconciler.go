@@ -206,31 +206,37 @@ func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha
 	}
 
 	// Register VTEP entry so the operator and other nodes know where this VM lives.
-	if vm.Spec.NetworkRef != nil && state.IP != "" && r.NodeIP != "" {
-		macAddr := network.MACAddr(vm.Namespace + "/" + vm.Name)
-		{
-			vCtx, vSpan := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.vtep_register",
-				trace.WithAttributes(
-					attribute.String("vm.name", vm.Name),
-					attribute.String("vm.ip", state.IP),
-				),
-			)
-			vtepErr := r.registerVTEP(vCtx, vm, state.IP, macAddr)
-			tracing.RecordError(vSpan, vtepErr)
-			vSpan.End()
-			if vtepErr != nil {
-				log.Error(vtepErr, "registerVTEP failed — FDB sync may be incomplete")
-			} else {
-				// Sync local FDB now that this node has a VTEP entry.
-				if err := r.syncFDB(ctx, vm); err != nil {
-					log.Error(err, "syncFDB after registerVTEP failed")
-				}
-			}
-		}
-	}
+	r.ensureVTEPAndFDB(ctx, vm, state.IP)
 
 	log.Info("VM started", "pid", pid, "ip", state.IP)
 	return ctrl.Result{}, nil
+}
+
+// ensureVTEPAndFDB registers vm's VTEP entry (under a child span) and syncs the
+// local FDB so the operator and other nodes route to it. No-op when the VM has
+// no network, no IP, or this node has no IP. Best-effort: errors are logged.
+func (r *ImpVMReconciler) ensureVTEPAndFDB(ctx context.Context, vm *impdevv1alpha1.ImpVM, ip string) {
+	if vm.Spec.NetworkRef == nil || ip == "" || r.NodeIP == "" {
+		return
+	}
+	log := logf.FromContext(ctx)
+	macAddr := network.MACAddr(vm.Namespace + "/" + vm.Name)
+	vCtx, vSpan := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.vtep_register",
+		trace.WithAttributes(
+			attribute.String("vm.name", vm.Name),
+			attribute.String("vm.ip", ip),
+		),
+	)
+	vtepErr := r.registerVTEP(vCtx, vm, ip, macAddr)
+	tracing.RecordError(vSpan, vtepErr)
+	vSpan.End()
+	if vtepErr != nil {
+		log.Error(vtepErr, "Failed to register VTEP — FDB sync may be incomplete")
+		return
+	}
+	if err := r.syncFDB(ctx, vm); err != nil {
+		log.Error(err, "Failed to sync FDB after registering VTEP")
+	}
 }
 
 func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
@@ -358,8 +364,9 @@ func (r *ImpVMReconciler) handleTerminating(ctx context.Context, vm *impdevv1alp
 	}
 
 	// Remove any node-local suspend snapshot so it does not outlive the VM.
-	if err := os.RemoveAll(r.suspendDirFor(vm)); err != nil {
-		log.Error(err, "Failed to remove suspend snapshot dir", "dir", r.suspendDirFor(vm))
+	dir := r.suspendDirFor(vm)
+	if err := os.RemoveAll(dir); err != nil {
+		log.Error(err, "Failed to remove suspend snapshot dir", "dir", dir)
 	}
 
 	return r.clearOwnership(ctx, vm)
@@ -495,14 +502,7 @@ func (r *ImpVMReconciler) handleResuming(ctx context.Context, vm *impdevv1alpha1
 	}
 
 	// Re-register VTEP + sync FDB so other nodes route to the resumed VM.
-	if vm.Spec.NetworkRef != nil && state.IP != "" && r.NodeIP != "" {
-		macAddr := network.MACAddr(vm.Namespace + "/" + vm.Name)
-		if vtepErr := r.registerVTEP(ctx, vm, state.IP, macAddr); vtepErr != nil {
-			log.Error(vtepErr, "Failed to register VTEP after resume — FDB sync may be incomplete")
-		} else if fdbErr := r.syncFDB(ctx, vm); fdbErr != nil {
-			log.Error(fdbErr, "Failed to sync FDB after resume")
-		}
-	}
+	r.ensureVTEPAndFDB(ctx, vm, state.IP)
 
 	log.Info("VM resumed", "pid", pid, "ip", state.IP)
 	return ctrl.Result{}, nil
