@@ -15,12 +15,13 @@ type NodeInfo struct {
 	NodeName     string
 	VCPUCapacity int32
 	MemoryMiB    int64
-	// UsedVCPU/UsedMemoryMiB is the RESIDENT usage: capacity consumed by VMs whose
-	// memory is actually present on the node. Suspended VMs are excluded (their
-	// memory is freed to node-local disk). This is the hard scheduling constraint
-	// and the basis of overcommit — new VMs pack into capacity freed by suspension.
-	UsedVCPU      int32
-	UsedMemoryMiB int64
+	// ResidentVCPU/ResidentMemoryMiB is the RESIDENT usage: capacity consumed by
+	// VMs whose memory is actually present on the node. Suspended VMs are excluded
+	// (their memory is freed to node-local disk). This is the hard scheduling
+	// constraint and the basis of overcommit — new VMs pack into capacity freed by
+	// suspension.
+	ResidentVCPU      int32
+	ResidentMemoryMiB int64
 	// ReservedVCPU/ReservedMemoryMiB additionally includes Suspended VMs, which
 	// retain a logical claim on the node. Tracked for observability only; it may
 	// exceed capacity (intentional, accepted overcommit — see the Phase 2 plan
@@ -45,19 +46,18 @@ func Schedule(log logr.Logger, vcpu int32, memMiB int64, nodes []NodeInfo) (stri
 
 	var candidates []candidate
 	for _, n := range nodes {
-		freeVCPU := n.VCPUCapacity - n.UsedVCPU
-		freeMemMiB := n.MemoryMiB - n.UsedMemoryMiB
+		freeVCPU := n.VCPUCapacity - n.ResidentVCPU
+		freeMemMiB := n.MemoryMiB - n.ResidentMemoryMiB
 		fits := freeVCPU >= vcpu && freeMemMiB >= memMiB
-		// oversubscribed is informational: reserved (incl. suspended VMs) exceeds
-		// capacity, so a mass resume could exhaust the node.
-		oversubscribed := n.ReservedMemoryMiB > n.MemoryMiB || n.ReservedVCPU > n.VCPUCapacity
 		log.V(1).Info("Scheduling candidate",
 			"node", n.NodeName,
 			"freeVCPU", freeVCPU,
 			"freeMemMiB", freeMemMiB,
 			"reservedVCPU", n.ReservedVCPU,
 			"reservedMemMiB", n.ReservedMemoryMiB,
-			"oversubscribed", oversubscribed,
+			// oversubscribed is informational: reserved (incl. suspended VMs) exceeds
+			// capacity, so a mass resume could exhaust the node.
+			"oversubscribed", n.ReservedMemoryMiB > n.MemoryMiB || n.ReservedVCPU > n.VCPUCapacity,
 			"required.vcpu", vcpu,
 			"required.memMiB", memMiB,
 			"fits", fits,
