@@ -22,7 +22,9 @@ import (
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent/network"
@@ -56,6 +58,9 @@ type ImpVMReconciler struct {
 	// SuspendDir is the node-local base directory under which suspend snapshots
 	// are written (one subdir per VM). Defaults to /var/lib/imp/suspend when empty.
 	SuspendDir string
+	// SZ is optional. When non-nil it enables scale-to-zero: ScaleToZero VMs
+	// auto-suspend on traffic idle and auto-resume on the first inbound packet.
+	SZ *ScaleToZero
 }
 
 // suspendBaseDir returns the configured suspend snapshot base directory,
@@ -256,6 +261,19 @@ func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.
 		return ctrl.Result{}, nil
 	}
 
+	// ScaleToZero: poll TAP traffic and auto-suspend after idleTimeout of silence.
+	if vm.Spec.DesiredState == impdevv1alpha1.VMDesiredStateScaleToZero && r.SZ != nil {
+		suspended, err := r.maybeSuspendIdle(ctx, vm)
+		if err != nil {
+			log.Error(err, "ScaleToZero idle probe failed; will retry")
+			return ctrl.Result{RequeueAfter: r.SZ.interval}, nil
+		}
+		if suspended {
+			return ctrl.Result{}, nil
+		}
+		// Not idle — fall through to the liveness check; runningResult requeues.
+	}
+
 	state, err := r.Driver.Inspect(ctx, vm)
 	if err != nil {
 		log.Error(err, "Driver Inspect failed")
@@ -263,7 +281,7 @@ func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.
 	}
 
 	if state.Running {
-		return ctrl.Result{}, nil // watch-driven steady state
+		return r.runningResult(vm), nil // watch-driven steady state (ScaleToZero: polled)
 	}
 
 	// Inspect returned Running=false. Before declaring the VM dead, check whether
@@ -331,6 +349,46 @@ func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.
 		return r.finishSucceeded(ctx, vm)
 	}
 	return r.finishFailed(ctx, vm)
+}
+
+// runningResult is the steady-state reconcile result for a Running VM: empty
+// (watch-driven) normally, or a poll interval for ScaleToZero VMs whose idle
+// detector needs periodic wake-ups.
+func (r *ImpVMReconciler) runningResult(vm *impdevv1alpha1.ImpVM) ctrl.Result {
+	if r.SZ != nil && vm.Spec.DesiredState == impdevv1alpha1.VMDesiredStateScaleToZero {
+		return ctrl.Result{RequeueAfter: r.SZ.interval}
+	}
+	return ctrl.Result{}
+}
+
+// maybeSuspendIdle probes vm's TAP traffic. If the VM has been idle for its
+// idleTimeout it stamps lastActivityTime and transitions to Suspending, returning
+// true; otherwise it returns false without touching status. We deliberately do NOT
+// write lastActivityTime on every busy probe — a genuinely active VM changes bytes
+// each interval, so that would be a status write every interval per VM (churn at the
+// density this feature targets). The field records when the VM last had traffic
+// before suspending; live activity is observable via /metrics.
+func (r *ImpVMReconciler) maybeSuspendIdle(ctx context.Context, vm *impdevv1alpha1.ImpVM) (bool, error) {
+	key := client.ObjectKeyFromObject(vm)
+	tap := network.TAPName(vmKey(vm))
+	idle, lastActivity, err := r.SZ.observe(key, tap, idleTimeoutOrDefault(vm), time.Now())
+	if err != nil {
+		return false, err
+	}
+	if !idle {
+		return false, nil
+	}
+	base := vm.DeepCopy()
+	t := metav1.NewTime(lastActivity)
+	vm.Status.LastActivityTime = &t
+	vm.Status.Phase = impdevv1alpha1.VMPhaseSuspending
+	if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+		if apierrors.IsConflict(err) {
+			return false, nil // requeue re-evaluates
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (r *ImpVMReconciler) handleTerminating(ctx context.Context, vm *impdevv1alpha1.ImpVM) (result ctrl.Result, err error) {
@@ -401,8 +459,11 @@ func (r *ImpVMReconciler) handleSuspending(ctx context.Context, vm *impdevv1alph
 		return ctrl.Result{RequeueAfter: r.retryInterval()}, err
 	}
 
-	// Deregister VTEP so other nodes stop routing to the VM about to be stopped.
-	if vm.Spec.NetworkRef != nil && vm.Status.IP != "" {
+	// Deregister VTEP so other nodes stop routing to the VM about to be stopped —
+	// EXCEPT for ScaleToZero, which keeps the VTEP so the overlay still delivers
+	// the wake packet to this node while the VM is suspended.
+	if vm.Spec.NetworkRef != nil && vm.Status.IP != "" &&
+		vm.Spec.DesiredState != impdevv1alpha1.VMDesiredStateScaleToZero {
 		if derr := r.deregisterVTEP(ctx, vm); derr != nil {
 			log.Error(derr, "Failed to deregister VTEP during suspend")
 		}
@@ -431,6 +492,14 @@ func (r *ImpVMReconciler) handleSuspending(ctx context.Context, vm *impdevv1alph
 	if r.Metrics != nil {
 		r.Metrics.SetVMState(vm.Namespace+"/"+vm.Name, "Suspended", r.NodeName)
 	}
+
+	// ScaleToZero: register the VM's IP so the activator wakes it on the first
+	// inbound packet. Reset any idle sample so a fresh window applies on resume.
+	if vm.Spec.DesiredState == impdevv1alpha1.VMDesiredStateScaleToZero && r.SZ != nil && vm.Status.IP != "" {
+		r.SZ.reg.register(vm.Status.IP, vm)
+		r.SZ.resetIdle(client.ObjectKeyFromObject(vm))
+	}
+
 	log.Info("VM suspended", "snapshotPath", destDir)
 	return ctrl.Result{}, nil
 }
@@ -438,9 +507,17 @@ func (r *ImpVMReconciler) handleSuspending(ctx context.Context, vm *impdevv1alph
 // handleSuspended holds the VM in the Suspended state until desiredState flips
 // back to Running, at which point it advances to Resuming.
 func (r *ImpVMReconciler) handleSuspended(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
-	if vm.Spec.DesiredState == impdevv1alpha1.VMDesiredStateSuspended {
+	switch vm.Spec.DesiredState {
+	case impdevv1alpha1.VMDesiredStateSuspended:
 		return ctrl.Result{}, nil // steady state
+	case impdevv1alpha1.VMDesiredStateScaleToZero:
+		// Stay suspended until the activator observes an inbound packet.
+		if r.SZ == nil || !r.SZ.reg.pending(client.ObjectKeyFromObject(vm)) {
+			return ctrl.Result{}, nil
+		}
+		// Wake packet observed — fall through to resume.
 	}
+	// desiredState=Running (explicit resume) or ScaleToZero with a pending wake.
 	base := vm.DeepCopy()
 	vm.Status.Phase = impdevv1alpha1.VMPhaseResuming
 	if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
@@ -499,6 +576,13 @@ func (r *ImpVMReconciler) handleResuming(ctx context.Context, vm *impdevv1alpha1
 
 	if r.Metrics != nil {
 		r.Metrics.SetVMState(vm.Namespace+"/"+vm.Name, "Running", r.NodeName)
+	}
+
+	// Clear scale-to-zero wake state now that the VM is running again.
+	if r.SZ != nil {
+		key := client.ObjectKeyFromObject(vm)
+		r.SZ.reg.clear(key)
+		r.SZ.resetIdle(key)
 	}
 
 	// Re-register VTEP + sync FDB so other nodes route to the resumed VM.
@@ -597,10 +681,22 @@ func (r *ImpVMReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	// Detect and patch CPU model onto ClusterImpNodeProfile at startup (best-effort).
 	go detectAndPatchCPUModel(context.Background(), r.Client, r.NodeName)
 
-	return ctrl.NewControllerManagedBy(mgr).
+	b := ctrl.NewControllerManagedBy(mgr).
 		For(&impdevv1alpha1.ImpVM{}).
-		Named("agent-impvm").
-		Complete(r)
+		Named("agent-impvm")
+
+	// Scale-to-zero: let the activator fire reconciles via a channel, and run the
+	// packet source as a per-node runnable.
+	if r.SZ != nil {
+		b = b.WatchesRawSource(source.Channel(r.SZ.reg.events, &handler.EnqueueRequestForObject{}))
+		if r.SZ.src != nil {
+			if err := mgr.Add(&activator{src: r.SZ.src, reg: r.SZ.reg}); err != nil {
+				return err
+			}
+		}
+	}
+
+	return b.Complete(r)
 }
 
 // registerVTEP adds or updates the VTEPEntry for vm in ImpNetwork.status.vtepTable.

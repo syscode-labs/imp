@@ -114,7 +114,7 @@ func (w *ImpVMWebhook) mergeRestartPolicy(ctx context.Context, vm *impdevv1alpha
 
 // ValidateCreate implements admission.Validator[*impdevv1alpha1.ImpVM].
 func (w *ImpVMWebhook) ValidateCreate(_ context.Context, vm *impdevv1alpha1.ImpVM) (admission.Warnings, error) {
-	return nil, validateImpVM(vm).ToAggregate()
+	return scaleToZeroWarnings(vm), validateImpVM(vm).ToAggregate()
 }
 
 // ValidateUpdate implements admission.Validator[*impdevv1alpha1.ImpVM].
@@ -128,7 +128,18 @@ func (w *ImpVMWebhook) ValidateUpdate(_ context.Context, oldVM, newVM *impdevv1a
 		))
 	}
 
-	return nil, errs.ToAggregate()
+	return scaleToZeroWarnings(newVM), errs.ToAggregate()
+}
+
+// scaleToZeroWarnings warns that ScaleToZero is experimental: its wake-on-traffic
+// path has not yet been validated on real hardware.
+func scaleToZeroWarnings(vm *impdevv1alpha1.ImpVM) admission.Warnings {
+	if vm.Spec.DesiredState == impdevv1alpha1.VMDesiredStateScaleToZero {
+		return admission.Warnings{
+			"desiredState=ScaleToZero is experimental: the wake-on-traffic path is not yet hardware-validated and requires the agent's IMP_SCALE_TO_ZERO opt-in",
+		}
+	}
+	return nil
 }
 
 // ValidateDelete implements admission.Validator[*impdevv1alpha1.ImpVM].
