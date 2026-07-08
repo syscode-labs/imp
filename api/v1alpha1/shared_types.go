@@ -106,7 +106,7 @@ const (
 
 // VMDesiredState is the operator/user-requested run state for an ImpVM.
 // The agent drives the observed Phase toward this target.
-// +kubebuilder:validation:Enum=Running;Suspended
+// +kubebuilder:validation:Enum=Running;Suspended;ScaleToZero
 type VMDesiredState string
 
 const (
@@ -114,6 +114,11 @@ const (
 	VMDesiredStateRunning VMDesiredState = "Running"
 	// VMDesiredStateSuspended requests the VM be snapshotted and its memory freed.
 	VMDesiredStateSuspended VMDesiredState = "Suspended"
+	// VMDesiredStateScaleToZero is a mode, not a fixed target: the agent suspends
+	// the VM when it has been idle (no traffic) for spec.idleTimeout and resumes it
+	// automatically on the first inbound packet. status.Phase cycles Running↔Suspended
+	// underneath while desiredState stays ScaleToZero.
+	VMDesiredStateScaleToZero VMDesiredState = "ScaleToZero"
 )
 
 // Arch is the CPU architecture for a VM class.

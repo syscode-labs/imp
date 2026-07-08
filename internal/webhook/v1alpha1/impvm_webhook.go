@@ -173,5 +173,15 @@ func validateImpVM(vm *impdevv1alpha1.ImpVM) field.ErrorList {
 		}
 	}
 
+	// idleTimeout gates ScaleToZero auto-suspend; too small a value thrashes
+	// against the resume latency, so floor it at 10s.
+	if vm.Spec.IdleTimeout != nil && vm.Spec.IdleTimeout.Duration < 10*time.Second {
+		errs = append(errs, field.Invalid(
+			field.NewPath("spec", "idleTimeout"),
+			vm.Spec.IdleTimeout.Duration.String(),
+			"idleTimeout must be at least 10s",
+		))
+	}
+
 	return errs
 }

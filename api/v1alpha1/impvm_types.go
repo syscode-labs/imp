@@ -130,10 +130,16 @@ type ImpVMSpec struct {
 
 	// DesiredState is the requested run state. When set to "Suspended" the agent
 	// snapshots the VM to node-local storage and frees its memory; setting it back
-	// to "Running" resumes it from that snapshot on the same node.
+	// to "Running" resumes it from that snapshot on the same node. "ScaleToZero"
+	// makes suspension automatic: idle → suspend, first packet → resume.
 	// +optional
 	// +kubebuilder:default=Running
 	DesiredState VMDesiredState `json:"desiredState,omitempty"`
+
+	// IdleTimeout is how long a ScaleToZero VM must see no traffic before the agent
+	// auto-suspends it. Ignored unless desiredState is "ScaleToZero". Defaults to 5m.
+	// +optional
+	IdleTimeout *metav1.Duration `json:"idleTimeout,omitempty"`
 }
 
 // UserDataSource references a ConfigMap containing cloud-init user-data.
@@ -186,6 +192,11 @@ type ImpVMStatus struct {
 	// SuspendedAt is the time the VM last transitioned to phase Suspended.
 	// +optional
 	SuspendedAt *metav1.Time `json:"suspendedAt,omitempty"`
+
+	// LastActivityTime is the most recent time the agent observed traffic on the
+	// VM's interface. Used by ScaleToZero idle detection; observability only.
+	// +optional
+	LastActivityTime *metav1.Time `json:"lastActivityTime,omitempty"`
 
 	// RestartCount is the cumulative number of times this VM has been restarted.
 	// +optional

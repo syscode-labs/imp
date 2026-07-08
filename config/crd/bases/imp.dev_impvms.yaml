@@ -79,10 +79,12 @@ spec:
                 description: |-
                   DesiredState is the requested run state. When set to "Suspended" the agent
                   snapshots the VM to node-local storage and frees its memory; setting it back
-                  to "Running" resumes it from that snapshot on the same node.
+                  to "Running" resumes it from that snapshot on the same node. "ScaleToZero"
+                  makes suspension automatic: idle → suspend, first packet → resume.
                 enum:
                 - Running
                 - Suspended
+                - ScaleToZero
                 type: string
               env:
                 description: Env sets environment variables inside the VM via the
@@ -306,6 +308,11 @@ spec:
                       to true when omitted.
                     type: boolean
                 type: object
+              idleTimeout:
+                description: |-
+                  IdleTimeout is how long a ScaleToZero VM must see no traffic before the agent
+                  auto-suspends it. Ignored unless desiredState is "ScaleToZero". Defaults to 5m.
+                type: string
               image:
                 description: |-
                   Image is the OCI image used as the VM rootfs. CMD/ENTRYPOINT from the
@@ -738,6 +745,12 @@ spec:
                 type: string
               ip:
                 description: IP is the IP address assigned to the VM by the ImpNetwork.
+                type: string
+              lastActivityTime:
+                description: |-
+                  LastActivityTime is the most recent time the agent observed traffic on the
+                  VM's interface. Used by ScaleToZero idle detection; observability only.
+                format: date-time
                 type: string
               nextRetryAfter:
                 description: NextRetryAfter is the earliest time the controller will
