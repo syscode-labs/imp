@@ -166,11 +166,14 @@ spec:
     type: github-actions
     credentialsSecret: ignored-when-webhook-only
   scaling:
+    mode: webhook
     minIdle: 0
     maxConcurrent: 5
-  jobDetection:
+    scaleUpStep: 2
+    cooldownSeconds: 10
     webhook:
       enabled: true
+      secretRef: e2e-webhook-secret
 `, poolName, templateName)
 			poolApply := exec.Command("kubectl", "apply", "-f", "-")
 			poolApply.Stdin = strings.NewReader(poolManifest)
