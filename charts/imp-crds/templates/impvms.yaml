@@ -75,6 +75,18 @@ spec:
                 required:
                 - name
                 type: object
+              desiredState:
+                default: Running
+                description: |-
+                  DesiredState is the requested run state. When set to "Suspended" the agent
+                  snapshots the VM to node-local storage and frees its memory; setting it back
+                  to "Running" resumes it from that snapshot on the same node. "ScaleToZero"
+                  makes suspension automatic: idle → suspend, first packet → resume.
+                enum:
+                - Running
+                - Suspended
+                - ScaleToZero
+                type: string
               env:
                 description: Env sets environment variables inside the VM via the
                   guest agent.
@@ -280,6 +292,14 @@ spec:
                       x-kubernetes-map-type: atomic
                   type: object
                 type: array
+              expireAfter:
+                description: |-
+                  ExpireAfter is the maximum wall-clock runtime from first Running transition.
+                  0 or unset disables automatic expiration. Minimum enabled value is 60s.
+                type: string
+                x-kubernetes-validations:
+                - message: expireAfter must be 0 (disabled) or at least 60s
+                  rule: duration(self) == duration('0s') || duration(self) >= duration('60s')
               guestAgent:
                 description: GuestAgent controls guest agent injection. Overrides
                   defaults when set.
@@ -289,6 +309,11 @@ spec:
                       to true when omitted.
                     type: boolean
                 type: object
+              idleTimeout:
+                description: |-
+                  IdleTimeout is how long a ScaleToZero VM must see no traffic before the agent
+                  auto-suspends it. Ignored unless desiredState is "ScaleToZero". Defaults to 5m.
+                type: string
               image:
                 description: |-
                   Image is the OCI image used as the VM rootfs. CMD/ENTRYPOINT from the
@@ -494,6 +519,13 @@ spec:
                         type: integer
                     type: object
                 type: object
+              rescheduleOnNodeLoss:
+                description: |-
+                  RescheduleOnNodeLoss opts this VM into automatic rescheduling when its
+                  assigned node becomes unhealthy. Only takes effect when spec.lifecycle is
+                  "persistent". The VM is NOT rescheduled if any PersistentVolumeClaim is
+                  owned by it (PVCs cannot follow the VM to a new node).
+                type: boolean
               restartPolicy:
                 description: |-
                   RestartPolicy overrides restart policy for this specific VM.
@@ -706,8 +738,20 @@ spec:
                   (informational).
                 format: date-time
                 type: string
+              expiresAt:
+                description: |-
+                  ExpiresAt is the computed expiration timestamp (RunningAt + Spec.ExpireAfter).
+                  Empty when expiration is disabled or VM has not reached Running yet.
+                format: date-time
+                type: string
               ip:
                 description: IP is the IP address assigned to the VM by the ImpNetwork.
+                type: string
+              lastActivityTime:
+                description: |-
+                  LastActivityTime is the most recent time the agent observed traffic on the
+                  VM's interface. Used by ScaleToZero idle detection; observability only.
+                format: date-time
                 type: string
               nextRetryAfter:
                 description: NextRetryAfter is the earliest time the controller will
@@ -728,6 +772,9 @@ spec:
                 - Succeeded
                 - Failed
                 - RetryExhausted
+                - Suspending
+                - Suspended
+                - Resuming
                 type: string
               restartCount:
                 description: RestartCount is the cumulative number of times this VM
@@ -752,6 +799,17 @@ spec:
                 description: |-
                   StartedAt is the time the VM last transitioned to phase Starting.
                   Used to detect and time out stuck start attempts.
+                format: date-time
+                type: string
+              suspendSnapshotPath:
+                description: |-
+                  SuspendSnapshotPath is the node-local directory holding the VM's suspend
+                  snapshot (vm.state + vm.mem). Set when the VM is Suspended; the resume path
+                  restores from here. Empty when the VM is not suspended.
+                type: string
+              suspendedAt:
+                description: SuspendedAt is the time the VM last transitioned to phase
+                  Suspended.
                 format: date-time
                 type: string
             type: object

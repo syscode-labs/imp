@@ -199,6 +199,29 @@ func TestImpVMWebhook_ValidateCreate_Valid_ClassRef(t *testing.T) {
 	}
 }
 
+func TestImpVMWebhook_ValidateCreate_IdleTimeoutTooSmall(t *testing.T) {
+	wh := &ImpVMWebhook{}
+	vm := newVM("", "my-class", "my-image")
+	vm.Spec.IdleTimeout = &metav1.Duration{Duration: 5 * time.Second}
+
+	_, err := wh.ValidateCreate(context.Background(), vm)
+	if err == nil {
+		t.Fatal("expected error for idleTimeout below 10s, got nil")
+	}
+}
+
+func TestImpVMWebhook_ValidateCreate_IdleTimeoutValid(t *testing.T) {
+	wh := &ImpVMWebhook{}
+	vm := newVM("", "my-class", "my-image")
+	vm.Spec.DesiredState = impdevv1alpha1.VMDesiredStateScaleToZero
+	vm.Spec.IdleTimeout = &metav1.Duration{Duration: 2 * time.Minute}
+
+	_, err := wh.ValidateCreate(context.Background(), vm)
+	if err != nil {
+		t.Errorf("expected no error for valid ScaleToZero+idleTimeout, got: %v", err)
+	}
+}
+
 func TestImpVMWebhook_ValidateCreate_Valid_TemplateRef(t *testing.T) {
 	wh := &ImpVMWebhook{}
 	vm := newVM("my-template", "", "") // templateRef only, no image required
