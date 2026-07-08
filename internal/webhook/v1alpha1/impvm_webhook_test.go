@@ -216,9 +216,25 @@ func TestImpVMWebhook_ValidateCreate_IdleTimeoutValid(t *testing.T) {
 	vm.Spec.DesiredState = impdevv1alpha1.VMDesiredStateScaleToZero
 	vm.Spec.IdleTimeout = &metav1.Duration{Duration: 2 * time.Minute}
 
-	_, err := wh.ValidateCreate(context.Background(), vm)
+	warns, err := wh.ValidateCreate(context.Background(), vm)
 	if err != nil {
 		t.Errorf("expected no error for valid ScaleToZero+idleTimeout, got: %v", err)
+	}
+	if len(warns) == 0 {
+		t.Error("expected an experimental warning for ScaleToZero, got none")
+	}
+}
+
+func TestImpVMWebhook_ValidateCreate_NoWarningWithoutScaleToZero(t *testing.T) {
+	wh := &ImpVMWebhook{}
+	vm := newVM("", "my-class", "my-image") // desiredState unset (Running)
+
+	warns, err := wh.ValidateCreate(context.Background(), vm)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(warns) != 0 {
+		t.Errorf("expected no warnings for non-ScaleToZero VM, got: %v", warns)
 	}
 }
 

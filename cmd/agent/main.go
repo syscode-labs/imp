@@ -6,6 +6,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"time"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
@@ -111,6 +112,14 @@ func main() {
 		alloc = fcDrv.Alloc
 	}
 
+	// Scale-to-zero (wake-on-traffic) is experimental and its capture hook is not
+	// yet hardware-validated — opt in explicitly via IMP_SCALE_TO_ZERO=true.
+	var sz *agent.ScaleToZero
+	if os.Getenv("IMP_SCALE_TO_ZERO") == "true" {
+		sz = agent.NewLinuxScaleToZero(1024, 15*time.Second)
+		log.Info("scale-to-zero enabled (experimental; wake path not hardware-validated)")
+	}
+
 	if err := (&agent.ImpVMReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
@@ -120,6 +129,7 @@ func main() {
 		Metrics:  mc,
 		Net:      prodNet,
 		Alloc:    alloc,
+		SZ:       sz,
 		Recorder: mgr.GetEventRecorderFor("imp-agent"), //nolint:staticcheck // controller-runtime returns legacy recorder type expected by reconciler
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "Unable to set up ImpVMReconciler")
