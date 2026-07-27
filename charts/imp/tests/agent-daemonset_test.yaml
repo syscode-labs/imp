@@ -32,6 +32,24 @@ tests:
               path: /dev/kvm
               type: CharDevice
 
+  - it: mounts the firecracker binary hostPath and sets FC_BIN
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FC_BIN
+            value: /usr/local/bin/firecracker
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: firecracker-bin
+            hostPath:
+              path: /usr/local/bin/firecracker
+              type: File
+
   - it: uses emptyDir for socketDir when hostPaths disabled
     template: templates/agent/daemonset.yaml
     set:

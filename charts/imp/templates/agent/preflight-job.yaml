@@ -1,0 +1,68 @@
+{{- if .Values.kvm.preflight.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "imp.fullname" . }}-kvm-preflight
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kvm-preflight
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded,hook-failed
+spec:
+  completions: {{ .Values.kvm.preflight.minVerifiedNodes }}
+  parallelism: {{ .Values.kvm.preflight.minVerifiedNodes }}
+  backoffLimit: {{ .Values.kvm.preflight.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.kvm.preflight.timeoutSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "imp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kvm-preflight
+    spec:
+      # No Kubernetes API access needed: distinct-node coverage comes from
+      # required podAntiAffinity below, not from a controller listing nodes.
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kvm.preflight.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: {{ .Release.Name }}
+                  app.kubernetes.io/component: kvm-preflight
+      containers:
+        - name: kvm-preflight
+          image: {{ include "imp.agent.image" . }}
+          imagePullPolicy: {{ .Values.agent.image.pullPolicy | quote }}
+          args: ["-capability-probe"]
+          env:
+            - name: FC_BIN
+              value: {{ .Values.agent.env.fcBinPath | required "agent.env.fcBinPath is required" | quote }}
+          volumeMounts:
+            - name: dev-kvm
+              mountPath: /dev/kvm
+            - name: firecracker-bin
+              mountPath: {{ .Values.agent.env.fcBinPath | quote }}
+              readOnly: true
+      volumes:
+        - name: dev-kvm
+          hostPath:
+            path: /dev/kvm
+            type: CharDevice
+        - name: firecracker-bin
+          hostPath:
+            path: {{ .Values.agent.env.fcBinPath | quote }}
+            type: File
+{{- end }}

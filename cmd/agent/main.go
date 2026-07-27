@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"time"
 
@@ -26,8 +27,14 @@ import (
 	"github.com/syscode-labs/imp/internal/agent"
 	"github.com/syscode-labs/imp/internal/agent/api"
 	"github.com/syscode-labs/imp/internal/agent/network"
+	"github.com/syscode-labs/imp/internal/capability"
 	"github.com/syscode-labs/imp/internal/telemetry"
 )
+
+// capabilityProbe runs the standalone KVM/Firecracker capability probe and
+// exits: 0 when the host passes, 1 otherwise. Used by the Helm KVM preflight
+// hook Job so it can reuse the agent image without starting the manager.
+var capabilityProbe = flag.Bool("capability-probe", false, "run the KVM/Firecracker capability probe and exit")
 
 func main() {
 	opts := zap.Options{Development: true}
@@ -36,6 +43,17 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 	log := ctrl.Log.WithName("agent")
+
+	if *capabilityProbe {
+		r := capability.CheckDefault(os.Getenv("FC_BIN"))
+		if !r.OK() {
+			fmt.Fprintf(os.Stderr, "capability probe failed: kvm_available=%v (%s) firecracker_available=%v (%s)\n",
+				r.KVMAvailable, r.KVMError, r.FirecrackerAvailable, r.FirecrackerError)
+			os.Exit(1)
+		}
+		fmt.Println("capability probe passed")
+		os.Exit(0)
+	}
 
 	nodeName := os.Getenv("NODE_NAME")
 	if nodeName == "" {
@@ -173,7 +191,11 @@ func main() {
 		log.Error(err, "Unable to set up health check")
 		os.Exit(1)
 	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+	readyzCheck := healthz.Ping
+	if fcDrv, ok := driver.(*agent.FirecrackerDriver); ok {
+		readyzCheck = agent.CapabilityReadyzCheck(fcDrv.BinPath)
+	}
+	if err := mgr.AddReadyzCheck("readyz", readyzCheck); err != nil {
 		log.Error(err, "Unable to set up ready check")
 		os.Exit(1)
 	}

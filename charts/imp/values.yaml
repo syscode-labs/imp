@@ -42,6 +42,10 @@ agent:
     runAsGroup: 0
   env:
     kernelPath: ""
+    # Path to the firecracker binary on the host node, installed by the
+    # talos-ext-firecracker system extension. hostPath-mounted read-only into
+    # the agent and KVM preflight containers, and exported as FC_BIN.
+    fcBinPath: /usr/local/bin/firecracker
   extraEnv: []
   hostPaths:
     socketDir:
@@ -79,6 +83,17 @@ grafana:
   namespace: ""
   tempo:
     datasourceUid: ""   # optional: pre-fill the Tempo datasource UID
+
+kvm:
+  # preflight blocks install/upgrade until the configured minimum number of
+  # selected nodes pass a runtime /dev/kvm + Firecracker capability probe.
+  # Runs as a pre-install/pre-upgrade Helm hook Job; failure blocks the release.
+  preflight:
+    enabled: false
+    nodeSelector: {}
+    minVerifiedNodes: 1
+    timeoutSeconds: 120
+    backoffLimit: 6
 
 plugin:
   rbac:

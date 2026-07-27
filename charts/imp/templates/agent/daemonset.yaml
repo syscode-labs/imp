@@ -49,6 +49,8 @@ spec:
           value: imp-agent
         - name: FC_KERNEL
           value: {{ .Values.agent.env.kernelPath | required "agent.env.kernelPath is required" | quote }}
+        - name: FC_BIN
+          value: {{ .Values.agent.env.fcBinPath | required "agent.env.fcBinPath is required" | quote }}
         {{- with .Values.agent.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -63,6 +65,9 @@ spec:
         volumeMounts:
         - name: dev-kvm
           mountPath: /dev/kvm
+        - name: firecracker-bin
+          mountPath: {{ .Values.agent.env.fcBinPath | quote }}
+          readOnly: true
         - name: socket-dir
           mountPath: /run/imp/sockets
         - name: image-cache
@@ -72,6 +77,10 @@ spec:
         hostPath:
           path: /dev/kvm
           type: CharDevice
+      - name: firecracker-bin
+        hostPath:
+          path: {{ .Values.agent.env.fcBinPath | quote }}
+          type: File
       - name: socket-dir
         {{- if .Values.agent.hostPaths.socketDir.enabled }}
         hostPath:

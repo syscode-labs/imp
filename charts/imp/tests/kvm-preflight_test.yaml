@@ -1,0 +1,112 @@
+suite: KVM preflight Job
+templates:
+  - templates/agent/preflight-job.yaml
+tests:
+  - it: renders nothing when disabled (default)
+    template: templates/agent/preflight-job.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders a Job when enabled
+    template: templates/agent/preflight-job.yaml
+    set:
+      kvm.preflight.enabled: true
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: spec.completions
+          value: 1
+      - equal:
+          path: spec.parallelism
+          value: 1
+
+  - it: is a pre-install/pre-upgrade hook that blocks the release on failure
+    template: templates/agent/preflight-job.yaml
+    set:
+      kvm.preflight.enabled: true
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation,hook-succeeded,hook-failed
+
+  - it: honors the configured minimum verified node count
+    template: templates/agent/preflight-job.yaml
+    set:
+      kvm.preflight.enabled: true
+      kvm.preflight.minVerifiedNodes: 3
+    asserts:
+      - equal:
+          path: spec.completions
+          value: 3
+      - equal:
+          path: spec.parallelism
+          value: 3
+
+  - it: mounts the firecracker binary hostPath and sets FC_BIN
+    template: templates/agent/preflight-job.yaml
+    set:
+      kvm.preflight.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FC_BIN
+            value: /usr/local/bin/firecracker
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: firecracker-bin
+            hostPath:
+              path: /usr/local/bin/firecracker
+              type: File
+
+  - it: applies the configured node selector
+    template: templates/agent/preflight-job.yaml
+    set:
+      kvm.preflight.enabled: true
+      kvm.preflight.nodeSelector:
+        imp.dev/kvm-capable: "true"
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            imp.dev/kvm-capable: "true"
+
+  - it: forces distinct nodes via required pod anti-affinity
+    template: templates/agent/preflight-job.yaml
+    set:
+      kvm.preflight.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].topologyKey
+          value: kubernetes.io/hostname
+
+  - it: runs the capability probe against the mounted KVM device
+    template: templates/agent/preflight-job.yaml
+    set:
+      kvm.preflight.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].args
+          value: ["-capability-probe"]
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: dev-kvm
+            hostPath:
+              path: /dev/kvm
+              type: CharDevice
+
+  - it: does not mount a service account token
+    template: templates/agent/preflight-job.yaml
+    set:
+      kvm.preflight.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
