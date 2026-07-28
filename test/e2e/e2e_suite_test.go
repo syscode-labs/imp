@@ -115,6 +115,19 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
+	if os.Getenv("IMP_E2E_REAL_AGENT") == "true" {
+		By("dumping agent + operator logs before teardown")
+		agentLogs := exec.Command("kubectl", "logs", "-n", namespace,
+			"-l", "app.kubernetes.io/component=agent", "--tail=500", "--prefix")
+		out, _ := utils.Run(agentLogs)
+		GinkgoWriter.Println("--- agent logs ---\n" + out)
+
+		operatorLogs := exec.Command("kubectl", "logs", "-n", namespace,
+			"-l", "app.kubernetes.io/component=operator", "--tail=500", "--prefix")
+		out, _ = utils.Run(operatorLogs)
+		GinkgoWriter.Println("--- operator logs ---\n" + out)
+	}
+
 	By("uninstalling imp chart")
 	unimpCmd := exec.Command("helm", "uninstall", helmRelease, "--namespace", namespace)
 	_, _ = utils.Run(unimpCmd)
