@@ -87,17 +87,29 @@ var _ = BeforeSuite(func() {
 	agentRepo := getenvOrDefault("IMP_E2E_AGENT_IMAGE_REPOSITORY", "local/imp-agent")
 	agentTag := getenvOrDefault("IMP_E2E_AGENT_IMAGE_TAG", "e2e")
 
-	impCmd := exec.Command("helm", "install", helmRelease, "charts/imp",
+	impArgs := []string{"install", helmRelease, "charts/imp",
 		"--namespace", namespace,
-		"--set", "operator.image.repository="+operatorRepo,
-		"--set", "operator.image.tag="+operatorTag,
-		"--set", "agent.image.repository="+agentRepo,
-		"--set", "agent.image.tag="+agentTag,
+		"--set", "operator.image.repository=" + operatorRepo,
+		"--set", "operator.image.tag=" + operatorTag,
+		"--set", "agent.image.repository=" + agentRepo,
+		"--set", "agent.image.tag=" + agentTag,
 		"--set", "agent.env.kernelPath=/var/lib/imp/vmlinux",
-		"--set-string", "agent.nodeSelector.imp\\.dev/no-agent=true",
 		"--set", "metrics.serviceMonitor.enabled=false",
 		"--set", "metrics.podMonitor.enabled=false",
-		"--wait", "--timeout", "10m")
+	}
+	if os.Getenv("IMP_E2E_REAL_AGENT") == "true" {
+		// Real KVM runner: let the agent schedule (no no-agent nodeSelector)
+		// and enable the scale-to-zero datapath under test.
+		impArgs = append(impArgs,
+			"--set", "agent.extraEnv[0].name=IMP_SCALE_TO_ZERO",
+			"--set", "agent.extraEnv[0].value=true",
+		)
+	} else {
+		impArgs = append(impArgs, "--set-string", "agent.nodeSelector.imp\\.dev/no-agent=true")
+	}
+	impArgs = append(impArgs, "--wait", "--timeout", "10m")
+
+	impCmd := exec.Command("helm", impArgs...)
 	_, err = utils.Run(impCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp failed")
 })

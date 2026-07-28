@@ -53,6 +53,25 @@ func TestCheck_MissingDevice(t *testing.T) {
 	}
 }
 
+func TestCheck_UnopenableDevice(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("running as root: permission bits don't block access")
+	}
+	dir := t.TempDir()
+	kvmPath := filepath.Join(dir, "kvm")
+	binPath := filepath.Join(dir, "firecracker")
+	if err := os.WriteFile(kvmPath, nil, 0o000); err != nil {
+		t.Fatalf("write unopenable kvm device stub: %v", err)
+	}
+	writeExecutable(t, binPath)
+
+	got := Check(kvmPath, binPath)
+
+	if got.KVMAvailable || got.KVMError == "" {
+		t.Errorf("expected KVM unavailable with an error, got %+v", got)
+	}
+}
+
 func TestCheck_MissingBinary(t *testing.T) {
 	dir := t.TempDir()
 	kvmPath := filepath.Join(dir, "kvm")

@@ -29,9 +29,10 @@ func (r Result) OK() bool {
 func Check(kvmPath, binPath string) Result {
 	var r Result
 
-	if _, err := os.Stat(kvmPath); err != nil {
+	if f, err := os.OpenFile(kvmPath, os.O_RDWR, 0); err != nil { //nolint:gosec // G304: kvmPath is an operator-supplied device path, not user input
 		r.KVMError = fmt.Sprintf("%s not available: %v", kvmPath, err)
 	} else {
+		_ = f.Close()
 		r.KVMAvailable = true
 	}
 
