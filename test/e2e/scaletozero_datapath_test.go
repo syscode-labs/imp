@@ -126,7 +126,7 @@ spec:
     name: %s
   networkRef:
     name: %s
-  image: docker.io/library/busybox:latest
+  image: docker.io/library/nginx:alpine
 `, pingerName, className, networkName)
 		applyPinger := exec.Command("kubectl", "apply", "-f", "-")
 		applyPinger.Stdin = strings.NewReader(pingerManifest)
@@ -145,7 +145,7 @@ spec:
     name: %s
   networkRef:
     name: %s
-  image: docker.io/library/busybox:latest
+  image: docker.io/library/nginx:alpine
   desiredState: ScaleToZero
   idleTimeout: 15s
 `, targetName, className, networkName)
