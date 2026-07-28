@@ -188,6 +188,20 @@ jobs:
         run: |
           IMP_E2E_REAL_AGENT=true go test -tags e2e ./test/e2e/... -v -timeout 30m -ginkgo.label-filter="datapath"
 
+      - name: Dump cluster diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl get impvm,impnetwork,impvmclass -A -o wide || true
+          kubectl describe pods -n imp-system || true
+          kubectl describe impvm -n default || true
+          echo "--- operator logs ---"
+          kubectl logs -n imp-system -l app.kubernetes.io/component=operator --tail=200 || true
+          echo "--- agent logs ---"
+          kubectl logs -n imp-system -l app.kubernetes.io/component=agent --tail=200 || true
+          echo "--- events ---"
+          kubectl get events -A --sort-by=.lastTimestamp || true
+
   e2e-kind:
     name: E2E Smoke (Kind)
     runs-on: ubuntu-latest
