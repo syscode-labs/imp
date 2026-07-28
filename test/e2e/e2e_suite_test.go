@@ -102,7 +102,7 @@ var _ = BeforeSuite(func() {
 		// and enable the scale-to-zero datapath under test.
 		impArgs = append(impArgs,
 			"--set", "agent.extraEnv[0].name=IMP_SCALE_TO_ZERO",
-			"--set", "agent.extraEnv[0].value=true",
+			"--set-string", "agent.extraEnv[0].value=true",
 		)
 	} else {
 		impArgs = append(impArgs, "--set-string", "agent.nodeSelector.imp\\.dev/no-agent=true")
