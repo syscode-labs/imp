@@ -50,6 +50,25 @@ tests:
               path: /usr/local/bin/firecracker
               type: File
 
+  - it: mounts the guest kernel hostPath at kernelPath
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /var/lib/imp/vmlinux
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: guest-kernel
+            mountPath: /var/lib/imp/vmlinux
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: guest-kernel
+            hostPath:
+              path: /var/lib/imp/vmlinux
+              type: File
+
   - it: uses emptyDir for socketDir when hostPaths disabled
     template: templates/agent/daemonset.yaml
     set:

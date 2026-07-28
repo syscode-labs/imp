@@ -68,6 +68,9 @@ spec:
         - name: firecracker-bin
           mountPath: {{ .Values.agent.env.fcBinPath | quote }}
           readOnly: true
+        - name: guest-kernel
+          mountPath: {{ .Values.agent.env.kernelPath | quote }}
+          readOnly: true
         - name: socket-dir
           mountPath: /run/imp/sockets
         - name: image-cache
@@ -80,6 +83,10 @@ spec:
       - name: firecracker-bin
         hostPath:
           path: {{ .Values.agent.env.fcBinPath | quote }}
+          type: File
+      - name: guest-kernel
+        hostPath:
+          path: {{ .Values.agent.env.kernelPath | quote }}
           type: File
       - name: socket-dir
         {{- if .Values.agent.hostPaths.socketDir.enabled }}
