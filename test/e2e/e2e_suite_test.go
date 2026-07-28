@@ -20,6 +20,7 @@ limitations under the License.
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
@@ -120,13 +121,11 @@ var _ = AfterSuite(func() {
 		agentLogs := exec.Command("kubectl", "logs", "-n", namespace,
 			"-l", "app.kubernetes.io/component=agent", "--tail=500", "--prefix")
 		out, _ := utils.Run(agentLogs)
-		GinkgoWriter.Println("--- agent logs ---\n" + out)
-
+		fmt.Println("--- agent logs ---\n" + out)
 		operatorLogs := exec.Command("kubectl", "logs", "-n", namespace,
 			"-l", "app.kubernetes.io/component=operator", "--tail=500", "--prefix")
 		out, _ = utils.Run(operatorLogs)
-		GinkgoWriter.Println("--- operator logs ---\n" + out)
-	}
+		fmt.Println("--- operator logs ---\n" + out)	}
 
 	By("uninstalling imp chart")
 	unimpCmd := exec.Command("helm", "uninstall", helmRelease, "--namespace", namespace)
