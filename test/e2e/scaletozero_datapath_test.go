@@ -68,6 +68,21 @@ var _ = Describe("Imp ScaleToZero datapath", Label("datapath"), func() {
 			_, _ = utils.Run(exec.Command("kubectl", "delete", "impvmclass", className, "--ignore-not-found"))
 		})
 
+		By("getting the Kind node name")
+		nodeOut, err := utils.Run(exec.Command("kubectl", "get", "nodes", "-o", "jsonpath={.items[0].metadata.name}"))
+		Expect(err).NotTo(HaveOccurred())
+		nodeName := strings.TrimSpace(nodeOut)
+		Expect(nodeName).NotTo(BeEmpty())
+
+		By("removing control-plane taint and labeling the node imp/enabled=true")
+		_, _ = utils.Run(exec.Command("kubectl", "taint", "nodes", nodeName,
+			"node-role.kubernetes.io/control-plane:NoSchedule-"))
+		_, err = utils.Run(exec.Command("kubectl", "label", "node", nodeName, "imp/enabled=true", "--overwrite"))
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			_, _ = utils.Run(exec.Command("kubectl", "label", "node", nodeName, "imp/enabled-"))
+		})
+
 		By("creating the ImpVMClass")
 		classManifest := fmt.Sprintf(`
 apiVersion: imp.dev/v1alpha1
@@ -81,7 +96,7 @@ spec:
 `, className)
 		applyClass := exec.Command("kubectl", "apply", "-f", "-")
 		applyClass.Stdin = strings.NewReader(classManifest)
-		_, err := utils.Run(applyClass)
+		_, err = utils.Run(applyClass)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("creating the ImpNetwork")
