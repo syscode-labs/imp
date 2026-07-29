@@ -117,15 +117,26 @@ var _ = BeforeSuite(func() {
 
 var _ = AfterSuite(func() {
 	if os.Getenv("IMP_E2E_REAL_AGENT") == "true" {
-		By("dumping agent + operator logs before teardown")
+		By("dumping pod status + agent/operator logs before teardown")
+		podStatus := exec.Command("kubectl", "get", "pods", "-n", namespace, "-o", "wide")
+		out, _ := utils.Run(podStatus)
+		fmt.Println("--- pod status (check RESTARTS) ---\n" + out)
+
+		agentLogsPrev := exec.Command("kubectl", "logs", "-n", namespace,
+			"-l", "app.kubernetes.io/component=agent", "--tail=500", "--prefix", "--previous")
+		out, _ = utils.Run(agentLogsPrev)
+		fmt.Println("--- agent logs (previous container, if it restarted) ---\n" + out)
+
 		agentLogs := exec.Command("kubectl", "logs", "-n", namespace,
 			"-l", "app.kubernetes.io/component=agent", "--tail=500", "--prefix")
-		out, _ := utils.Run(agentLogs)
+		out, _ = utils.Run(agentLogs)
 		fmt.Println("--- agent logs ---\n" + out)
+
 		operatorLogs := exec.Command("kubectl", "logs", "-n", namespace,
 			"-l", "app.kubernetes.io/component=operator", "--tail=500", "--prefix")
 		out, _ = utils.Run(operatorLogs)
-		fmt.Println("--- operator logs ---\n" + out)	}
+		fmt.Println("--- operator logs ---\n" + out)
+	}
 
 	By("uninstalling imp chart")
 	unimpCmd := exec.Command("helm", "uninstall", helmRelease, "--namespace", namespace)
