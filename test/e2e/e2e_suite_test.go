@@ -20,6 +20,7 @@ limitations under the License.
 package e2e
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
@@ -87,22 +88,61 @@ var _ = BeforeSuite(func() {
 	agentRepo := getenvOrDefault("IMP_E2E_AGENT_IMAGE_REPOSITORY", "local/imp-agent")
 	agentTag := getenvOrDefault("IMP_E2E_AGENT_IMAGE_TAG", "e2e")
 
-	impCmd := exec.Command("helm", "install", helmRelease, "charts/imp",
+	impArgs := []string{"install", helmRelease, "charts/imp",
 		"--namespace", namespace,
-		"--set", "operator.image.repository="+operatorRepo,
-		"--set", "operator.image.tag="+operatorTag,
-		"--set", "agent.image.repository="+agentRepo,
-		"--set", "agent.image.tag="+agentTag,
+		"--set", "operator.image.repository=" + operatorRepo,
+		"--set", "operator.image.tag=" + operatorTag,
+		"--set", "agent.image.repository=" + agentRepo,
+		"--set", "agent.image.tag=" + agentTag,
 		"--set", "agent.env.kernelPath=/var/lib/imp/vmlinux",
-		"--set-string", "agent.nodeSelector.imp\\.dev/no-agent=true",
 		"--set", "metrics.serviceMonitor.enabled=false",
 		"--set", "metrics.podMonitor.enabled=false",
-		"--wait", "--timeout", "10m")
+	}
+	if os.Getenv("IMP_E2E_REAL_AGENT") == "true" {
+		// Real KVM runner: let the agent schedule (no no-agent nodeSelector)
+		// and enable the scale-to-zero datapath under test.
+		impArgs = append(impArgs,
+			"--set", "agent.extraEnv[0].name=IMP_SCALE_TO_ZERO",
+			"--set-string", "agent.extraEnv[0].value=true",
+			// Firecracker runs as a child process of the agent, so guest RAM counts
+			// against the agent container's own memory cgroup. The chart default
+			// (128Mi) assumes no hosted VMs and OOM-kills almost immediately once a
+			// real microVM boots — silently, since a SIGKILL leaves no panic/log line.
+			"--set", "agent.resources.limits.memory=1Gi",
+		)
+	} else {
+		impArgs = append(impArgs, "--set-string", "agent.nodeSelector.imp\\.dev/no-agent=true")
+	}
+	impArgs = append(impArgs, "--wait", "--timeout", "10m")
+
+	impCmd := exec.Command("helm", impArgs...)
 	_, err = utils.Run(impCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp failed")
 })
 
 var _ = AfterSuite(func() {
+	if os.Getenv("IMP_E2E_REAL_AGENT") == "true" {
+		By("dumping pod status + agent/operator logs before teardown")
+		podStatus := exec.Command("kubectl", "get", "pods", "-n", namespace, "-o", "wide")
+		out, _ := utils.Run(podStatus)
+		fmt.Println("--- pod status (check RESTARTS) ---\n" + out)
+
+		agentLogsPrev := exec.Command("kubectl", "logs", "-n", namespace,
+			"-l", "app.kubernetes.io/component=agent", "--tail=500", "--prefix", "--previous")
+		out, _ = utils.Run(agentLogsPrev)
+		fmt.Println("--- agent logs (previous container, if it restarted) ---\n" + out)
+
+		agentLogs := exec.Command("kubectl", "logs", "-n", namespace,
+			"-l", "app.kubernetes.io/component=agent", "--tail=500", "--prefix")
+		out, _ = utils.Run(agentLogs)
+		fmt.Println("--- agent logs ---\n" + out)
+
+		operatorLogs := exec.Command("kubectl", "logs", "-n", namespace,
+			"-l", "app.kubernetes.io/component=operator", "--tail=500", "--prefix")
+		out, _ = utils.Run(operatorLogs)
+		fmt.Println("--- operator logs ---\n" + out)
+	}
+
 	By("uninstalling imp chart")
 	unimpCmd := exec.Command("helm", "uninstall", helmRelease, "--namespace", namespace)
 	_, _ = utils.Run(unimpCmd)

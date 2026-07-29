@@ -1,0 +1,11 @@
+# Kind cluster configuration for the real-agent ScaleToZero datapath e2e.
+# Mounts host /dev/kvm into the control-plane node so a real Firecracker agent
+# can boot microVMs. See docs (e2e runner runbook) for the proven nested-KVM path.
+# Usage: kind create cluster --name imp-e2e-datapath --config test/e2e/kind-datapath.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraMounts:
+      - hostPath: /dev/kvm
+        containerPath: /dev/kvm
