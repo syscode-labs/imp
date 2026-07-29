@@ -10,6 +10,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"k8s.io/apimachinery/pkg/types"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // resetIdle forgets any idle sample for key (called on suspend/resume so the VM
@@ -62,13 +63,23 @@ func htons(v uint16) uint16 { return v<<8 | v>>8 }
 func (afpacketSource) Run(ctx context.Context, onDstIP func(string)) error {
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(htons(unix.ETH_P_IP)))
 	if err != nil {
+		logf.Log.Error(err, "afpacketSource: failed to open AF_PACKET socket")
 		return err
 	}
+	logf.Log.Info("afpacketSource: AF_PACKET socket open, capturing inbound IPv4 frames")
 	// Unblock the blocking Recvfrom and release the fd when the manager stops.
 	go func() {
 		<-ctx.Done()
 		_ = unix.Close(fd)
 	}()
+
+	// Diagnostic-only liveness counter (see scaletozero.go: this hook is
+	// UNVALIDATED). Proves whether the socket sees ANY IPv4 traffic at all,
+	// independent of whether it matches a registered wake IP — onDstIP() only
+	// logs on a match, so a validation run with zero matches is otherwise
+	// indistinguishable from a socket that receives nothing.
+	var frameCount uint64
+	lastLog := time.Now()
 
 	buf := make([]byte, 65536)
 	for {
@@ -84,6 +95,12 @@ func (afpacketSource) Run(ctx context.Context, onDstIP func(string)) error {
 		// destination address sits at bytes 30..34 (eth[14] + ipv4[16..20]).
 		if n < 34 {
 			continue
+		}
+		frameCount++
+		if frameCount == 1 || time.Since(lastLog) >= 10*time.Second {
+			logf.Log.Info("afpacketSource: capturing IPv4 traffic", "framesSeen", frameCount,
+				"lastDstIP", net.IP(buf[30:34]).String())
+			lastLog = time.Now()
 		}
 		onDstIP(net.IP(buf[30:34]).String())
 	}

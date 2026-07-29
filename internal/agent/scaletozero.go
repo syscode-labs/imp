@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
@@ -76,25 +77,39 @@ func (w *wakeRegistry) register(ip string, vm client.Object) {
 	w.keyByIP[ip] = key
 	w.ipByKey[key] = ip
 	w.objByKey[key] = vm
+	logf.Log.Info("wake registry: VM registered for wake-on-traffic", "vm", key, "ip", ip)
 }
 
 // onDstIP is the PacketSource callback: a frame arrived for ip. If ip belongs to
 // a registered VM not already signalled, enqueue a reconcile for it. The
 // signalled flag is set only when the event is actually enqueued, so a full
 // channel never silently loses a wake — the next packet retries.
+//
+// Diagnostic logging: this is the one hop the AF_PACKET PacketSource is
+// UNVALIDATED to reach (see scaletozero_linux.go), so every branch here is
+// logged at Info to make a validation run's outcome legible from cluster logs
+// without needing a debugger. Not gated behind a verbosity flag because a
+// suspended VM should see near-zero unmatched traffic — only VMs actually
+// awaiting wake generate log volume here.
 func (w *wakeRegistry) onDstIP(ip string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	key, ok := w.keyByIP[ip]
-	if !ok || w.signalled[key] {
+	if !ok {
+		return
+	}
+	if w.signalled[key] {
+		logf.Log.V(1).Info("wake registry: frame matched an already-signalled VM", "vm", key, "ip", ip)
 		return
 	}
 	obj := w.objByKey[key]
 	select {
 	case w.events <- event.GenericEvent{Object: obj}:
 		w.signalled[key] = true
+		logf.Log.Info("wake registry: frame matched, wake reconcile enqueued", "vm", key, "ip", ip)
 	default:
 		// Channel full; leave unsignalled so a later packet retries.
+		logf.Log.Info("wake registry: frame matched but event channel full, will retry", "vm", key, "ip", ip)
 	}
 }
 
