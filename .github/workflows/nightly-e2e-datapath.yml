@@ -112,19 +112,20 @@ jobs:
           path: artifacts/
 
       - name: Notify Telegram on failure
-        # Reuses the org's existing bot pattern (see oci-free-tier-monitor).
-        # Skips cleanly (not a failed step) until TELEGRAM_BOT_TOKEN and
-        # TELEGRAM_CHAT_ID are added as repo secrets.
+        # Reuses the org-wide bot (org secrets SYSCODE_LABS_BOT_TOKEN /
+        # SYSCODE_LABS_BOT_CHATID -- same pattern as oci-free-tier-monitor's
+        # own bot). Skips cleanly (not a failed step) if the org secrets are
+        # ever unavailable to this repo.
         if: failure() && github.event_name != 'pull_request'
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BOT_TOKEN: ${{ secrets.SYSCODE_LABS_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.SYSCODE_LABS_BOT_CHATID }}
         run: |
-          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
-            echo "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set, skipping notification"
+          if [ -z "${BOT_TOKEN:-}" ] || [ -z "${CHAT_ID:-}" ]; then
+            echo "SYSCODE_LABS_BOT_TOKEN/SYSCODE_LABS_BOT_CHATID not set, skipping notification"
             exit 0
           fi
           run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+          curl -fsS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
             --data-urlencode "text=imp: Nightly E2E Datapath failed on ${GITHUB_REF_NAME} (${GITHUB_SHA:0:7}) -- ${run_url}"
