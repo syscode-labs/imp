@@ -202,7 +202,7 @@ spec:
 		// an immediate single-shot ping can race a guest that isn't ready yet.
 		var warmOut string
 		Eventually(func(g Gomega) {
-			warmExit, out, execErr := execInVM(pingerName, "ping", "-c", "1", "-W", "5", targetIP)
+			warmExit, out, execErr := execInVM(pingerName, "/bin/ping", "-c", "1", "-W", "5", targetIP)
 			warmOut = out
 			g.Expect(execErr).NotTo(HaveOccurred())
 			g.Expect(warmExit).To(Equal(int32(0)))
@@ -217,7 +217,7 @@ spec:
 		}, "2m", "5s").Should(Succeed())
 
 		By("pinging the suspended VM's overlay IP from the pinger VM's guest agent")
-		wakeExit, wakeOut, err := execInVM(pingerName, "ping", "-c", "3", "-W", "2", targetIP)
+		wakeExit, wakeOut, err := execInVM(pingerName, "/bin/ping", "-c", "3", "-W", "2", targetIP)
 		Expect(err).NotTo(HaveOccurred())
 		GinkgoWriter.Printf("wake ping exit=%d output:\n%s\n", wakeExit, wakeOut)
 
