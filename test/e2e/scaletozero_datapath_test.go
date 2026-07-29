@@ -228,8 +228,10 @@ func vmPhaseAndIP(g Gomega, name string) (string, string) {
 }
 
 func vmNodeName(name string) string {
+	// status.nodeName exists on the CRD but nothing in the codebase ever writes it
+	// (only spec.nodeName is set, by the scheduler) — read spec instead.
 	out, err := utils.Run(exec.Command("kubectl", "get", "impvm", name, "-n", "default",
-		"-o", "jsonpath={.status.nodeName}"))
+		"-o", "jsonpath={.spec.nodeName}"))
 	if err != nil {
 		return ""
 	}
