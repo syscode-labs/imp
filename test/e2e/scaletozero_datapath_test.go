@@ -168,12 +168,6 @@ spec:
 			targetIP = ip
 		}, "5m", "5s").Should(Succeed())
 
-		By("waiting for the target to auto-suspend after going idle")
-		Eventually(func(g Gomega) {
-			phase, _ := vmPhaseAndIP(g, targetName)
-			g.Expect(phase).To(Equal("Suspended"))
-		}, "2m", "5s").Should(Succeed())
-
 		By("finding the agent pod colocated with the pinger VM")
 		pingerNode := vmNodeName(pingerName)
 		Expect(pingerNode).NotTo(BeEmpty())
@@ -194,15 +188,29 @@ spec:
 			_ = conn.Close()
 		}, "30s", "1s").Should(Succeed())
 
+		By("warming the pinger's ARP cache for the target before it suspends")
+		// The target's TAP is torn down on suspend (frees memory) — only the VTEP
+		// is kept, so cross-node overlay routing still works, but the pinger's own
+		// ARP resolution for the target's IP can only happen while the target's TAP
+		// exists to answer it. A sender with a warm ARP entry sends the IP frame
+		// directly on wake with no fresh ARP round-trip needed; a cold sender never
+		// gets an IP frame onto the wire in the first place, so the AF_PACKET wake
+		// hook (bound to ETH_P_IP, not ARP) never fires. This mirrors the real
+		// intended use case: traffic to an already-known, now-idle destination.
+		warmExit, warmOut, err := execInVM(pingerName, "ping", "-c", "1", "-W", "5", targetIP)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(warmExit).To(Equal(int32(0)), "ARP warm-up ping failed while target was still Running:\n"+warmOut)
+
+		By("waiting for the target to auto-suspend after going idle")
+		Eventually(func(g Gomega) {
+			phase, _ := vmPhaseAndIP(g, targetName)
+			g.Expect(phase).To(Equal("Suspended"))
+		}, "2m", "5s").Should(Succeed())
+
 		By("pinging the suspended VM's overlay IP from the pinger VM's guest agent")
-		body, err := json.Marshal(map[string][]string{"command": {"ping", "-c", "3", "-W", "2", targetIP}})
+		wakeExit, wakeOut, err := execInVM(pingerName, "ping", "-c", "3", "-W", "2", targetIP)
 		Expect(err).NotTo(HaveOccurred())
-		resp, err := http.Post( //nolint:noctx
-			fmt.Sprintf("http://localhost:19091/v1/exec/default/%s", pingerName),
-			"application/json", strings.NewReader(string(body)))
-		Expect(err).NotTo(HaveOccurred())
-		defer resp.Body.Close() //nolint:errcheck
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		GinkgoWriter.Printf("wake ping exit=%d output:\n%s\n", wakeExit, wakeOut)
 
 		By("asserting the target wakes: Suspended -> Resuming -> Running")
 		Eventually(func(g Gomega) {
@@ -211,6 +219,51 @@ spec:
 		}, "2m", "5s").Should(Succeed())
 	})
 })
+
+// execInVM runs command inside vmName's guest via the agent's vsock guest-exec
+// API (assumes a port-forward to localhost:19091 is already active) and returns
+// the process exit code plus the combined stdout+stderr NDJSON stream decoded to
+// plain text.
+func execInVM(vmName string, command ...string) (int32, string, error) {
+	body, err := json.Marshal(map[string][]string{"command": command})
+	if err != nil {
+		return 0, "", err
+	}
+	resp, err := http.Post( //nolint:noctx
+		fmt.Sprintf("http://localhost:19091/v1/exec/default/%s", vmName),
+		"application/json", strings.NewReader(string(body)))
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return 0, "", fmt.Errorf("exec %s: unexpected status %d", vmName, resp.StatusCode)
+	}
+
+	var out strings.Builder
+	var exitCode int32
+	dec := json.NewDecoder(resp.Body)
+	for dec.More() {
+		var line struct {
+			Stream string `json:"stream"`
+			Line   string `json:"line,omitempty"`
+			Code   *int32 `json:"code,omitempty"`
+		}
+		if err := dec.Decode(&line); err != nil {
+			return 0, out.String(), fmt.Errorf("decode exec response: %w", err)
+		}
+		switch line.Stream {
+		case "exit":
+			if line.Code != nil {
+				exitCode = *line.Code
+			}
+		default:
+			out.WriteString(line.Line)
+			out.WriteString("\n")
+		}
+	}
+	return exitCode, out.String(), nil
+}
 
 func vmPhaseAndIP(g Gomega, name string) (string, string) {
 	out, err := utils.Run(exec.Command("kubectl", "get", "impvm", name, "-n", "default",
