@@ -1,0 +1,130 @@
+name: Nightly E2E Datapath (Kind, real agent)
+
+on:
+  schedule:
+    # 04:00 UTC daily (staggered after the 02:00/03:00 nightly smoke/cilium jobs)
+    - cron: "0 4 * * *"
+  pull_request:
+    branches: [main]
+    paths:
+      - "internal/agent/scaletozero*.go"
+      - "internal/agent/network/**"
+      - "internal/agent/reconciler.go"
+      - "internal/capability/**"
+      - "charts/imp/templates/agent/**"
+      - "test/e2e/scaletozero_datapath_test.go"
+      - "test/e2e/kind-datapath.yaml"
+      - ".github/workflows/nightly-e2e-datapath.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-e2e-datapath
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.26"
+
+jobs:
+  e2e-datapath:
+    name: E2E Datapath (Kind, real agent)
+    # Boots a real Firecracker agent via nested KVM -- slower and less proven
+    # than the Kind smoke job, so it runs nightly + on PRs touching the
+    # datapath's own fragile paths, not on every push. See docs (e2e runner
+    # runbook) for provenance: proven on ubuntu-latest (run 29019535180); wake
+    # hook + FDB sync validated end-to-end in imp#35 (2026-07-29).
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Allow unprivileged access to /dev/kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: imp-e2e-datapath
+          config: test/e2e/kind-datapath.yaml
+
+      - name: Install Helm CLI
+        uses: azure/setup-helm@v4
+
+      - name: Build local E2E images
+        run: |
+          docker build -f Dockerfile.operator -t local/imp-operator:e2e .
+          docker build -f Dockerfile.agent -t local/imp-agent:e2e .
+
+      - name: Load local E2E images into Kind
+        run: |
+          kind load docker-image local/imp-operator:e2e --name imp-e2e-datapath
+          kind load docker-image local/imp-agent:e2e --name imp-e2e-datapath
+
+      - name: Stage Firecracker binary + guest kernel on the Kind node
+        # No imp-specific guest kernel exists yet (planned "imp-guest-kernel" repo,
+        # not built) — every UNVALIDATED-marked path in this repo uses the public
+        # Firecracker quickstart kernel as a stopgap; same here.
+        run: |
+          node=$(kind get nodes --name imp-e2e-datapath | head -1)
+          fc_ver=v1.15.0
+          curl -fsSL "https://github.com/firecracker-microvm/firecracker/releases/download/${fc_ver}/firecracker-${fc_ver}-x86_64.tgz" -o /tmp/firecracker.tgz
+          tar -xzf /tmp/firecracker.tgz -C /tmp
+          docker cp "/tmp/release-${fc_ver}-x86_64/firecracker-${fc_ver}-x86_64" "${node}:/usr/local/bin/firecracker"
+          docker exec "${node}" chmod +x /usr/local/bin/firecracker
+          curl -fsSL "https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/x86_64/kernels/vmlinux.bin" -o /tmp/vmlinux
+          docker exec "${node}" mkdir -p /var/lib/imp
+          docker cp /tmp/vmlinux "${node}:/var/lib/imp/vmlinux"
+
+      - name: Run datapath E2E suite (retry once)
+        run: |
+          set -euo pipefail
+          if ! IMP_E2E_REAL_AGENT=true go test -tags e2e ./test/e2e/... -v -timeout 30m -ginkgo.label-filter="datapath"; then
+            echo "First run failed; retrying once..."
+            IMP_E2E_REAL_AGENT=true go test -tags e2e ./test/e2e/... -v -timeout 30m -ginkgo.label-filter="datapath"
+          fi
+
+      - name: Dump cluster diagnostics on failure
+        if: failure()
+        run: |
+          mkdir -p artifacts
+          kubectl get pods -A -o wide > artifacts/pods-all.txt || true
+          kubectl get impvm,impnetwork,impvmclass -A -o wide > artifacts/impvm-all.txt || true
+          kubectl describe pods -n imp-system > artifacts/imp-system-pods-describe.txt || true
+          kubectl describe impvm -n default > artifacts/impvm-describe.txt || true
+          kubectl logs -n imp-system -l app.kubernetes.io/component=operator --tail=500 > artifacts/operator-logs.txt || true
+          kubectl logs -n imp-system -l app.kubernetes.io/component=agent --tail=500 > artifacts/agent-logs.txt || true
+          kubectl get events -A --sort-by=.lastTimestamp > artifacts/events.txt || true
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: nightly-e2e-datapath-diagnostics
+          path: artifacts/
+
+      - name: Notify Telegram on failure
+        # Reuses the org's existing bot pattern (see oci-free-tier-monitor).
+        # Skips cleanly (not a failed step) until TELEGRAM_BOT_TOKEN and
+        # TELEGRAM_CHAT_ID are added as repo secrets.
+        if: failure() && github.event_name != 'pull_request'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "${TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+            echo "TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set, skipping notification"
+            exit 0
+          fi
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=imp: Nightly E2E Datapath failed on ${GITHUB_REF_NAME} (${GITHUB_SHA:0:7}) -- ${run_url}"
