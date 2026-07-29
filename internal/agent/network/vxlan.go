@@ -95,11 +95,22 @@ func (m *LinuxNetManager) SyncFDB(_ context.Context, ifaceName string, entries [
 		return fmt.Errorf("list FDB entries for %s: %w", ifaceName, err)
 	}
 
-	// Remove stale entries — skip the all-zeros broadcast entry.
+	// Remove stale entries — skip the all-zeros broadcast entry, and skip any
+	// entry with no resolvable destination IP. When this VXLAN interface is
+	// attached to a bridge, the kernel auto-creates a "self permanent" FDB
+	// entry for the port's own MAC with no tunnel destination; NeighDel on
+	// that entry serializes an empty NDA_DST attribute, which the kernel's
+	// VXLAN driver rejects with EAFNOSUPPORT ("address family not supported by
+	// protocol") — deterministically, every time, since it's not something
+	// SyncFDB itself ever added. Confirmed via CI: this deletion failure
+	// aborted the whole sync before any real VTEP entry was ever added.
 	allZeros := "00:00:00:00:00:00"
 	for _, n := range current {
 		mac := n.HardwareAddr.String()
 		if mac == allZeros {
+			continue
+		}
+		if n.IP.To4() == nil && n.IP.To16() == nil {
 			continue
 		}
 		if _, ok := desired[mac]; !ok {
