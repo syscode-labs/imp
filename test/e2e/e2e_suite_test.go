@@ -104,6 +104,11 @@ var _ = BeforeSuite(func() {
 		impArgs = append(impArgs,
 			"--set", "agent.extraEnv[0].name=IMP_SCALE_TO_ZERO",
 			"--set-string", "agent.extraEnv[0].value=true",
+			// Firecracker runs as a child process of the agent, so guest RAM counts
+			// against the agent container's own memory cgroup. The chart default
+			// (128Mi) assumes no hosted VMs and OOM-kills almost immediately once a
+			// real microVM boots — silently, since a SIGKILL leaves no panic/log line.
+			"--set", "agent.resources.limits.memory=1Gi",
 		)
 	} else {
 		impArgs = append(impArgs, "--set-string", "agent.nodeSelector.imp\\.dev/no-agent=true")
