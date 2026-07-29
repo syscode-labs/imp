@@ -197,9 +197,18 @@ spec:
 		// gets an IP frame onto the wire in the first place, so the AF_PACKET wake
 		// hook (bound to ETH_P_IP, not ARP) never fires. This mirrors the real
 		// intended use case: traffic to an already-known, now-idle destination.
-		warmExit, warmOut, err := execInVM(pingerName, "ping", "-c", "1", "-W", "5", targetIP)
-		Expect(err).NotTo(HaveOccurred())
-		Expect(warmExit).To(Equal(int32(0)), "ARP warm-up ping failed while target was still Running:\n"+warmOut)
+		// Retry: status.phase==Running reflects the host starting Firecracker, not
+		// that the guest kernel has finished booting and brought its network up —
+		// an immediate single-shot ping can race a guest that isn't ready yet.
+		var warmOut string
+		Eventually(func(g Gomega) {
+			warmExit, out, execErr := execInVM(pingerName, "ping", "-c", "1", "-W", "5", targetIP)
+			warmOut = out
+			g.Expect(execErr).NotTo(HaveOccurred())
+			g.Expect(warmExit).To(Equal(int32(0)))
+		}, "1m", "3s").Should(Succeed(), func() string {
+			return "ARP warm-up ping never succeeded while target was still Running:\n" + warmOut
+		})
 
 		By("waiting for the target to auto-suspend after going idle")
 		Eventually(func(g Gomega) {
