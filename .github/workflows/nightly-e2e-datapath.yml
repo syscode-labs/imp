@@ -57,7 +57,7 @@ jobs:
           config: test/e2e/kind-datapath.yaml
 
       - name: Install Helm CLI
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
 
       - name: Build local E2E images
         run: |
