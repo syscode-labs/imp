@@ -12,6 +12,9 @@ tests:
       - equal:
           path: rules[0].verbs
           value: [get]
+      - contains:
+          path: rules[0].resources
+          content: impnetworks
   - it: binds the dedicated runtime service account
     template: templates/runtime/clusterrolebinding.yaml
     asserts:

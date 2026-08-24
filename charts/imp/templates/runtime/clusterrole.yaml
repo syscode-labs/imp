@@ -6,5 +6,5 @@ metadata:
     {{- include "imp.labels" . | nindent 4 }}
 rules:
 - apiGroups: ["imp.dev"]
-  resources: ["impvmclasses", "impvmsnapshots"]
+  resources: ["impvmclasses", "impvmsnapshots", "impnetworks"]
   verbs: ["get"]
