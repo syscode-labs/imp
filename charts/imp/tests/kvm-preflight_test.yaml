@@ -57,13 +57,11 @@ tests:
           content:
             name: FC_BIN
             value: /usr/local/bin/firecracker
-      - contains:
-          path: spec.template.spec.volumes
-          content:
-            name: firecracker-bin
-            hostPath:
-              path: /usr/local/bin/firecracker
-              type: File
+      - equal:
+          path: spec.template.spec.volumes[1].hostPath.path
+          value: /usr/local/bin/firecracker
+      - notExists:
+          path: spec.template.spec.volumes[1].hostPath.type
 
   - it: applies the configured node selector
     template: templates/agent/preflight-job.yaml
@@ -76,6 +74,17 @@ tests:
           path: spec.template.spec.nodeSelector
           value:
             imp.dev/kvm-capable: "true"
+            imp/enabled: "true"
+
+  - it: probes only nodes opted in to host Imp microVMs by default
+    template: templates/agent/preflight-job.yaml
+    set:
+      kvm.preflight.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            imp/enabled: "true"
 
   - it: forces distinct nodes via required pod anti-affinity
     template: templates/agent/preflight-job.yaml
@@ -101,6 +110,9 @@ tests:
             hostPath:
               path: /dev/kvm
               type: CharDevice
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.privileged
+          value: true
 
   - it: does not mount a service account token
     template: templates/agent/preflight-job.yaml

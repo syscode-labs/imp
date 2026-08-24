@@ -66,11 +66,19 @@ Agent ServiceAccount name.
 Image tag — falls back to .Chart.AppVersion when tag is empty.
 */}}
 {{- define "imp.operator.image" -}}
+{{- if contains "@" .Values.operator.image.repository -}}
+{{- .Values.operator.image.repository -}}
+{{- else -}}
 {{- $tag := .Values.operator.image.tag | default .Chart.AppVersion }}
 {{- printf "%s:%s" .Values.operator.image.repository $tag }}
+{{- end -}}
 {{- end }}
 
 {{- define "imp.agent.image" -}}
+{{- if contains "@" .Values.agent.image.repository -}}
+{{- .Values.agent.image.repository -}}
+{{- else -}}
 {{- $tag := .Values.agent.image.tag | default .Chart.AppVersion }}
 {{- printf "%s:%s" .Values.agent.image.repository $tag }}
+{{- end -}}
 {{- end }}

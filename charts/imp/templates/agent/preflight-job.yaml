@@ -47,6 +47,8 @@ spec:
           image: {{ include "imp.agent.image" . }}
           imagePullPolicy: {{ .Values.agent.image.pullPolicy | quote }}
           args: ["-capability-probe"]
+          securityContext:
+            {{- toYaml .Values.agent.securityContext | nindent 12 }}
           env:
             - name: FC_BIN
               value: {{ .Values.agent.env.fcBinPath | required "agent.env.fcBinPath is required" | quote }}
@@ -64,5 +66,4 @@ spec:
         - name: firecracker-bin
           hostPath:
             path: {{ .Values.agent.env.fcBinPath | quote }}
-            type: File
 {{- end }}

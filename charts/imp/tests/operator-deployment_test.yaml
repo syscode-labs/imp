@@ -27,6 +27,16 @@ tests:
           path: spec.template.spec.containers[0].image
           value: ghcr.io/syscode-labs/imp-operator:v1.2.3
 
+  - it: uses an immutable operator image digest without appending a tag
+    template: templates/operator/deployment.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+      operator.image.repository: ghcr.io/syscode-labs/imp-operator@sha256:191c0093b387ce7e3f323e3b21c15de1b8f61464db63a586253c0893763b14aa
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/syscode-labs/imp-operator@sha256:191c0093b387ce7e3f323e3b21c15de1b8f61464db63a586253c0893763b14aa
+
   - it: mounts webhook TLS secret
     template: templates/operator/deployment.yaml
     set:

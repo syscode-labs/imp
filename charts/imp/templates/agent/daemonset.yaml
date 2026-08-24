@@ -83,11 +83,9 @@ spec:
       - name: firecracker-bin
         hostPath:
           path: {{ .Values.agent.env.fcBinPath | quote }}
-          type: File
       - name: guest-kernel
         hostPath:
           path: {{ .Values.agent.env.kernelPath | quote }}
-          type: File
       - name: socket-dir
         {{- if .Values.agent.hostPaths.socketDir.enabled }}
         hostPath:

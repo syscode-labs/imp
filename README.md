@@ -59,13 +59,59 @@ Excalidraw source: `docs/diagrams/imp-architecture.excalidraw`
 - `kubectl`
 - A Kubernetes cluster (Kind is supported for e2e)
 - `helm` (recommended install path)
+- At least one Ready, schedulable node labeled `imp/enabled=true`. This label
+  is the explicit opt-in for both the Imp scheduler and the privileged node
+  agent. Manage it through your cluster's node configuration source of truth
+  (for Talos/Omni, a machine configuration patch), not through Helm.
 
 ### Install with Helm (Recommended)
 
+Imp's node agent mounts `/dev/kvm` and narrow host paths for Firecracker and
+the guest kernel. It therefore requires a dedicated privileged namespace. Do
+not relax Pod Security Admission for application namespaces or the whole
+cluster.
+
 ```sh
+kubectl create namespace imp-system --dry-run=client -o yaml | kubectl apply -f -
+kubectl label namespace imp-system pod-security.kubernetes.io/enforce=privileged --overwrite
+kubectl get nodes -l imp/enabled=true
 helm upgrade --install imp ./charts/imp -n imp-system --create-namespace
 kubectl -n imp-system get pods
 ```
+
+The chart defaults `agent.nodeSelector` and `kvm.preflight.nodeSelector` to
+`imp/enabled=true`. Keep that required selector when adding placement
+constraints.
+
+### Production Posture
+
+Treat each node running the Imp agent as part of the microVM control-plane
+trust boundary. The agent is privileged to access KVM; this is not a
+cluster-wide workload profile.
+
+- Run agents and ImpVM workloads on a dedicated node pool. Protect its label
+  with the `node-restriction.kubernetes.io/` prefix, taint the nodes with
+  `NoSchedule`, and configure the chart's `agent.nodeSelector` and
+  `agent.tolerations` accordingly. Do not place general application workloads
+  on that pool.
+- Keep `imp-system` as the only namespace with the `privileged` Pod Security
+  profile. Keep all other namespaces at `restricted` unless they have an
+  independently justified exception.
+- Pin operator and agent images by digest in production values. Pin and verify
+  the Firecracker, Jailer, guest-kernel, and rootfs artifact provenance too.
+- Keep host access narrow: `/dev/kvm`, read-only Firecracker and guest-kernel
+  files, and the dedicated Imp socket directory only. Do not mount the host
+  root filesystem, container-runtime sockets, or broad host directories.
+- Use Firecracker's Jailer for every VM with a unique jail root and socket,
+  unprivileged Firecracker UID/GID, cgroup limits, and Firecracker's default
+  seccomp filters. Never disable Firecracker seccomp.
+- Apply least-privilege RBAC and default-deny NetworkPolicies, allowing only
+  the API, DNS, operator, and metrics paths each component requires.
+
+`privileged` overrides important Linux security constraints, so SELinux,
+AppArmor, pod seccomp, and RuntimeClass do not replace node-pool isolation for
+the agent. Reducing the agent to a tested capability set is tracked work; do
+not guess that set in production.
 
 ### Install with Kustomize/Make
 
