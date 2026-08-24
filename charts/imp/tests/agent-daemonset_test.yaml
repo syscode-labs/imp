@@ -42,13 +42,11 @@ tests:
           content:
             name: FC_BIN
             value: /usr/local/bin/firecracker
-      - contains:
-          path: spec.template.spec.volumes
-          content:
-            name: firecracker-bin
-            hostPath:
-              path: /usr/local/bin/firecracker
-              type: File
+      - equal:
+          path: spec.template.spec.volumes[1].hostPath.path
+          value: /usr/local/bin/firecracker
+      - notExists:
+          path: spec.template.spec.volumes[1].hostPath.type
 
   - it: mounts the guest kernel hostPath at kernelPath
     template: templates/agent/daemonset.yaml
@@ -61,13 +59,11 @@ tests:
             name: guest-kernel
             mountPath: /var/lib/imp/vmlinux
             readOnly: true
-      - contains:
-          path: spec.template.spec.volumes
-          content:
-            name: guest-kernel
-            hostPath:
-              path: /var/lib/imp/vmlinux
-              type: File
+      - equal:
+          path: spec.template.spec.volumes[2].hostPath.path
+          value: /var/lib/imp/vmlinux
+      - notExists:
+          path: spec.template.spec.volumes[2].hostPath.type
 
   - it: uses emptyDir for socketDir when hostPaths disabled
     template: templates/agent/daemonset.yaml
