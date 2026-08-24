@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/syscode-labs/imp/compare/v0.6.1...v0.6.2) (2026-08-24)
+
+
+### Bug Fixes
+
+* **release:** align release-please manifest ([#46](https://github.com/syscode-labs/imp/issues/46)) ([e8e4a51](https://github.com/syscode-labs/imp/commit/e8e4a51ce57cc41ff6f5d473b2e585bad8bd38d1))
+
 ## [0.6.1](https://github.com/syscode-labs/imp/compare/v0.6.0...v0.6.1) (2026-08-24)
 
 
