@@ -59,6 +59,10 @@ Excalidraw source: `docs/diagrams/imp-architecture.excalidraw`
 - `kubectl`
 - A Kubernetes cluster (Kind is supported for e2e)
 - `helm` (recommended install path)
+- At least one Ready, schedulable node labeled `imp/enabled=true`. This label
+  is the explicit opt-in for both the Imp scheduler and the privileged node
+  agent. Manage it through your cluster's node configuration source of truth
+  (for Talos/Omni, a machine configuration patch), not through Helm.
 
 ### Install with Helm (Recommended)
 
@@ -70,9 +74,14 @@ cluster.
 ```sh
 kubectl create namespace imp-system --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace imp-system pod-security.kubernetes.io/enforce=privileged --overwrite
+kubectl get nodes -l imp/enabled=true
 helm upgrade --install imp ./charts/imp -n imp-system --create-namespace
 kubectl -n imp-system get pods
 ```
+
+The chart defaults `agent.nodeSelector` and `kvm.preflight.nodeSelector` to
+`imp/enabled=true`. Keep that required selector when adding placement
+constraints.
 
 ### Production Posture
 

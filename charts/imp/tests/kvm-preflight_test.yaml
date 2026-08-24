@@ -74,6 +74,17 @@ tests:
           path: spec.template.spec.nodeSelector
           value:
             imp.dev/kvm-capable: "true"
+            imp/enabled: "true"
+
+  - it: probes only nodes opted in to host Imp microVMs by default
+    template: templates/agent/preflight-job.yaml
+    set:
+      kvm.preflight.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            imp/enabled: "true"
 
   - it: forces distinct nodes via required pod anti-affinity
     template: templates/agent/preflight-job.yaml

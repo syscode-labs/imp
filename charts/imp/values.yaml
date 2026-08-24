@@ -30,7 +30,10 @@ agent:
       memory: 64Mi
     limits:
       memory: 128Mi
-  nodeSelector: {}
+  # Agents run only on nodes opted in to host Imp microVMs. The Imp scheduler
+  # uses the same label when selecting a node for an ImpVM.
+  nodeSelector:
+    imp/enabled: "true"
   tolerations: []
   updateStrategy:
     type: RollingUpdate
@@ -90,7 +93,9 @@ kvm:
   # Runs as a pre-install/pre-upgrade Helm hook Job; failure blocks the release.
   preflight:
     enabled: false
-    nodeSelector: {}
+    # Probe the same opted-in nodes that receive agents and ImpVMs.
+    nodeSelector:
+      imp/enabled: "true"
     minVerifiedNodes: 1
     timeoutSeconds: 120
     backoffLimit: 6

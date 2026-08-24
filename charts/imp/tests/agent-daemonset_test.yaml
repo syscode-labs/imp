@@ -13,11 +13,31 @@ tests:
           path: spec.template.spec.containers[0].image
           value: ghcr.io/syscode-labs/imp-agent:0.1.0
 
+  - it: uses an immutable agent image digest without appending a tag
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+      agent.image.repository: ghcr.io/syscode-labs/imp-agent@sha256:cdcbd5dc52c7d61e9e6a34aed0f0dff53fa5b1d883b15127b6b3e00ca6e990e3
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/syscode-labs/imp-agent@sha256:cdcbd5dc52c7d61e9e6a34aed0f0dff53fa5b1d883b15127b6b3e00ca6e990e3
+
   - it: fails when kernelPath is not set
     template: templates/agent/daemonset.yaml
     asserts:
       - failedTemplate:
           errorMessage: "agent.env.kernelPath is required"
+
+  - it: selects only nodes opted in to host Imp microVMs by default
+    template: templates/agent/daemonset.yaml
+    set:
+      agent.env.kernelPath: /usr/local/bin/firecracker
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            imp/enabled: "true"
 
   - it: always mounts /dev/kvm
     template: templates/agent/daemonset.yaml
