@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.6.1](https://github.com/syscode-labs/imp/compare/v0.6.0...v0.6.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **charts:** support digest-pinned Imp images ([a1d5842](https://github.com/syscode-labs/imp/commit/a1d5842eef45caa39a534beaea97a3446948fb33))
+* **charts:** support Talos extension host paths ([77b641f](https://github.com/syscode-labs/imp/commit/77b641f41931e1f6ed319bd384c3fd431cf5b584))
+* **charts:** support Talos host paths and digest pins ([f0c1170](https://github.com/syscode-labs/imp/commit/f0c11704a101aaf97ed6ce61f0298942548674a5))
+
 ## [0.6.0](https://github.com/syscode-labs/imp/compare/v0.5.0...v0.6.0) (2026-07-29)
 
 
