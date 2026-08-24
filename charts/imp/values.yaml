@@ -56,10 +56,28 @@ agent:
       # PID-based reattach). Setting this to false will orphan Firecracker
       # sockets on restart — breaking graceful stop for running VMs.
       enabled: true
-      path: /run/imp/sockets
+      path: /run/imp
     imageCache:
       enabled: false
       path: /var/lib/imp/images
+
+runtime:
+  # Runtime owns Firecracker processes and host networking. Keep OnDelete until
+  # controlled drain and recovery semantics exist.
+  image:
+    repository: ghcr.io/syscode-labs/imp-agent
+    tag: ""
+    pullPolicy: IfNotPresent
+  nodeSelector:
+    imp/enabled: "true"
+  updateStrategy:
+    type: OnDelete
+  socketPath: /run/imp/runtime.sock
+  statePath: /var/lib/imp/runtime
+  securityContext:
+    privileged: true
+    runAsUser: 0
+    runAsGroup: 0
 
 webhook:
   # When false, operator admission webhooks are disabled.

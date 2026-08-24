@@ -1,0 +1,30 @@
+suite: runtime DaemonSet
+templates:
+  - templates/runtime/daemonset.yaml
+tests:
+  - it: runs one host-networked runtime with manual rollout by default
+    set:
+      agent.env.kernelPath: /usr/local/share/imp/vmlinux
+    asserts:
+      - isKind:
+          of: DaemonSet
+      - equal:
+          path: spec.updateStrategy.type
+          value: OnDelete
+      - equal:
+          path: spec.template.spec.hostNetwork
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].command[0]
+          value: /runtime
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /readyz
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content: {name: metrics, containerPort: 8082, protocol: TCP}
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: IMP_RUNTIME_SOCKET
+            value: /run/imp/runtime.sock

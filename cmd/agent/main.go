@@ -125,11 +125,6 @@ func main() {
 		log.Info("Using FirecrackerDriver")
 	}
 
-	var alloc *network.Allocator
-	if fcDrv, ok := driver.(*agent.FirecrackerDriver); ok {
-		alloc = fcDrv.Alloc
-	}
-
 	// Scale-to-zero (wake-on-traffic) is experimental and its capture hook is not
 	// yet hardware-validated — opt in explicitly via IMP_SCALE_TO_ZERO=true.
 	var sz *agent.ScaleToZero
@@ -146,7 +141,7 @@ func main() {
 		Driver:   driver,
 		Metrics:  mc,
 		Net:      prodNet,
-		Alloc:    alloc,
+		Alloc:    nil,
 		SZ:       sz,
 		Recorder: mgr.GetEventRecorderFor("imp-agent"), //nolint:staticcheck // controller-runtime returns legacy recorder type expected by reconciler
 	}).SetupWithManager(mgr); err != nil {
@@ -175,11 +170,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Register the HTTP API server (:9091) when using the real Firecracker driver.
-	if fcDrv, ok := driver.(*agent.FirecrackerDriver); ok {
+	// Register the HTTP API server when the runtime driver exposes VSOCK paths.
+	if vsockDriver, ok := driver.(api.VSockDialer); ok {
+		socketDir := os.Getenv("FC_SOCK_DIR")
+		if socketDir == "" {
+			socketDir = "/run/imp/sockets"
+		}
 		apiServer := &api.APIServer{
-			SocketDir: fcDrv.SocketDir,
-			Driver:    fcDrv,
+			SocketDir: socketDir,
+			Driver:    vsockDriver,
 		}
 		if err := mgr.Add(apiServer); err != nil {
 			log.Error(err, "Unable to add APIServer runnable")
@@ -191,11 +190,7 @@ func main() {
 		log.Error(err, "Unable to set up health check")
 		os.Exit(1)
 	}
-	readyzCheck := healthz.Ping
-	if fcDrv, ok := driver.(*agent.FirecrackerDriver); ok {
-		readyzCheck = agent.CapabilityReadyzCheck(fcDrv.BinPath)
-	}
-	if err := mgr.AddReadyzCheck("readyz", readyzCheck); err != nil {
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		log.Error(err, "Unable to set up ready check")
 		os.Exit(1)
 	}

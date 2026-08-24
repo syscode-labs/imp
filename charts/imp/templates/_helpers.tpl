@@ -5,6 +5,15 @@ Expand the name of the chart.
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
+{{- define "imp.runtime.image" -}}
+{{- if contains "@" .Values.runtime.image.repository -}}
+{{- .Values.runtime.image.repository -}}
+{{- else -}}
+{{- $tag := .Values.runtime.image.tag | default .Chart.AppVersion }}
+{{- printf "%s:%s" .Values.runtime.image.repository $tag }}
+{{- end -}}
+{{- end }}
+
 {{/*
 Create a default fully qualified app name.
 */}}
@@ -60,6 +69,10 @@ Agent ServiceAccount name.
 */}}
 {{- define "imp.agent.serviceAccountName" -}}
 {{- printf "%s-agent" (include "imp.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{- define "imp.runtime.serviceAccountName" -}}
+{{- printf "%s-runtime" (include "imp.fullname" .) | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
