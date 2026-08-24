@@ -6,11 +6,15 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,id=agent-gomod,target=/root/go/pkg/mod go mod download
 COPY api/ api/
 COPY cmd/agent/ cmd/agent/
+COPY cmd/runtime/ cmd/runtime/
 COPY internal/ internal/
 ARG TARGETARCH
 RUN --mount=type=cache,id=agent-gomod,target=/root/go/pkg/mod \
     --mount=type=cache,id=agent-gobuild,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o agent ./cmd/agent
+RUN --mount=type=cache,id=agent-gomod,target=/root/go/pkg/mod \
+    --mount=type=cache,id=agent-gobuild,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o runtime ./cmd/runtime
 
 FROM golang:1.26-alpine AS guest-agent-builder
 WORKDIR /workspace
@@ -28,6 +32,7 @@ FROM alpine:3.21 AS runtime
 WORKDIR /
 RUN apk add --no-cache e2fsprogs
 COPY --from=agent-builder /workspace/agent /agent
+COPY --from=agent-builder /workspace/runtime /runtime
 COPY --from=guest-agent-builder /workspace/guest-agent /opt/imp/guest-agent
 USER 65532:65532
 ENTRYPOINT ["/agent"]

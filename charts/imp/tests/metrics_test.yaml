@@ -2,6 +2,7 @@ suite: metrics resources
 templates:
   - templates/operator/servicemonitor.yaml
   - templates/agent/podmonitor.yaml
+  - templates/runtime/podmonitor.yaml
 tests:
   - it: creates ServiceMonitor by default
     template: templates/operator/servicemonitor.yaml
@@ -36,3 +37,12 @@ tests:
     asserts:
       - hasDocuments:
           count: 0
+
+  - it: creates runtime PodMonitor by default
+    template: templates/runtime/podmonitor.yaml
+    asserts:
+      - isKind:
+          of: PodMonitor
+      - equal:
+          path: spec.podMetricsEndpoints[0].port
+          value: metrics

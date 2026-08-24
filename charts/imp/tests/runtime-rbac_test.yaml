@@ -1,0 +1,20 @@
+suite: runtime RBAC
+templates:
+  - templates/runtime/clusterrole.yaml
+  - templates/runtime/clusterrolebinding.yaml
+  - templates/runtime/serviceaccount.yaml
+tests:
+  - it: grants runtime read-only class and snapshot access
+    template: templates/runtime/clusterrole.yaml
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - equal:
+          path: rules[0].verbs
+          value: [get]
+  - it: binds the dedicated runtime service account
+    template: templates/runtime/clusterrolebinding.yaml
+    asserts:
+      - equal:
+          path: subjects[0].name
+          value: RELEASE-NAME-imp-runtime

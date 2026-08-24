@@ -51,6 +51,8 @@ spec:
           value: {{ .Values.agent.env.kernelPath | required "agent.env.kernelPath is required" | quote }}
         - name: FC_BIN
           value: {{ .Values.agent.env.fcBinPath | required "agent.env.fcBinPath is required" | quote }}
+        - name: IMP_RUNTIME_SOCKET
+          value: {{ .Values.runtime.socketPath | quote }}
         {{- with .Values.agent.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -72,7 +74,7 @@ spec:
           mountPath: {{ .Values.agent.env.kernelPath | quote }}
           readOnly: true
         - name: socket-dir
-          mountPath: /run/imp/sockets
+          mountPath: /run/imp
         - name: image-cache
           mountPath: /var/lib/imp/images
       volumes:

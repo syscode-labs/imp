@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "imp.fullname" . }}-runtime
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: runtime
+spec:
+  selector:
+    matchLabels:
+      {{- include "imp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: runtime
+  updateStrategy:
+    {{- toYaml .Values.runtime.updateStrategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "imp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: runtime
+    spec:
+      hostNetwork: true
+      hostPID: true
+      serviceAccountName: {{ include "imp.runtime.serviceAccountName" . }}
+      nodeSelector:
+        {{- toYaml .Values.runtime.nodeSelector | nindent 8 }}
+      containers:
+      - name: runtime
+        image: {{ include "imp.runtime.image" . }}
+        imagePullPolicy: {{ .Values.runtime.image.pullPolicy | quote }}
+        command: ["/runtime"]
+        ports:
+        - {name: metrics, containerPort: 8082, protocol: TCP}
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: IMP_RUNTIME_SOCKET
+          value: {{ .Values.runtime.socketPath | quote }}
+        - name: IMP_RUNTIME_STATE_PATH
+          value: {{ .Values.runtime.statePath | quote }}
+        - name: FC_KERNEL
+          value: {{ .Values.agent.env.kernelPath | required "agent.env.kernelPath is required" | quote }}
+        - name: FC_BIN
+          value: {{ .Values.agent.env.fcBinPath | quote }}
+        securityContext:
+          {{- toYaml .Values.runtime.securityContext | nindent 10 }}
+        livenessProbe:
+          httpGet: {path: /healthz, port: 8082}
+        readinessProbe:
+          httpGet: {path: /readyz, port: 8082}
+        volumeMounts:
+        - {name: dev-kvm, mountPath: /dev/kvm}
+        - {name: firecracker-bin, mountPath: {{ .Values.agent.env.fcBinPath | quote }}, readOnly: true}
+        - {name: guest-kernel, mountPath: {{ .Values.agent.env.kernelPath | quote }}, readOnly: true}
+        - {name: runtime-dir, mountPath: /run/imp}
+        - {name: image-cache, mountPath: /var/lib/imp/images}
+        - {name: suspend-dir, mountPath: /var/lib/imp/suspend}
+        - {name: runtime-state, mountPath: {{ .Values.runtime.statePath | quote }}}
+      volumes:
+      - name: dev-kvm
+        hostPath: {path: /dev/kvm, type: CharDevice}
+      - name: firecracker-bin
+        hostPath: {path: {{ .Values.agent.env.fcBinPath | quote }}}
+      - name: guest-kernel
+        hostPath: {path: {{ .Values.agent.env.kernelPath | quote }}}
+      - name: runtime-dir
+        hostPath: {path: /run/imp, type: DirectoryOrCreate}
+      - name: image-cache
+        hostPath: {path: /var/lib/imp/images, type: DirectoryOrCreate}
+      - name: suspend-dir
+        hostPath: {path: /var/lib/imp/suspend, type: DirectoryOrCreate}
+      - name: runtime-state
+        hostPath: {path: {{ .Values.runtime.statePath | quote }}, type: DirectoryOrCreate}

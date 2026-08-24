@@ -120,7 +120,7 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 ##@ Build
 
 .PHONY: build
-build: build-operator build-agent ## Build both operator and agent binaries.
+build: build-operator build-agent build-runtime ## Build operator, agent, and node runtime binaries.
 
 .PHONY: build-operator
 build-operator: manifests generate fmt vet ## Build the operator binary.
@@ -129,6 +129,10 @@ build-operator: manifests generate fmt vet ## Build the operator binary.
 .PHONY: build-agent
 build-agent: manifests generate fmt vet ## Build the node agent binary.
 	go build -o bin/agent ./cmd/agent
+
+.PHONY: build-runtime
+build-runtime: manifests generate fmt vet ## Build the persistent node runtime binary.
+	go build -o bin/runtime ./cmd/runtime
 
 .PHONY: run
 run: manifests generate fmt vet ## Run operator from your host (for development).

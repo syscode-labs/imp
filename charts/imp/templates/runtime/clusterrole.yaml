@@ -1,0 +1,10 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "imp.fullname" . }}-runtime
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+rules:
+- apiGroups: ["imp.dev"]
+  resources: ["impvmclasses", "impvmsnapshots"]
+  verbs: ["get"]
