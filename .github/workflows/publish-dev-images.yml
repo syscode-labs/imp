@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       commit_sha:
-        description: Full 40-character commit SHA reachable from main
+        description: Full 40-character commit SHA reachable from dispatched ref
         required: true
         type: string
 
@@ -22,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: main
+          ref: ${{ github.ref }}
           fetch-depth: 0
       - id: target
         env:
@@ -30,9 +30,9 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]]
-          git fetch --no-tags origin main
+          git fetch --no-tags origin "${GITHUB_REF_NAME}"
           git cat-file -e "$TARGET_SHA^{commit}"
-          git merge-base --is-ancestor "$TARGET_SHA" origin/main
+          git merge-base --is-ancestor "$TARGET_SHA" "origin/${GITHUB_REF_NAME}"
           git checkout --detach "$TARGET_SHA"
           echo "sha=$TARGET_SHA" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4
