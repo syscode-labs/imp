@@ -22,6 +22,7 @@ tests:
             topologyKey: kubernetes.io/hostname
             labelSelector:
               matchLabels:
+                app.kubernetes.io/instance: RELEASE-NAME
                 app.kubernetes.io/component: operator
 
   - it: uses custom image tag when set
