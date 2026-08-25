@@ -73,6 +73,18 @@ var _ = BeforeSuite(func() {
 	nsCmd := exec.Command("kubectl", "create", "ns", namespace)
 	_, _ = utils.Run(nsCmd) // ignore if already exists
 
+	if os.Getenv("IMP_E2E_REAL_AGENT") == "true" {
+		By("labeling nodes for agent scheduling")
+		nodes, err := utils.Run(exec.Command("kubectl", "get", "nodes", "-o", "jsonpath={.items[*].metadata.name}"))
+		Expect(err).NotTo(HaveOccurred())
+		for _, node := range strings.Fields(nodes) {
+			_, _ = utils.Run(exec.Command("kubectl", "taint", "nodes", node,
+				"node-role.kubernetes.io/control-plane:NoSchedule-"))
+			_, err = utils.Run(exec.Command("kubectl", "label", "node", node, "imp/enabled=true", "--overwrite"))
+			Expect(err).NotTo(HaveOccurred())
+		}
+	}
+
 	By("installing cert-manager")
 	Expect(utils.InstallCertManager()).To(Succeed(), "helm install cert-manager failed")
 

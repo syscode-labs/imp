@@ -61,10 +61,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// NODE_IP is optional: sourced from status.hostIP downward API field.
-	// When set, enables VTEP registration and VXLAN FDB sync for cross-node networking.
-	nodeIP := os.Getenv("NODE_IP")
-
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		log.Error(err, "Unable to add client-go scheme")
@@ -83,6 +79,14 @@ func main() {
 	if err != nil {
 		log.Error(err, "Unable to start manager")
 		os.Exit(1)
+	}
+	nodeIP, err := resolveVTEPIP(context.Background(), mgr.GetClient(), nodeName)
+	if err != nil {
+		log.Error(err, "Unable to resolve VTEP underlay address, cross-node VXLAN disabled", "node", nodeName)
+		nodeIP = ""
+	}
+	if nodeIP == "" {
+		log.Info("Cross-node VXLAN disabled; configure ClusterImpNodeProfile.spec.vtepIP", "node", nodeName)
 	}
 
 	agentReg := prometheus.NewRegistry()
@@ -195,7 +199,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.Info("Agent starting", "node", nodeName)
+	log.Info("Agent starting", "node", nodeName, "vtepIP", nodeIP)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		log.Error(err, "Problem running agent manager")
 		os.Exit(1)

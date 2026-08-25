@@ -74,15 +74,6 @@ var _ = Describe("Imp ScaleToZero datapath", Label("datapath"), func() {
 		nodeName := strings.TrimSpace(nodeOut)
 		Expect(nodeName).NotTo(BeEmpty())
 
-		By("removing control-plane taint and labeling the node imp/enabled=true")
-		_, _ = utils.Run(exec.Command("kubectl", "taint", "nodes", nodeName,
-			"node-role.kubernetes.io/control-plane:NoSchedule-"))
-		_, err = utils.Run(exec.Command("kubectl", "label", "node", nodeName, "imp/enabled=true", "--overwrite"))
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			_, _ = utils.Run(exec.Command("kubectl", "label", "node", nodeName, "imp/enabled-"))
-		})
-
 		By("creating the ImpVMClass")
 		classManifest := fmt.Sprintf(`
 apiVersion: imp.dev/v1alpha1
