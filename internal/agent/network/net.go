@@ -19,6 +19,7 @@ type NetworkInfo struct {
 	DNS             []string // nameservers injected into VM
 	Subnet          string   // e.g. "192.168.100.0/24"
 	NetworkKey      string   // e.g. "default/mynet" — used by Allocator.Release
+	ClaimHolder     string   // VM key recorded in the Kubernetes Lease claim
 	NATEnabled      bool     // true when NAT was enabled for this network
 	EgressInterface string   // egress interface used for NAT (may be "" for auto-detect)
 }

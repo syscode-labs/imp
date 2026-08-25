@@ -15,6 +15,12 @@ tests:
       - contains:
           path: rules[0].resources
           content: impnetworks
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["coordination.k8s.io"]
+            resources: [leases]
+            verbs: [get, create, delete]
   - it: binds the dedicated runtime service account
     template: templates/runtime/clusterrolebinding.yaml
     asserts:
