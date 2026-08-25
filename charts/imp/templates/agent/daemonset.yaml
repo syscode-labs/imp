@@ -41,10 +41,6 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: spec.nodeName
-        - name: NODE_IP
-          valueFrom:
-            fieldRef:
-              fieldPath: status.hostIP
         - name: OTEL_SERVICE_NAME
           value: imp-agent
         - name: FC_KERNEL
