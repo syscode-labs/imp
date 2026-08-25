@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/syscode-labs/imp/compare/v0.6.3...v0.7.0) (2026-08-25)
+
+
+### Features
+
+* **charts:** operator HA — 2 replicas, PDB, required anti-affinity ([29fa1a7](https://github.com/syscode-labs/imp/commit/29fa1a78bfd10d1bc6911eb58727c0e126d77e18))
+* **charts:** operator HA (replicas, PDB, anti-affinity) ([24aeebb](https://github.com/syscode-labs/imp/commit/24aeebbd1214889e9b8650f95c372090890ff5b4))
+
 ## [0.6.3](https://github.com/syscode-labs/imp/compare/v0.6.2...v0.6.3) (2026-08-25)
 
 
