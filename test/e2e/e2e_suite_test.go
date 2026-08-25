@@ -100,6 +100,8 @@ var _ = BeforeSuite(func() {
 	operatorTag := getenvOrDefault("IMP_E2E_OPERATOR_IMAGE_TAG", "e2e")
 	agentRepo := getenvOrDefault("IMP_E2E_AGENT_IMAGE_REPOSITORY", "local/imp-agent")
 	agentTag := getenvOrDefault("IMP_E2E_AGENT_IMAGE_TAG", "e2e")
+	runtimeRepo := getenvOrDefault("IMP_E2E_RUNTIME_IMAGE_REPOSITORY", "local/imp-agent")
+	runtimeTag := getenvOrDefault("IMP_E2E_RUNTIME_IMAGE_TAG", "e2e")
 
 	impArgs := []string{"install", helmRelease, "charts/imp",
 		"--namespace", namespace,
@@ -107,6 +109,8 @@ var _ = BeforeSuite(func() {
 		"--set", "operator.image.tag=" + operatorTag,
 		"--set", "agent.image.repository=" + agentRepo,
 		"--set", "agent.image.tag=" + agentTag,
+		"--set", "runtime.image.repository=" + runtimeRepo,
+		"--set", "runtime.image.tag=" + runtimeTag,
 		"--set", "agent.env.kernelPath=/var/lib/imp/vmlinux",
 		"--set", "metrics.serviceMonitor.enabled=false",
 		"--set", "metrics.podMonitor.enabled=false",
