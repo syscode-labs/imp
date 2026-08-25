@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.3](https://github.com/syscode-labs/imp/compare/v0.6.2...v0.6.3) (2026-08-25)
+
+
+### Bug Fixes
+
+* **agent:** resolve VTEP IP via direct client at startup ([906bf04](https://github.com/syscode-labs/imp/commit/906bf04c7fc5ed10c9067293206af2aee6feea72))
+* **agent:** run CPU-model patch after cache sync ([4ebb4cf](https://github.com/syscode-labs/imp/commit/4ebb4cfb04c5f5e32cbf3704da3d797f28c0a3d8))
+* **charts:** grant imp-runtime read on impnetworks ([8e97d81](https://github.com/syscode-labs/imp/commit/8e97d81c7fc76326b841a7a0801e267e4f08ce36))
+* **ci:** publish amd64 runtime images ([#51](https://github.com/syscode-labs/imp/issues/51)) ([e75941d](https://github.com/syscode-labs/imp/commit/e75941d5dd648f7e5056e120d59934b47e387ee2))
+* **e2e:** import strings for BeforeSuite node labeling ([c3afc89](https://github.com/syscode-labs/imp/commit/c3afc89b30ab4121a61fe3b22ac71395ac0ff02a))
+* **e2e:** point runtime DaemonSet at the locally built image ([5260cc1](https://github.com/syscode-labs/imp/commit/5260cc109331ec5123bdfdc374770f3da9252d36))
+* **e2e:** resolve agent startup and node scheduling race ([3f36a16](https://github.com/syscode-labs/imp/commit/3f36a164b7c934c1e13d391af58165df8d5e6ec2))
+* **e2e:** resolve agent startup and node scheduling race ([1d6efef](https://github.com/syscode-labs/imp/commit/1d6efefa221262d256c76364c93c7cd253afc422))
+* **network:** coordinate IP claims across nodes ([#52](https://github.com/syscode-labs/imp/issues/52)) ([3cdc503](https://github.com/syscode-labs/imp/commit/3cdc5034aa54ecdeba8369545ed68910bf1ac84e))
+* **rbac:** commit operator leases rule missed by darwin generation ([d2ef6eb](https://github.com/syscode-labs/imp/commit/d2ef6eb1172d12eeec3e267a5793696a96ef24bb))
+* **runtime:** allow network lookup ([#48](https://github.com/syscode-labs/imp/issues/48)) ([5a9f3ef](https://github.com/syscode-labs/imp/commit/5a9f3efc825df8ac4bca2f2eac0406ce1ca35604))
+
 ## [0.6.2](https://github.com/syscode-labs/imp/compare/v0.6.1...v0.6.2) (2026-08-24)
 
 
