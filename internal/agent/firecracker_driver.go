@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -190,7 +191,8 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		}
 	}
 
-	// 3. Set up networking if a NetworkRef is specified.
+	// 3. Set up networking: an ImpNetwork (isolated) takes precedence, otherwise
+	// an Authorized LAN/VLAN attachment is provisioned when one exists.
 	var netInfo *network.NetworkInfo
 	networkStarted := false
 	if vm.Spec.NetworkRef != nil && d.Net != nil {
@@ -202,6 +204,19 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		defer func() {
 			if !networkStarted {
 				d.releaseNetworkIP(ctx, netInfo)
+				if err := d.Net.TeardownVM(ctx, netInfo.TAPName); err != nil {
+					logf.FromContext(ctx).Error(err, "TeardownVM failed", "tap", netInfo.TAPName)
+				}
+			}
+		}()
+	} else if vm.Spec.NetworkRef == nil && d.Net != nil {
+		ni, err := d.setupLANAttachment(ctx, vm)
+		if err != nil {
+			return 0, fmt.Errorf("setup lan attachment: %w", err)
+		}
+		netInfo = ni
+		defer func() {
+			if !networkStarted && d.Net != nil {
 				if err := d.Net.TeardownVM(ctx, netInfo.TAPName); err != nil {
 					logf.FromContext(ctx).Error(err, "TeardownVM failed", "tap", netInfo.TAPName)
 				}
@@ -378,10 +393,14 @@ func (d *FirecrackerDriver) Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) 
 				logf.FromContext(ctx).Error(err, "TeardownVM failed", "tap", proc.netInfo.TAPName)
 			}
 		}
-		wasLast := d.releaseNetworkIP(ctx, proc.netInfo)
-		if wasLast && proc.netInfo.NATEnabled && d.Net != nil {
-			if err := d.Net.RemoveNAT(ctx, proc.netInfo.Subnet, proc.netInfo.EgressInterface); err != nil {
-				logf.FromContext(ctx).Error(err, "RemoveNAT failed", "subnet", proc.netInfo.Subnet)
+		if proc.netInfo.IsLAN {
+			d.teardownLANAttachment(ctx, proc.netInfo)
+		} else {
+			wasLast := d.releaseNetworkIP(ctx, proc.netInfo)
+			if wasLast && proc.netInfo.NATEnabled && d.Net != nil {
+				if err := d.Net.RemoveNAT(ctx, proc.netInfo.Subnet, proc.netInfo.EgressInterface); err != nil {
+					logf.FromContext(ctx).Error(err, "RemoveNAT failed", "subnet", proc.netInfo.Subnet)
+				}
 			}
 		}
 	}
@@ -468,20 +487,25 @@ func (d *FirecrackerDriver) buildConfig(
 		},
 	}
 	if netInfo != nil {
-		cfg.NetworkInterfaces = firecracker.NetworkInterfaces{{
+		nic := firecracker.NetworkInterfaces{{
 			StaticConfiguration: &firecracker.StaticNetworkConfiguration{
 				MacAddress:  netInfo.MACAddr,
 				HostDevName: netInfo.TAPName,
-				IPConfiguration: &firecracker.IPConfiguration{
-					IPAddr: gonet.IPNet{
-						IP:   gonet.ParseIP(netInfo.IP).To4(),
-						Mask: gonet.CIDRMask(netInfo.PrefixLen, 32),
-					},
-					Gateway:     gonet.ParseIP(netInfo.Gateway),
-					Nameservers: netInfo.DNS,
-				},
 			},
 		}}
+		// LAN attachments with DHCP get no static IP configuration; the guest
+		// configures itself from the physical network.
+		if !netInfo.DHCP {
+			nic[0].StaticConfiguration.IPConfiguration = &firecracker.IPConfiguration{
+				IPAddr: gonet.IPNet{
+					IP:   gonet.ParseIP(netInfo.IP).To4(),
+					Mask: gonet.CIDRMask(netInfo.PrefixLen, 32),
+				},
+				Gateway:     gonet.ParseIP(netInfo.Gateway),
+				Nameservers: netInfo.DNS,
+			}
+		}
+		cfg.NetworkInterfaces = nic
 	}
 	if gaEnabled {
 		vsockPath := vsockPathFromSocket(socketPath)
@@ -608,6 +632,133 @@ func (d *FirecrackerDriver) releaseNetworkIP(ctx context.Context, info *network.
 // guestAgentEnabled returns true when the guest agent should be injected for this VM.
 func (d *FirecrackerDriver) guestAgentEnabled(vm *impdevv1alpha1.ImpVM, class *impdevv1alpha1.ImpVMClass) bool {
 	return ResolveGuestAgentEnabled(vm, class)
+}
+
+// setupLANAttachment provisions host networking for an Authorized LAN/VLAN
+// attachment referencing vm. Returns (nil, nil) when no authorized attachment
+// exists so the VM boots networkless as before. Attached VMs get a TAP on the
+// definition's bridge but no Imp IPAM, gateway, DNS injection, NAT, or VTEP.
+func (d *FirecrackerDriver) setupLANAttachment(ctx context.Context, vm *impdevv1alpha1.ImpVM) (*network.NetworkInfo, error) {
+	att := authorizedAttachmentForVM(ctx, d.Client, vm)
+	if att == nil {
+		return nil, nil
+	}
+	attKey := att.Namespace + "/" + att.Name
+
+	def := resolveLANDefinition(ctx, d.Client, att.Spec.AttachmentRef)
+	if def == nil {
+		return nil, fmt.Errorf("attachment %s references missing definition %q in ClusterImpConfig", attKey, att.Spec.AttachmentRef)
+	}
+	binding, ok := resolveNodeLANBinding(ctx, d.Client, d.NodeName, def.Name)
+	if !ok {
+		return nil, fmt.Errorf("node profile for %s has no LAN binding for definition %q", d.NodeName, def.Name)
+	}
+	if _, isLan := d.Net.(network.LANAttacher); !isLan {
+		return nil, fmt.Errorf("network manager does not support LAN attachments")
+	}
+
+	vKey := vmKey(vm)
+	tapName := network.TAPName(vKey)
+	macAddr := network.MACAddr(vKey)
+
+	requestDHCP := att.Spec.DHCP != nil && att.Spec.DHCP.Enabled
+	var bridgeName string
+	switch {
+	case def.VLANID > 0:
+		bridgeName = network.BridgeName("lan/" + def.Name)
+	default:
+		bridgeName = binding.ParentInterface // must be an existing admin-managed bridge
+	}
+	if err := d.Net.(network.LANAttacher).EnsureLANBridge(ctx, bridgeName, binding.ParentInterface, def.VLANID); err != nil {
+		return nil, fmt.Errorf("ensure lan bridge for attachment %s: %w", attKey, err)
+	}
+	if err := d.Net.SetupVM(ctx, tapName, bridgeName, macAddr); err != nil {
+		return nil, fmt.Errorf("setup tap for attachment %s: %w", attKey, err)
+	}
+
+	logf.FromContext(ctx).Info("Provisioned LAN attachment",
+		"attachment", attKey, "vlanID", def.VLANID, "parent", binding.ParentInterface,
+		"bridge", bridgeName, "dhcp", requestDHCP)
+
+	return &network.NetworkInfo{
+		TAPName:         tapName,
+		BridgeName:      bridgeName,
+		MACAddr:         macAddr,
+		Subnet:          def.SubnetCIDR,
+		NetworkKey:      "lan/" + def.Name,
+		IsLAN:           true,
+		VLANID:          def.VLANID,
+		ParentInterface: binding.ParentInterface,
+		DHCP:            requestDHCP,
+	}, nil
+}
+
+// teardownLANAttachment removes Imp-created LAN resources after the VM's TAP
+// is gone. Best-effort: failures are logged and never block VM stop.
+func (d *FirecrackerDriver) teardownLANAttachment(ctx context.Context, info *network.NetworkInfo) {
+	la, ok := d.Net.(network.LANAttacher)
+	if !ok {
+		return
+	}
+	if err := la.TeardownLANBridgeIfUnused(ctx, info.BridgeName, info.ParentInterface, info.VLANID); err != nil {
+		logf.FromContext(ctx).Error(err, "TeardownLANBridgeIfUnused failed",
+			"bridge", info.BridgeName, "parent", info.ParentInterface, "vlanID", info.VLANID)
+	}
+}
+
+// authorizedAttachmentForVM returns an Authorized ImpNetworkAttachment
+// referencing vm (deterministically the first by name), or nil.
+func authorizedAttachmentForVM(ctx context.Context, c ctrlclient.Client, vm *impdevv1alpha1.ImpVM) *impdevv1alpha1.ImpNetworkAttachment {
+	list := &impdevv1alpha1.ImpNetworkAttachmentList{}
+	if err := c.List(ctx, list, ctrlclient.InNamespace(vm.Namespace)); err != nil {
+		logf.FromContext(ctx).Error(err, "Failed to list ImpNetworkAttachments")
+		return nil
+	}
+	var found []*impdevv1alpha1.ImpNetworkAttachment
+	for i := range list.Items {
+		att := &list.Items[i]
+		if att.Spec.VMRef.Name != vm.Name {
+			continue
+		}
+		if cond := apimeta.FindStatusCondition(att.Status.Conditions, impdevv1alpha1.ConditionAttachmentAuthorized); cond == nil || cond.Status != metav1.ConditionTrue {
+			continue
+		}
+		found = append(found, att)
+	}
+	if len(found) == 0 {
+		return nil
+	}
+	sort.Slice(found, func(i, j int) bool { return found[i].Name < found[j].Name })
+	return found[0]
+}
+
+// resolveLANDefinition looks up an allowlisted attachment definition.
+func resolveLANDefinition(ctx context.Context, c ctrlclient.Client, name string) *impdevv1alpha1.LANAttachmentSpec {
+	cfg := &impdevv1alpha1.ClusterImpConfig{}
+	if err := c.Get(ctx, ctrlclient.ObjectKey{Name: "cluster"}, cfg); err != nil {
+		return nil
+	}
+	for i := range cfg.Spec.Networking.LANAttachments {
+		if cfg.Spec.Networking.LANAttachments[i].Name == name {
+			return &cfg.Spec.Networking.LANAttachments[i]
+		}
+	}
+	return nil
+}
+
+// resolveNodeLANBinding looks up the parent-interface binding for a
+// definition on the given node.
+func resolveNodeLANBinding(ctx context.Context, c ctrlclient.Client, nodeName, defName string) (*impdevv1alpha1.NodeLANBinding, bool) {
+	profile := &impdevv1alpha1.ClusterImpNodeProfile{}
+	if err := c.Get(ctx, ctrlclient.ObjectKey{Name: nodeName}, profile); err != nil {
+		return nil, false
+	}
+	for i := range profile.Spec.LANBindings {
+		if profile.Spec.LANBindings[i].AttachmentName == defName {
+			return &profile.Spec.LANBindings[i], true
+		}
+	}
+	return nil, false
 }
 
 // guestAgentPath returns the host path to the guest-agent binary.
