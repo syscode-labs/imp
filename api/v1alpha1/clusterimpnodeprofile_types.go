@@ -2,7 +2,7 @@ package v1alpha1
 
 import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-// ClusterImpNodeProfileSpec defines per-node capacity overrides.
+// ClusterImpNodeProfileSpec defines per-node capacity and networking overrides.
 // The resource name must match the Kubernetes node name.
 // If no profile exists for a node, ClusterImpConfig.spec.capacity.defaultFraction applies.
 type ClusterImpNodeProfileSpec struct {
@@ -36,6 +36,12 @@ type ClusterImpNodeProfileSpec struct {
 	// Set automatically by the node agent; do not edit manually.
 	// +optional
 	CPUModel string `json:"cpuModel,omitempty"`
+
+	// VTEPIP is the stable IPv4 underlay address used for cross-node VXLAN.
+	// It must not be an Imp guest bridge address. When omitted, cross-node VXLAN
+	// is disabled for this node.
+	// +optional
+	VTEPIP string `json:"vtepIP,omitempty"`
 }
 
 // +kubebuilder:object:root=true

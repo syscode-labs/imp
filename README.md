@@ -333,6 +333,9 @@ For non-Cilium CNIs (Flannel/Calico/Weave/etc.), Imp uses a VXLAN fallback for c
 
 Cilium IPAM runbook: `docs/networking/cilium-ipam.md`
 
+Default isolated networking and the planned elevated LAN/DHCP attachment model:
+`docs/networking/privileged-lan-attachment.md`
+
 ## Metrics & Observability
 
 Imp exposes operator and agent metrics so you can monitor VM lifecycle and platform health:

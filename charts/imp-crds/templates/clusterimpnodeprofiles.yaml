@@ -52,7 +52,7 @@ spec:
             type: object
           spec:
             description: |-
-              ClusterImpNodeProfileSpec defines per-node capacity overrides.
+              ClusterImpNodeProfileSpec defines per-node capacity and networking overrides.
               The resource name must match the Kubernetes node name.
               If no profile exists for a node, ClusterImpConfig.spec.capacity.defaultFraction applies.
             properties:
@@ -90,6 +90,12 @@ spec:
                 format: int32
                 minimum: 0
                 type: integer
+              vtepIP:
+                description: |-
+                  VTEPIP is the stable IPv4 underlay address used for cross-node VXLAN.
+                  It must not be an Imp guest bridge address. When omitted, cross-node VXLAN
+                  is disabled for this node.
+                type: string
             type: object
         type: object
     served: true

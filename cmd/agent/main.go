@@ -61,10 +61,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// NODE_IP is optional: sourced from status.hostIP downward API field.
-	// When set, enables VTEP registration and VXLAN FDB sync for cross-node networking.
-	nodeIP := os.Getenv("NODE_IP")
-
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		log.Error(err, "Unable to add client-go scheme")
@@ -73,6 +69,22 @@ func main() {
 	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
 		log.Error(err, "Unable to add imp scheme")
 		os.Exit(1)
+	}
+
+	// Resolve VTEP IP using direct client before manager starts (cache won't be ready)
+	config, err := ctrl.GetConfig()
+	if err != nil {
+		log.Error(err, "Unable to get Kubernetes config")
+		os.Exit(1)
+	}
+
+	nodeIP, err := resolveVTEPIPDirect(context.Background(), config, nodeName)
+	if err != nil {
+		log.Error(err, "Unable to resolve VTEP underlay address, cross-node VXLAN disabled", "node", nodeName)
+		nodeIP = ""
+	}
+	if nodeIP == "" {
+		log.Info("Cross-node VXLAN disabled; configure ClusterImpNodeProfile.spec.vtepIP", "node", nodeName)
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
@@ -195,7 +207,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	log.Info("Agent starting", "node", nodeName)
+	log.Info("Agent starting", "node", nodeName, "vtepIP", nodeIP)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		log.Error(err, "Problem running agent manager")
 		os.Exit(1)

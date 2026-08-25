@@ -9,6 +9,7 @@ func TestClusterImpNodeProfileSpec_RoundTrip(t *testing.T) {
 	np := ClusterImpNodeProfileSpec{
 		CapacityFraction: "0.85",
 		MaxImpVMs:        10,
+		VTEPIP:           "192.168.122.10",
 	}
 	data, err := json.Marshal(np)
 	if err != nil {
@@ -23,5 +24,8 @@ func TestClusterImpNodeProfileSpec_RoundTrip(t *testing.T) {
 	}
 	if got.MaxImpVMs != 10 {
 		t.Fatalf("MaxImpVMs wrong: %v", got.MaxImpVMs)
+	}
+	if got.VTEPIP != "192.168.122.10" {
+		t.Fatalf("VTEPIP wrong: %v", got.VTEPIP)
 	}
 }

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,6 +74,18 @@ var _ = BeforeSuite(func() {
 	nsCmd := exec.Command("kubectl", "create", "ns", namespace)
 	_, _ = utils.Run(nsCmd) // ignore if already exists
 
+	if os.Getenv("IMP_E2E_REAL_AGENT") == "true" {
+		By("labeling nodes for agent scheduling")
+		nodes, err := utils.Run(exec.Command("kubectl", "get", "nodes", "-o", "jsonpath={.items[*].metadata.name}"))
+		Expect(err).NotTo(HaveOccurred())
+		for _, node := range strings.Fields(nodes) {
+			_, _ = utils.Run(exec.Command("kubectl", "taint", "nodes", node,
+				"node-role.kubernetes.io/control-plane:NoSchedule-"))
+			_, err = utils.Run(exec.Command("kubectl", "label", "node", node, "imp/enabled=true", "--overwrite"))
+			Expect(err).NotTo(HaveOccurred())
+		}
+	}
+
 	By("installing cert-manager")
 	Expect(utils.InstallCertManager()).To(Succeed(), "helm install cert-manager failed")
 
@@ -87,6 +100,8 @@ var _ = BeforeSuite(func() {
 	operatorTag := getenvOrDefault("IMP_E2E_OPERATOR_IMAGE_TAG", "e2e")
 	agentRepo := getenvOrDefault("IMP_E2E_AGENT_IMAGE_REPOSITORY", "local/imp-agent")
 	agentTag := getenvOrDefault("IMP_E2E_AGENT_IMAGE_TAG", "e2e")
+	runtimeRepo := getenvOrDefault("IMP_E2E_RUNTIME_IMAGE_REPOSITORY", "local/imp-agent")
+	runtimeTag := getenvOrDefault("IMP_E2E_RUNTIME_IMAGE_TAG", "e2e")
 
 	impArgs := []string{"install", helmRelease, "charts/imp",
 		"--namespace", namespace,
@@ -94,6 +109,8 @@ var _ = BeforeSuite(func() {
 		"--set", "operator.image.tag=" + operatorTag,
 		"--set", "agent.image.repository=" + agentRepo,
 		"--set", "agent.image.tag=" + agentTag,
+		"--set", "runtime.image.repository=" + runtimeRepo,
+		"--set", "runtime.image.tag=" + runtimeTag,
 		"--set", "agent.env.kernelPath=/var/lib/imp/vmlinux",
 		"--set", "metrics.serviceMonitor.enabled=false",
 		"--set", "metrics.podMonitor.enabled=false",

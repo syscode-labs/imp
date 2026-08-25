@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
@@ -679,8 +680,17 @@ func (r *ImpVMReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 	}
 
-	// Detect and patch CPU model onto ClusterImpNodeProfile at startup (best-effort).
-	go detectAndPatchCPUModel(context.Background(), r.Client, r.NodeName)
+	// Detect and patch CPU model onto ClusterImpNodeProfile once the manager
+	// cache is live (best-effort). A raw goroutine here races informer startup
+	// and every lookup fails with "cache is not started".
+	if err := mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
+		if mgr.GetCache().WaitForCacheSync(ctx) {
+			detectAndPatchCPUModel(ctx, r.Client, r.NodeName)
+		}
+		return nil //nolint:nilerr // best-effort: cache shutdown must not fail agent start
+	})); err != nil {
+		return err
+	}
 
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&impdevv1alpha1.ImpVM{}).
