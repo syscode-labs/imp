@@ -20,6 +20,9 @@ tests:
           path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution
           content:
             topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: operator
 
   - it: uses custom image tag when set
     template: templates/operator/deployment.yaml
