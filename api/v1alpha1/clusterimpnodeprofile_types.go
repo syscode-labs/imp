@@ -42,6 +42,28 @@ type ClusterImpNodeProfileSpec struct {
 	// is disabled for this node.
 	// +optional
 	VTEPIP string `json:"vtepIP,omitempty"`
+
+	// LANBindings maps allowlisted attachment definitions (by name, from
+	// ClusterImpConfig.spec.networking.lanAttachments) to the physical parent
+	// interface on this node. An ImpNetworkAttachment can only be provisioned
+	// on nodes whose profile carries a binding for its definition. Managed by
+	// administrators only; never user-selectable.
+	// +optional
+	// +listType=map
+	// +listMapKey=attachmentName
+	LANBindings []NodeLANBinding `json:"lanBindings,omitempty"`
+}
+
+// NodeLANBinding binds one LAN attachment definition to a parent interface
+// on this node.
+type NodeLANBinding struct {
+	// AttachmentName matches a ClusterImpConfig LAN attachment definition name.
+	AttachmentName string `json:"attachmentName"`
+
+	// ParentInterface is the host interface (or existing bridge) the VMs are
+	// bridged onto, directly for untagged or via a VLAN subinterface for
+	// tagged definitions.
+	ParentInterface string `json:"parentInterface"`
 }
 
 // +kubebuilder:object:root=true

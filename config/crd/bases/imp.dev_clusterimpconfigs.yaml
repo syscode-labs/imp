@@ -132,6 +132,59 @@ spec:
                         - internal
                         type: string
                     type: object
+                  lanAttachments:
+                    description: |-
+                      LANAttachments declares the allowlisted physical network/VLAN attachment
+                      definitions. ImpNetworkAttachment resources may reference these by name
+                      only; users can never specify host interfaces or arbitrary VLANs.
+                    items:
+                      description: |-
+                        LANAttachmentSpec is one administrator-defined allowlist entry for elevated
+                        physical LAN/VLAN attachment.
+                      properties:
+                        allowDHCP:
+                          description: |-
+                            AllowDHCP permits ImpNetworkAttachments on this definition to request a
+                            guest-side DHCP lease.
+                          type: boolean
+                        allowedSubjects:
+                          description: |-
+                            AllowedSubjects optionally restricts which authenticated users or groups
+                            may create attachments referencing this definition. Entries use RBAC
+                            subject syntax ("user:alice", "group:platform-admins"). Empty means any
+                            holder of the LAN-attachment RBAC permission is allowed.
+                          items:
+                            type: string
+                          type: array
+                        name:
+                          description: |-
+                            Name identifies this definition. ImpNetworkAttachments reference it via
+                            spec.attachmentRef.
+                          type: string
+                        subnetCIDR:
+                          description: |-
+                            SubnetCIDR is the IP subnet of the physical network, used to validate
+                            static addresses and to document the lease range.
+                          pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$
+                          type: string
+                        vlanID:
+                          description: |-
+                            VLANID is the 802.1Q VLAN tag guests are bridged onto.
+                            0 means untagged: VMs bridge directly onto the bound parent interface.
+                            1–4094 selects a tagged VLAN subinterface (<parent>.<vlanID>).
+                          format: int32
+                          maximum: 4094
+                          minimum: 0
+                          type: integer
+                      required:
+                      - name
+                      - subnetCIDR
+                      - vlanID
+                      type: object
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - name
+                    x-kubernetes-list-type: map
                 type: object
               observability:
                 description: Observability configures metrics and tracing.

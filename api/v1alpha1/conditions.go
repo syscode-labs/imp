@@ -11,3 +11,8 @@ const (
 const (
 	ConditionNetworkReady = "Ready"
 )
+
+// ImpNetworkAttachment condition type constants.
+const (
+	ConditionAttachmentAuthorized = "Authorized"
+)

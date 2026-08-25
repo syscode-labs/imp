@@ -1,0 +1,16 @@
+apiVersion: imp.dev/v1alpha1
+kind: ImpNetworkAttachment
+metadata:
+  name: impnetworkattachment-sample
+spec:
+  # ImpVM (same namespace) that joins the allowlisted network.
+  vmRef:
+    name: tiny-vm
+  # References ClusterImpConfig.spec.networking.lanAttachments[].name
+  attachmentRef: lab-lan
+  mode: access
+  # Either request DHCP (when the definition sets allowDHCP=true):
+  dhcp:
+    enabled: true
+  # ...or pin a static address inside the definition subnet:
+  # ip: 192.168.77.20
