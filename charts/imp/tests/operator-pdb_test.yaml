@@ -1,0 +1,17 @@
+suite: operator PDB
+templates:
+  - templates/operator/pdb.yaml
+tests:
+  - it: renders a PodDisruptionBudget by default
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.minAvailable
+          value: 1
+  - it: omits the PDB when disabled
+    set:
+      operator.pdb.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

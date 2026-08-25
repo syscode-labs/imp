@@ -15,7 +15,11 @@ tests:
           value: ghcr.io/syscode-labs/imp-operator:0.1.0
       - equal:
           path: spec.replicas
-          value: 1
+          value: 2
+      - contains:
+          path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution
+          content:
+            topologyKey: kubernetes.io/hostname
 
   - it: uses custom image tag when set
     template: templates/operator/deployment.yaml
