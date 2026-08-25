@@ -8,3 +8,6 @@ rules:
 - apiGroups: ["imp.dev"]
   resources: ["impvmclasses", "impvmsnapshots", "impnetworks"]
   verbs: ["get"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "create", "delete"]

@@ -79,8 +79,10 @@ type FirecrackerDriver struct {
 	// Net manages host-level networking (bridge, TAP, NAT).
 	// May be nil for VMs that do not reference an ImpNetwork.
 	Net network.NetManager
-	// Alloc manages in-memory IP allocation per ImpNetwork.
+	// Alloc tracks node-local IP use for NAT rule cleanup.
 	Alloc *network.Allocator
+	// Claims coordinates IP allocation across nodes with Kubernetes Lease objects.
+	Claims *network.LeaseAllocator
 	// GuestAgentPath is the host path to the guest-agent binary for injection.
 	// Defaults to rootfs.GuestAgentContainerPath when empty.
 	GuestAgentPath string
@@ -142,6 +144,7 @@ func NewFirecrackerDriver(client ctrlclient.Client) (*FirecrackerDriver, error) 
 		Cache:      &rootfs.Builder{CacheDir: cacheDir},
 		Client:     client,
 		Alloc:      network.NewAllocator(),
+		Claims:     network.NewLeaseAllocator(client),
 		procs:      make(map[string]*fcProc),
 	}, nil
 }
@@ -189,12 +192,21 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 
 	// 3. Set up networking if a NetworkRef is specified.
 	var netInfo *network.NetworkInfo
+	networkStarted := false
 	if vm.Spec.NetworkRef != nil && d.Net != nil {
 		ni, err := d.setupNetwork(ctx, vm)
 		if err != nil {
 			return 0, fmt.Errorf("setup network: %w", err)
 		}
 		netInfo = ni
+		defer func() {
+			if !networkStarted {
+				d.releaseNetworkIP(ctx, netInfo)
+				if err := d.Net.TeardownVM(ctx, netInfo.TAPName); err != nil {
+					logf.FromContext(ctx).Error(err, "TeardownVM failed", "tap", netInfo.TAPName)
+				}
+			}
+		}()
 	}
 
 	// 4. Ensure socket directory exists.
@@ -286,6 +298,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	d.mu.Lock()
 	d.procs[vmKey(vm)] = proc
 	d.mu.Unlock()
+	networkStarted = true
 
 	if probeCtx != nil {
 		go d.runProbes(probeCtx, probes, vsockPath, vmNamespace, vmName, className)
@@ -365,12 +378,10 @@ func (d *FirecrackerDriver) Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) 
 				logf.FromContext(ctx).Error(err, "TeardownVM failed", "tap", proc.netInfo.TAPName)
 			}
 		}
-		if d.Alloc != nil {
-			wasLast := d.Alloc.Release(proc.netInfo.NetworkKey, proc.netInfo.IP)
-			if wasLast && proc.netInfo.NATEnabled && d.Net != nil {
-				if err := d.Net.RemoveNAT(ctx, proc.netInfo.Subnet, proc.netInfo.EgressInterface); err != nil {
-					logf.FromContext(ctx).Error(err, "RemoveNAT failed", "subnet", proc.netInfo.Subnet)
-				}
+		wasLast := d.releaseNetworkIP(ctx, proc.netInfo)
+		if wasLast && proc.netInfo.NATEnabled && d.Net != nil {
+			if err := d.Net.RemoveNAT(ctx, proc.netInfo.Subnet, proc.netInfo.EgressInterface); err != nil {
+				logf.FromContext(ctx).Error(err, "RemoveNAT failed", "subnet", proc.netInfo.Subnet)
 			}
 		}
 	}
@@ -532,21 +543,29 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 		gateway = gw.String()
 	}
 
-	// Allocate VM IP.
-	ip, err := d.Alloc.Allocate(netKey, allocSubnet, gateway)
+	if d.Claims == nil {
+		return nil, fmt.Errorf("lease allocator is not configured")
+	}
+
+	// Claim the VM IP before creating host networking so separate nodes cannot
+	// configure the same address concurrently.
+	ip, err := d.Claims.Allocate(ctx, netKey, allocSubnet, gateway, vKey)
 	if err != nil {
-		return nil, fmt.Errorf("allocate IP: %w", err)
+		return nil, fmt.Errorf("claim IP: %w", err)
+	}
+	if d.Alloc != nil {
+		d.Alloc.Reserve(netKey, ip)
 	}
 
 	// Ensure bridge exists with gateway IP.
 	if err := d.Net.EnsureNetwork(ctx, bridgeName, gateway, prefixLen); err != nil {
-		_ = d.Alloc.Release(netKey, ip)
+		d.releaseNetworkIP(ctx, &network.NetworkInfo{NetworkKey: netKey, IP: ip, ClaimHolder: vKey})
 		return nil, fmt.Errorf("ensure bridge: %w", err)
 	}
 
 	// Create TAP and attach to bridge.
 	if err := d.Net.SetupVM(ctx, tapName, bridgeName, macAddr); err != nil {
-		_ = d.Alloc.Release(netKey, ip)
+		d.releaseNetworkIP(ctx, &network.NetworkInfo{NetworkKey: netKey, IP: ip, ClaimHolder: vKey})
 		return nil, fmt.Errorf("setup tap: %w", err)
 	}
 
@@ -567,9 +586,23 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 		DNS:             impNet.Spec.DNS,
 		Subnet:          allocSubnet,
 		NetworkKey:      netKey,
+		ClaimHolder:     vKey,
 		NATEnabled:      impNet.Spec.NAT.Enabled,
 		EgressInterface: impNet.Spec.NAT.EgressInterface,
 	}, nil
+}
+
+// releaseNetworkIP releases the cross-node claim and the node-local NAT tracker.
+func (d *FirecrackerDriver) releaseNetworkIP(ctx context.Context, info *network.NetworkInfo) bool {
+	if d.Claims != nil && info.ClaimHolder != "" {
+		if err := d.Claims.Release(ctx, info.NetworkKey, info.IP, info.ClaimHolder); err != nil {
+			logf.FromContext(ctx).Error(err, "Release IP claim failed", "ip", info.IP)
+		}
+	}
+	if d.Alloc != nil {
+		return d.Alloc.Release(info.NetworkKey, info.IP)
+	}
+	return false
 }
 
 // guestAgentEnabled returns true when the guest agent should be injected for this VM.
