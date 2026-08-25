@@ -6,7 +6,8 @@ metadata:
     {{- include "imp.labels" . | nindent 4 }}
 rules:
 - apiGroups: ["imp.dev"]
-  # impnetworks/get: the runtime process resolves NetworkRef CIDR/gateway when
-  # starting a VM; all dataplane mutations stay local (Net RPC primitives).
   resources: ["impvmclasses", "impvmsnapshots", "impnetworks"]
   verbs: ["get"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "create", "delete"]

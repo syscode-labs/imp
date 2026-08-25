@@ -15,6 +15,7 @@ import (
 	otelprometheus "go.opentelemetry.io/otel/exporters/prometheus"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"google.golang.org/grpc"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -503,6 +504,87 @@ func TestFirecrackerDriver_Stop_TeardownVMCalled(t *testing.T) {
 	}
 	if len(stub.TeardownVMCalls) != 1 || stub.TeardownVMCalls[0] != "imptap-deadbeef" {
 		t.Errorf("TeardownVMCalls = %v, want [imptap-deadbeef]", stub.TeardownVMCalls)
+	}
+}
+
+func TestFirecrackerDriver_setupNetworkClaimsIPWithLease(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impdevv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add imp scheme: %v", err)
+	}
+	if err := coordinationv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add coordination scheme: %v", err)
+	}
+	impNet := &impdevv1alpha1.ImpNetwork{}
+	impNet.Namespace, impNet.Name = "default", "network"
+	impNet.Spec.Subnet = "10.0.0.0/30"
+	client := fake.NewClientBuilder().WithScheme(scheme).WithObjects(impNet).Build()
+
+	d := &FirecrackerDriver{
+		Client: client,
+		Net:    &network.StubNetManager{},
+		Alloc:  network.NewAllocator(),
+		Claims: network.NewLeaseAllocator(client),
+	}
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace, vm.Name = "default", "vm"
+	vm.Spec.NetworkRef = &impdevv1alpha1.LocalObjectRef{Name: "network"}
+
+	info, err := d.setupNetwork(context.Background(), vm)
+	if err != nil {
+		t.Fatalf("setup network: %v", err)
+	}
+	if info.IP != "10.0.0.2" {
+		t.Errorf("allocated IP = %q, want 10.0.0.2", info.IP)
+	}
+
+	leases := &coordinationv1.LeaseList{}
+	if err := client.List(context.Background(), leases); err != nil {
+		t.Fatalf("list IP claims: %v", err)
+	}
+	if len(leases.Items) != 1 {
+		t.Errorf("lease count = %d, want 1", len(leases.Items))
+	}
+}
+
+func TestFirecrackerDriver_StopReleasesIPLease(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := coordinationv1.AddToScheme(scheme); err != nil {
+		t.Fatalf("add coordination scheme: %v", err)
+	}
+	client := fake.NewClientBuilder().WithScheme(scheme).Build()
+	claims := network.NewLeaseAllocator(client)
+	ip, err := claims.Allocate(context.Background(), "default/network", "10.0.0.0/30", "10.0.0.1", "default/vm")
+	if err != nil {
+		t.Fatalf("claim IP: %v", err)
+	}
+
+	d := &FirecrackerDriver{
+		Alloc:  network.NewAllocator(),
+		Claims: claims,
+		procs: map[string]*fcProc{
+			"default/vm": {
+				netInfo: &network.NetworkInfo{
+					NetworkKey:  "default/network",
+					IP:          ip,
+					ClaimHolder: "default/vm",
+				},
+			},
+		},
+	}
+	d.Alloc.Reserve("default/network", ip)
+	vm := &impdevv1alpha1.ImpVM{}
+	vm.Namespace, vm.Name = "default", "vm"
+
+	if err := d.Stop(context.Background(), vm); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	leases := &coordinationv1.LeaseList{}
+	if err := client.List(context.Background(), leases); err != nil {
+		t.Fatalf("list IP claims: %v", err)
+	}
+	if len(leases.Items) != 0 {
+		t.Errorf("lease count = %d, want 0", len(leases.Items))
 	}
 }
 

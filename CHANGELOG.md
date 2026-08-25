@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.6.2](https://github.com/syscode-labs/imp/compare/v0.6.1...v0.6.2) (2026-08-24)
+
+
+### Bug Fixes
+
+* **release:** align release-please manifest ([#46](https://github.com/syscode-labs/imp/issues/46)) ([e8e4a51](https://github.com/syscode-labs/imp/commit/e8e4a51ce57cc41ff6f5d473b2e585bad8bd38d1))
+
+## [0.6.1](https://github.com/syscode-labs/imp/compare/v0.6.0...v0.6.1) (2026-08-24)
+
+
+### Bug Fixes
+
+* **charts:** support digest-pinned Imp images ([a1d5842](https://github.com/syscode-labs/imp/commit/a1d5842eef45caa39a534beaea97a3446948fb33))
+* **charts:** support Talos extension host paths ([77b641f](https://github.com/syscode-labs/imp/commit/77b641f41931e1f6ed319bd384c3fd431cf5b584))
+* **charts:** support Talos host paths and digest pins ([f0c1170](https://github.com/syscode-labs/imp/commit/f0c11704a101aaf97ed6ce61f0298942548674a5))
+
+## [0.6.0](https://github.com/syscode-labs/imp/compare/v0.5.0...v0.6.0) (2026-07-29)
+
+
+### Features
+
+* **agent:** scale-to-zero wake-on-traffic datapath (Phase 3) ([#29](https://github.com/syscode-labs/imp/issues/29)) ([edb6352](https://github.com/syscode-labs/imp/commit/edb6352638387e2ec1f71fc385070d98b20e5557))
+* **api:** add ScaleToZero desiredState mode + idleTimeout (Phase 3 foundation) ([#28](https://github.com/syscode-labs/imp/issues/28)) ([20be988](https://github.com/syscode-labs/imp/commit/20be988a464e4a630d6ccfa43c56b18ab8455810))
+* **hack:** add Object Storage overlay to avoid ~GBP 0.90/month custom image cost ([1b038a4](https://github.com/syscode-labs/imp/commit/1b038a40efb6ecd19586e6bdc1da374375c664e6))
+* Phase 2 — suspend-on-idle for ImpVM ([#24](https://github.com/syscode-labs/imp/issues/24)) ([b9fc5c5](https://github.com/syscode-labs/imp/commit/b9fc5c586913c2b3bc2256f1f9799eec19ed9bcd))
+* **scheduler:** overcommit suspended VMs' freed capacity (Phase 2 Task 4) ([#25](https://github.com/syscode-labs/imp/issues/25)) ([086a928](https://github.com/syscode-labs/imp/commit/086a928966d6445010995ef25f71309e89798a5e))
+
+
+### Bug Fixes
+
+* **agent:** deliver firecracker binary via hostPath, wire FC_BIN + KVM preflight ([c3ba72d](https://github.com/syscode-labs/imp/commit/c3ba72d49b417059f7f8bce2b9c9e8c4bf60f455)), closes [#33](https://github.com/syscode-labs/imp/issues/33)
+* **agent:** fix AF_PACKET wake hook so scale-to-zero actually wakes ([#35](https://github.com/syscode-labs/imp/issues/35)) ([a0ccf8c](https://github.com/syscode-labs/imp/commit/a0ccf8c83c294b2189e043b51ec41fc6eb624456))
+* **charts:** resync drifted CRDs from base + add make sync-chart-crds ([#31](https://github.com/syscode-labs/imp/issues/31)) ([c905d33](https://github.com/syscode-labs/imp/commit/c905d33125c31246fc6d63d5ce1119fe8cd5f47a))
+* **phase2:** address review findings — log casing, reserved/resident split, tests ([#26](https://github.com/syscode-labs/imp/issues/26)) ([b70d94e](https://github.com/syscode-labs/imp/commit/b70d94e76665613db888093a6374eb1ad69052eb))
+
 ## [0.5.0](https://github.com/syscode-labs/imp/compare/v0.4.0...v0.5.0) (2026-03-24)
 
 
