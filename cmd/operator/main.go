@@ -178,6 +178,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Opt-in pressure lifecycle: suspend ImpVMs on nodes reporting
+	// MemoryPressure (helm value pressureLifecycle.enabled -> env flag).
+	if os.Getenv("IMP_PRESSURE_LIFECYCLE_ENABLED") == "true" {
+		if err := controller.InitPressureMetrics(mp.Meter("imp.controller")); err != nil {
+			setupLog.Error(err, "unable to create pressure metrics")
+			os.Exit(1)
+		}
+		if err := (&controller.PressureReconciler{
+			Client:   mgr.GetClient(),
+			Scheme:   mgr.GetScheme(),
+			Recorder: mgr.GetEventRecorderFor("pressure-controller"), //nolint:staticcheck
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "PressureLifecycle")
+			os.Exit(1)
+		}
+	}
+
 	if err = (&controller.ImpNetworkReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),

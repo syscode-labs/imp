@@ -1,0 +1,28 @@
+{{- if .Values.priorityClass.create }}
+# imp-critical: operator + runtime. Eviction protection for control-plane
+# components; runtime carries guest processes so it must not be an early
+# eviction candidate (see values.yaml runtime comment).
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ .Values.priorityClass.critical.name }}
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+value: {{ .Values.priorityClass.critical.value }}
+globalDefault: false
+preemptionPolicy: Never
+description: "Imp control-plane workloads (operator, Firecracker runtime)."
+---
+# imp-high: node agents. Burstable helpers that should out-rank ordinary
+# workloads but yield to imp-critical.
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: {{ .Values.priorityClass.high.name }}
+  labels:
+    {{- include "imp.labels" . | nindent 4 }}
+value: {{ .Values.priorityClass.high.value }}
+globalDefault: false
+preemptionPolicy: Never
+description: "Imp node agents."
+{{- end }}
