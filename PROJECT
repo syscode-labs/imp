@@ -6,6 +6,7 @@ cliVersion: 4.13.0
 domain: imp.dev
 layout:
 - go.kubebuilder.io/v4
+multigroup: true
 projectName: go-scaffold
 repo: github.com/syscode-labs/imp
 resources:

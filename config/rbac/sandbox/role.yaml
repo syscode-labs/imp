@@ -1,0 +1,79 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: sandbox-manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - services
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - get
+  - update
+- apiGroups:
+  - imp.dev
+  resources:
+  - clusterimpconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - imp.dev
+  resources:
+  - impnetworks
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - imp.dev
+  resources:
+  - impvms
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - sandbox.imp.dev
+  resources:
+  - impsandboxes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - sandbox.imp.dev
+  resources:
+  - impsandboxes/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - sandbox.imp.dev
+  resources:
+  - impsandboxes/status
+  verbs:
+  - get
+  - patch
+  - update

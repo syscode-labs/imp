@@ -1,0 +1,29 @@
+{{- if and (default true .Values.webhook.enabled) .Values.webhook.certManager.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "impsandbox.fullname" . }}-validating-webhooks
+  labels:
+    {{- include "impsandbox.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "impsandbox.fullname" . }}-webhook-tls
+webhooks:
+- name: vimpsandbox.sandbox.imp.dev
+  admissionReviewVersions: ["v1"]
+  clientConfig:
+    service:
+      name: {{ include "impsandbox.fullname" . }}-webhook
+      namespace: {{ .Release.Namespace }}
+      port: 9443
+      path: /validate-sandbox-imp-dev-v1alpha1-impsandbox
+  rules:
+  - apiGroups: ["sandbox.imp.dev"]
+    apiVersions: ["v1alpha1"]
+    operations:
+      - CREATE
+      - UPDATE
+    resources: [impsandboxes]
+    scope: Namespaced
+  failurePolicy: Fail
+  sideEffects: None
+{{- end }}

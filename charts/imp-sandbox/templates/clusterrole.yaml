@@ -1,0 +1,36 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "impsandbox.fullname" . }}-controller
+  labels:
+    {{- include "impsandbox.labels" . | nindent 4 }}
+rules:
+- apiGroups: ["sandbox.imp.dev"]
+  resources: [impsandboxes]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: ["sandbox.imp.dev"]
+  resources: [impsandboxes/status]
+  verbs: [get, update, patch]
+- apiGroups: ["sandbox.imp.dev"]
+  resources: [impsandboxes/finalizers]
+  verbs: [update]
+- apiGroups: ["imp.dev"]
+  resources: [impvms, impnetworks]
+  verbs: [get, list, watch, create, update, patch, delete]
+- apiGroups: ["imp.dev"]
+  resources: [clusterimpconfigs]
+  verbs: [get, list, watch]
+- apiGroups: [""]
+  resources: [events]
+  verbs: [create, patch]
+- apiGroups: [""]
+  resources: [nodes]
+  verbs: [get, list, watch]
+- apiGroups: [""]
+  resources: [services]
+  verbs: [get, list, watch]
+- apiGroups: ["coordination.k8s.io"]
+  resources: [leases]
+  verbs: [get, create, update]
+{{- end }}

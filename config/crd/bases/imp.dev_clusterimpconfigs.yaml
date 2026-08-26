@@ -161,6 +161,22 @@ spec:
                         type: string
                     type: object
                 type: object
+              sandbox:
+                description: |-
+                  Sandbox configures settings for the optional Imp Sandbox add-on.
+                  Ignored when the imp-sandbox component is not installed.
+                properties:
+                  floorTenancy:
+                    default: standard
+                    description: |-
+                      FloorTenancy raises the minimum tenancy tier accepted for sandboxes
+                      cluster-wide. When set to "hard", all sandboxes must request hard
+                      tenancy regardless of their spec. Requires the imp-sandbox add-on.
+                    enum:
+                    - standard
+                    - hard
+                    type: string
+                type: object
             type: object
         type: object
     served: true

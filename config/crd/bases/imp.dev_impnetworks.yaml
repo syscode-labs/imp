@@ -74,6 +74,23 @@ spec:
                 items:
                   type: string
                 type: array
+              firewall:
+                description: |-
+                  Firewall optionally installs host-level egress deny rules for every VM
+                  on this network. Rules are enforced outside the guest and cannot be
+                  disabled from inside it. Nil means no filtering beyond NAT.
+                properties:
+                  denyCidrs:
+                    description: |-
+                      DenyCIDRs lists destination CIDR blocks that VMs on this network must
+                      never reach. Drops are installed before MASQUERADE so denied traffic is
+                      never translated or forwarded.
+                    items:
+                      pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$
+                      type: string
+                    minItems: 1
+                    type: array
+                type: object
               gateway:
                 description: |-
                   Gateway is the default gateway IP for VMs on this network.

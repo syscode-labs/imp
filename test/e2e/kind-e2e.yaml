@@ -1,0 +1,10 @@
+# Kind cluster configuration for the standard e2e suite.
+# Three nodes so the operator's required pod anti-affinity (replicaCount: 2)
+# can schedule, and so cross-node VXLAN datapath paths get exercised.
+# Usage: kind create cluster --name imp-e2e --config test/e2e/kind-e2e.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+  - role: worker
+  - role: worker

@@ -65,6 +65,16 @@ spec:
                       available to ImpVMs across all nodes. Range: 0.0–1.0.
                     pattern: ^(0(\.[0-9]+)?|1(\.0+)?)$
                     type: string
+                  memoryReserveMiB:
+                    description: |-
+                      MemoryReserveMiB is node memory held back from ImpVM scheduling so
+                      non-ImpVM consumers (system pods, other tenants) and measurement lag
+                      cannot drive a node into memory pressure. The reserve is subtracted
+                      from per-node allocatable memory before any fit decision. When unset,
+                      the operator applies a 512 MiB default; an explicit value >= 0 is
+                      honored verbatim.
+                    format: int32
+                    type: integer
                 type: object
               defaultHttpCheck:
                 description: |-
@@ -161,6 +171,22 @@ spec:
                         description: Endpoint is the OTLP gRPC endpoint (e.g. "http://otel-collector:4317").
                         type: string
                     type: object
+                type: object
+              sandbox:
+                description: |-
+                  Sandbox configures settings for the optional Imp Sandbox add-on.
+                  Ignored when the imp-sandbox component is not installed.
+                properties:
+                  floorTenancy:
+                    default: standard
+                    description: |-
+                      FloorTenancy raises the minimum tenancy tier accepted for sandboxes
+                      cluster-wide. When set to "hard", all sandboxes must request hard
+                      tenancy regardless of their spec. Requires the imp-sandbox add-on.
+                    enum:
+                    - standard
+                    - hard
+                    type: string
                 type: object
             type: object
         type: object
