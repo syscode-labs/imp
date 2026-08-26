@@ -104,7 +104,7 @@ func (s *SandboxServer) Exec(ctx context.Context, req *pb.ExecRequest) (*pb.Exec
 	exitCode := int32(0)
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = int32(exitErr.ExitCode())
+			exitCode = intToInt32Safe(exitErr.ExitCode())
 		} else {
 			exitCode = 1
 		}
