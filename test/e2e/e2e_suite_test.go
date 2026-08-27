@@ -102,6 +102,10 @@ var _ = BeforeSuite(func() {
 	agentTag := getenvOrDefault("IMP_E2E_AGENT_IMAGE_TAG", "e2e")
 	runtimeRepo := getenvOrDefault("IMP_E2E_RUNTIME_IMAGE_REPOSITORY", "local/imp-agent")
 	runtimeTag := getenvOrDefault("IMP_E2E_RUNTIME_IMAGE_TAG", "e2e")
+	// The Kind cluster used by this suite is single-node (helm/kind-action),
+	// so the operator's required pod anti-affinity cannot schedule two
+	// replicas. Default to 1 and let larger harnesses override.
+	operatorReplicas := getenvOrDefault("IMP_E2E_OPERATOR_REPLICAS", "1")
 
 	impArgs := []string{"install", helmRelease, "charts/imp",
 		"--namespace", namespace,
@@ -111,6 +115,7 @@ var _ = BeforeSuite(func() {
 		"--set", "agent.image.tag=" + agentTag,
 		"--set", "runtime.image.repository=" + runtimeRepo,
 		"--set", "runtime.image.tag=" + runtimeTag,
+		"--set", "operator.replicaCount=" + operatorReplicas,
 		"--set", "agent.env.kernelPath=/var/lib/imp/vmlinux",
 		"--set", "metrics.serviceMonitor.enabled=false",
 		"--set", "metrics.podMonitor.enabled=false",
