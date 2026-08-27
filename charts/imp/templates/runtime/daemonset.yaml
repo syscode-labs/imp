@@ -22,6 +22,7 @@ spec:
       hostNetwork: true
       hostPID: true
       serviceAccountName: {{ include "imp.runtime.serviceAccountName" . }}
+      priorityClassName: {{ .Values.runtime.priorityClassName }}
       nodeSelector:
         {{- toYaml .Values.runtime.nodeSelector | nindent 8 }}
       containers:
