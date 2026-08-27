@@ -145,6 +145,11 @@ var _ = BeforeSuite(func() {
 	_, err = utils.Run(impCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp failed")
 
+	By("installing imp-sandbox chart")
+	sandboxCmd := exec.Command("helm", "install", "imp-sandbox", "charts/imp-sandbox",
+		"--namespace", namespace, "--wait", "--timeout", "5m")
+	_, _ = utils.Run(sandboxCmd)
+
 	By("disabling scheduling reserve for tiny kind cluster")
 	reserveCmd := exec.Command("kubectl", "apply", "-f", "-")
 	reserveCmd.Stdin = strings.NewReader(`
@@ -185,6 +190,10 @@ var _ = AfterSuite(func() {
 	By("uninstalling imp chart")
 	unimpCmd := exec.Command("helm", "uninstall", helmRelease, "--namespace", namespace)
 	_, _ = utils.Run(unimpCmd)
+
+	By("uninstalling imp-sandbox chart")
+	unsandboxCmd := exec.Command("helm", "uninstall", "imp-sandbox", "--namespace", namespace)
+	_, _ = utils.Run(unsandboxCmd)
 
 	By("uninstalling imp-crds chart")
 	uncrdsCmd := exec.Command("helm", "uninstall", helmCRDRelease, "--namespace", namespace)
