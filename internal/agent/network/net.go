@@ -38,7 +38,7 @@ type NetworkInfo struct {
 	// Firecracker then attaches the TAP without static IP configuration.
 	DHCP bool
 
-	DenyCIDRs       []string // host-enforced destination denies for this network (empty = none)
+	DenyCIDRs []string // host-enforced destination denies for this network (empty = none)
 }
 
 // NetManager abstracts host-level network operations for a VM.
