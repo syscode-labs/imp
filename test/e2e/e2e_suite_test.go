@@ -145,11 +145,6 @@ var _ = BeforeSuite(func() {
 	_, err = utils.Run(impCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp failed")
 
-	By("installing imp-sandbox chart")
-	sandboxCmd := exec.Command("helm", "install", "imp-sandbox", "charts/imp-sandbox",
-		"--namespace", namespace, "--wait", "--timeout", "5m")
-	_, _ = utils.Run(sandboxCmd)
-
 	By("disabling scheduling reserve for tiny kind cluster")
 	reserveCmd := exec.Command("kubectl", "apply", "-f", "-")
 	reserveCmd.Stdin = strings.NewReader(`
@@ -162,6 +157,15 @@ spec:
     memoryReserveMiB: 0
 `)
 	_, _ = utils.Run(reserveCmd)
+
+	By("waiting for operator webhook to be ready")
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", "endpoints", "imp-operator", "-n", namespace,
+			"-o", "jsonpath={.subsets[0].addresses[0].ip}")
+		out, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty())
+	}, "2m", "2s").Should(Succeed())
 })
 
 var _ = AfterSuite(func() {
