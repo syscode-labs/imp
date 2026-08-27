@@ -2,6 +2,17 @@ nameOverride: ""
 fullnameOverride: ""
 imagePullSecrets: []
 
+# Ship the PriorityClasses referenced by the workload defaults below.
+# Disable when the classes are managed elsewhere (e.g. a platform chart).
+priorityClass:
+  create: true
+  critical:
+    name: imp-critical
+    value: 1000000
+  high:
+    name: imp-high
+    value: 100000
+
 operator:
   image:
     repository: ghcr.io/syscode-labs/imp-operator
@@ -12,22 +23,35 @@ operator:
     enabled: true
     minAvailable: 1
   antiAffinity: required
+  # Guaranteed QoS: requests == limits so kubelet evicts this pod last and
+  # the kernel never OOM-kills it while lower-priority workloads exist.
+  # The previous 128Mi limit was implicated in restart churn under watch-cache
+  # pressure (see openspec change memory-pressure-guardrails).
+  priorityClassName: imp-critical
   resources:
     requests:
       cpu: 100m
-      memory: 64Mi
+      memory: 256Mi
     limits:
-      memory: 128Mi
+      cpu: 500m
+      memory: 512Mi
   nodeSelector: {}
   rbac:
     cniDetection: minimal
   extraEnv: []
+
+# Opt-in pressure lifecycle (openspec: memory-pressure-guardrails). When
+# enabled the operator suspends resident ImpVMs — largest memory first — on
+# nodes reporting MemoryPressure until it clears. Never auto-resumes.
+pressureLifecycle:
+  enabled: false
 
 agent:
   image:
     repository: ghcr.io/syscode-labs/imp-agent
     tag: ""
     pullPolicy: IfNotPresent
+  priorityClassName: imp-high
   resources:
     requests:
       cpu: 100m
@@ -72,6 +96,16 @@ runtime:
     repository: ghcr.io/syscode-labs/imp-agent
     tag: ""
     pullPolicy: IfNotPresent
+  priorityClassName: imp-critical
+  # Requests only, deliberately NO memory limits: the runtime pod cgroup
+  # contains every Firecracker guest on the node, so a limit would make
+  # kubelet evict this pod — killing all VMs — under node memory pressure.
+  # The high PriorityClass plus requests give it eviction protection without
+  # that footgun. Size requests to base daemon overhead, not guest memory.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
   nodeSelector:
     imp/enabled: "true"
   updateStrategy:
