@@ -83,6 +83,7 @@ func (r *ImpVMReconciler) suspendDirFor(vm *impdevv1alpha1.ImpVM) string {
 // +kubebuilder:rbac:groups=imp.dev,resources=impnetworks,verbs=get;list;watch
 // +kubebuilder:rbac:groups=imp.dev,resources=impnetworks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;create;delete
+// +kubebuilder:rbac:groups=imp.dev,resources=impnetworkattachments,verbs=get;list;watch
 
 func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := logf.FromContext(ctx).WithValues("node", r.NodeName)

@@ -60,6 +60,7 @@ rules:
 - apiGroups:
   - imp.dev
   resources:
+  - impnetworkattachments
   - impnetworks
   - impvmmigrations
   - impvmrunnerpools
@@ -77,16 +78,7 @@ rules:
 - apiGroups:
   - imp.dev
   resources:
-  - impnetworks/finalizers
-  - impvmmigrations/finalizers
-  - impvms/finalizers
-  - impvmsnapshots/finalizers
-  - impwarmpools/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - imp.dev
-  resources:
+  - impnetworkattachments/status
   - impnetworks/status
   - impvmmigrations/status
   - impvmrunnerpools/status
@@ -96,4 +88,14 @@ rules:
   verbs:
   - get
   - patch
+  - update
+- apiGroups:
+  - imp.dev
+  resources:
+  - impnetworks/finalizers
+  - impvmmigrations/finalizers
+  - impvms/finalizers
+  - impvmsnapshots/finalizers
+  - impwarmpools/finalizers
+  verbs:
   - update

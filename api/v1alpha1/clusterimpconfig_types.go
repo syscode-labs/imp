@@ -1,6 +1,10 @@
 package v1alpha1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	"strings"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // ClusterImpConfigSpec defines operator-wide settings.
 // There must be exactly one ClusterImpConfig named "cluster" per cluster.
@@ -49,6 +53,74 @@ type NetworkingConfig struct {
 	// IPAM controls IP address management for ImpNetworks.
 	// +optional
 	IPAM IPAMConfig `json:"ipam,omitempty"`
+
+	// LANAttachments declares the allowlisted physical network/VLAN attachment
+	// definitions. ImpNetworkAttachment resources may reference these by name
+	// only; users can never specify host interfaces or arbitrary VLANs.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	LANAttachments []LANAttachmentSpec `json:"lanAttachments,omitempty"`
+}
+
+// LANAttachmentSpec is one administrator-defined allowlist entry for elevated
+// physical LAN/VLAN attachment.
+type LANAttachmentSpec struct {
+	// Name identifies this definition. ImpNetworkAttachments reference it via
+	// spec.attachmentRef.
+	Name string `json:"name"`
+
+	// VLANID is the 802.1Q VLAN tag guests are bridged onto.
+	// 0 means untagged: VMs bridge directly onto the bound parent interface.
+	// 1–4094 selects a tagged VLAN subinterface (<parent>.<vlanID>).
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=4094
+	VLANID int32 `json:"vlanID"`
+
+	// SubnetCIDR is the IP subnet of the physical network, used to validate
+	// static addresses and to document the lease range.
+	// +kubebuilder:validation:Pattern=`^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$`
+	SubnetCIDR string `json:"subnetCIDR"`
+
+	// AllowDHCP permits ImpNetworkAttachments on this definition to request a
+	// guest-side DHCP lease.
+	// +optional
+	AllowDHCP bool `json:"allowDHCP,omitempty"`
+
+	// AllowedSubjects optionally restricts which authenticated users or groups
+	// may create attachments referencing this definition. Entries use RBAC
+	// subject syntax ("user:alice", "group:platform-admins"). Empty means any
+	// holder of the LAN-attachment RBAC permission is allowed.
+	// +optional
+	AllowedSubjects []string `json:"allowedSubjects,omitempty"`
+}
+
+// Permits reports whether the authenticated identity matches this
+// definition's subject allowlist. An empty allowlist permits any identity;
+// an empty username never matches a non-empty allowlist.
+func (s *LANAttachmentSpec) Permits(username string, groups []string) bool {
+	if len(s.AllowedSubjects) == 0 {
+		return true
+	}
+	if username == "" {
+		return false
+	}
+	for _, subj := range s.AllowedSubjects {
+		switch {
+		case strings.HasPrefix(subj, "user:"):
+			if subj[len("user:"):] == username {
+				return true
+			}
+		case strings.HasPrefix(subj, "group:"):
+			want := subj[len("group:"):]
+			for _, have := range groups {
+				if have == want {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // CNIConfig configures CNI detection and NAT backend selection.

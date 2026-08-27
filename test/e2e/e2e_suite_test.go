@@ -119,6 +119,10 @@ var _ = BeforeSuite(func() {
 		"--set", "agent.env.kernelPath=/var/lib/imp/vmlinux",
 		"--set", "metrics.serviceMonitor.enabled=false",
 		"--set", "metrics.podMonitor.enabled=false",
+		// Single-node kind clusters cannot satisfy the chart's required
+		// operator anti-affinity (HA default is 2 replicas), so pin one
+		// replica unless the job runs a multi-node cluster and says otherwise.
+		"--set", "operator.replicaCount=" + getenvOrDefault("IMP_E2E_OPERATOR_REPLICAS", "1"),
 	}
 	if os.Getenv("IMP_E2E_REAL_AGENT") == "true" {
 		// Real KVM runner: let the agent schedule (no no-agent nodeSelector)

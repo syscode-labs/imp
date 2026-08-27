@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"sort"
+	"strconv"
 )
 
 // FDBEntry is a MAC→VTEP mapping for the VXLAN FDB.
@@ -25,6 +26,18 @@ type NetworkInfo struct {
 	ClaimHolder     string   // VM key recorded in the Kubernetes Lease claim
 	NATEnabled      bool     // true when NAT was enabled for this network
 	EgressInterface string   // egress interface used for NAT (may be "" for auto-detect)
+
+	// IsLAN marks an access-mode physical LAN/VLAN attachment. Attached VMs
+	// have no Imp IPAM, gateway, DNS injection, NAT, or VTEP entry.
+	IsLAN bool
+	// VLANID of the attachment definition (0 = untagged onto parent bridge).
+	VLANID int32
+	// ParentInterface bound by the node profile for this attachment.
+	ParentInterface string
+	// DHCP is true when the guest obtains its address via DHCP on the LAN;
+	// Firecracker then attaches the TAP without static IP configuration.
+	DHCP bool
+
 	DenyCIDRs       []string // host-enforced destination denies for this network (empty = none)
 }
 
@@ -84,6 +97,8 @@ type StubNetManager struct {
 	EnsureVXLANCalls       []string // ifaceName
 	EnsureVXLANBridgeCalls []string // bridgeName
 	SyncFDBCalls           []string // ifaceName
+	EnsureLANCalls         []string // "bridge|parent|vlanID"
+	TeardownLANCalls       []string // "bridge|parent|vlanID"
 
 	EnsureNetworkErr    error
 	SetupVMErr          error
@@ -94,6 +109,8 @@ type StubNetManager struct {
 	RemoveEgressDenyErr error
 	EnsureVXLANErr      error
 	SyncFDBErr          error
+	EnsureLANErr        error
+	TeardownLANErr      error
 }
 
 func (s *StubNetManager) EnsureNetwork(_ context.Context, bridgeName, _ string, _ int) error {
@@ -150,5 +167,23 @@ func (s *StubNetManager) SyncFDB(_ context.Context, ifaceName string, _ []FDBEnt
 	return s.SyncFDBErr
 }
 
-// compile-time assertion
-var _ NetManager = (*StubNetManager)(nil)
+// EnsureLANBridge records the call so tests can verify interactions.
+// The stub doubles as a LANAttacher for driver tests.
+func (s *StubNetManager) EnsureLANBridge(_ context.Context, bridgeName, parentIface string, vlanID int32) error {
+	s.EnsureLANCalls = append(s.EnsureLANCalls,
+		bridgeName+"|"+parentIface+"|"+strconv.FormatInt(int64(vlanID), 10))
+	return s.EnsureLANErr
+}
+
+// TeardownLANBridgeIfUnused records the call so tests can verify interactions.
+func (s *StubNetManager) TeardownLANBridgeIfUnused(_ context.Context, bridgeName, parentIface string, vlanID int32) error {
+	s.TeardownLANCalls = append(s.TeardownLANCalls,
+		bridgeName+"|"+parentIface+"|"+strconv.FormatInt(int64(vlanID), 10))
+	return s.TeardownLANErr
+}
+
+// compile-time assertions
+var (
+	_ NetManager  = (*StubNetManager)(nil)
+	_ LANAttacher = (*StubNetManager)(nil)
+)

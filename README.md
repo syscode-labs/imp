@@ -33,6 +33,7 @@ It provides CRDs for VM lifecycle, VM networking, snapshots, migrations, warm po
 
 - `ImpVM`: microVM lifecycle and scheduling
 - `ImpNetwork`: VM network, NAT, DNS, and optional Cilium integration
+- `ImpNetworkAttachment`: RBAC-gated physical LAN/VLAN attachment
 - `ImpVMSnapshot`: VM state snapshot lifecycle
 - `ImpVMMigration`: migration orchestration
 - `ImpWarmPool`: prewarmed VMs from snapshots
@@ -333,8 +334,12 @@ For non-Cilium CNIs (Flannel/Calico/Weave/etc.), Imp uses a VXLAN fallback for c
 
 Cilium IPAM runbook: `docs/networking/cilium-ipam.md`
 
-Default isolated networking and the planned elevated LAN/DHCP attachment model:
+Default isolated networking and the elevated LAN/VLAN attachment model:
 `docs/networking/privileged-lan-attachment.md`
+
+Need a VM on a physical, administrator-allowlisted VLAN (tagged or untagged)?
+`ImpNetworkAttachment` provides RBAC-gated access-mode attachment with optional
+guest DHCP — see `examples/lan-vlan-attachment/`.
 
 ## Metrics & Observability
 

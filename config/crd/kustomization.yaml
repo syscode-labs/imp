@@ -8,6 +8,7 @@ resources:
 - bases/imp.dev_impnetworks.yaml
 - bases/imp.dev_clusterimpconfigs.yaml
 - bases/imp.dev_clusterimpnodeprofiles.yaml
+- bases/imp.dev_impnetworkattachments.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:
