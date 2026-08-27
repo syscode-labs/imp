@@ -402,10 +402,10 @@ func (d *FirecrackerDriver) Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) 
 					logf.FromContext(ctx).Error(err, "RemoveNAT failed", "subnet", proc.netInfo.Subnet)
 				}
 			}
-		}
-		if wasLast && len(proc.netInfo.DenyCIDRs) > 0 && d.Net != nil {
-			if err := d.Net.RemoveEgressDeny(ctx, proc.netInfo.Subnet); err != nil {
-				logf.FromContext(ctx).Error(err, "RemoveEgressDeny failed", "subnet", proc.netInfo.Subnet)
+			if wasLast && len(proc.netInfo.DenyCIDRs) > 0 && d.Net != nil {
+				if err := d.Net.RemoveEgressDeny(ctx, proc.netInfo.Subnet); err != nil {
+					logf.FromContext(ctx).Error(err, "RemoveEgressDeny failed", "subnet", proc.netInfo.Subnet)
+				}
 			}
 		}
 	}
