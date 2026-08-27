@@ -37,6 +37,10 @@ rules:
   resources:
     - impnetworks/status
   verbs: [get, update, patch]
+- apiGroups: ["imp.dev"]
+  resources:
+    - impnetworkattachments
+  verbs: [get, list, watch]
 - apiGroups: [""]
   resources:
     - events

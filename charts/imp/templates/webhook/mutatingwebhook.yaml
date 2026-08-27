@@ -26,4 +26,22 @@ webhooks:
     scope: Namespaced
   failurePolicy: Fail
   sideEffects: None
+- name: mimpnetworkattachment.kb.io
+  admissionReviewVersions: ["v1"]
+  clientConfig:
+    service:
+      name: {{ include "imp.fullname" . }}-operator
+      namespace: {{ .Release.Namespace }}
+      port: 9443
+      path: /mutate-imp-dev-v1alpha1-impnetworkattachment
+  rules:
+  - apiGroups: ["imp.dev"]
+    apiVersions: ["v1alpha1"]
+    operations:
+      - CREATE
+      - UPDATE
+    resources: [impnetworkattachments]
+    scope: Namespaced
+  failurePolicy: Fail
+  sideEffects: None
 {{- end }}

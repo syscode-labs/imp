@@ -1,0 +1,16 @@
+# Requires the distinct LAN-attachment permission (impnetworkattachments
+# create). Default ImpVM/ImpNetwork roles cannot create this object.
+apiVersion: imp.dev/v1alpha1
+kind: ImpNetworkAttachment
+metadata:
+  name: tiny-vm-vlan100
+spec:
+  vmRef:
+    name: tiny-vm
+  attachmentRef: lab-vlan100
+  mode: access
+  # Static address inside the definition subnet (guest configures it).
+  # For allowDHCP definitions, use instead:
+  # dhcp:
+  #   enabled: true
+  ip: 10.66.100.23

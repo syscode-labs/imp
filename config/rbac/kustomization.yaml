@@ -22,6 +22,9 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the go-scaffold itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- impnetworkattachment_admin_role.yaml
+- impnetworkattachment_editor_role.yaml
+- impnetworkattachment_viewer_role.yaml
 - impvm_admin_role.yaml
 - impvm_editor_role.yaml
 - impvm_viewer_role.yaml

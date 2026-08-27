@@ -68,6 +68,36 @@ spec:
                   Used by the migration scheduler to filter CPU-compatible destination nodes.
                   Set automatically by the node agent; do not edit manually.
                 type: string
+              lanBindings:
+                description: |-
+                  LANBindings maps allowlisted attachment definitions (by name, from
+                  ClusterImpConfig.spec.networking.lanAttachments) to the physical parent
+                  interface on this node. An ImpNetworkAttachment can only be provisioned
+                  on nodes whose profile carries a binding for its definition. Managed by
+                  administrators only; never user-selectable.
+                items:
+                  description: |-
+                    NodeLANBinding binds one LAN attachment definition to a parent interface
+                    on this node.
+                  properties:
+                    attachmentName:
+                      description: AttachmentName matches a ClusterImpConfig LAN attachment
+                        definition name.
+                      type: string
+                    parentInterface:
+                      description: |-
+                        ParentInterface is the host interface (or existing bridge) the VMs are
+                        bridged onto, directly for untagged or via a VLAN subinterface for
+                        tagged definitions.
+                      type: string
+                  required:
+                  - attachmentName
+                  - parentInterface
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - attachmentName
+                x-kubernetes-list-type: map
               maxImpVMs:
                 description: |-
                   MaxImpVMs is a hard cap on the number of ImpVMs allowed on this node,

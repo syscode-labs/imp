@@ -1,0 +1,24 @@
+# Administrator: declare the allowlisted attachment (cluster-scoped).
+# VLAN 100 = tagged; use vlanID: 0 for an untagged access network.
+apiVersion: imp.dev/v1alpha1
+kind: ClusterImpConfig
+metadata:
+  name: cluster
+spec:
+  networking:
+    lanAttachments:
+      - name: lab-vlan100
+        vlanID: 100
+        subnetCIDR: 10.66.100.0/24
+        allowDHCP: false
+---
+# Administrator: bind the definition to a physical parent per node.
+# For untagged definitions the parent must be an existing bridge.
+apiVersion: imp.dev/v1alpha1
+kind: ClusterImpNodeProfile
+metadata:
+  name: worker-a
+spec:
+  lanBindings:
+    - attachmentName: lab-vlan100
+      parentInterface: enp3s0
