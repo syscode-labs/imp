@@ -144,6 +144,19 @@ var _ = BeforeSuite(func() {
 	impCmd := exec.Command("helm", impArgs...)
 	_, err = utils.Run(impCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp failed")
+
+	By("disabling scheduling reserve for tiny kind cluster")
+	reserveCmd := exec.Command("kubectl", "apply", "-f", "-")
+	reserveCmd.Stdin = strings.NewReader(`
+apiVersion: imp.dev/v1alpha1
+kind: ClusterImpConfig
+metadata:
+  name: cluster
+spec:
+  capacity:
+    memoryReserveMiB: 0
+`)
+	_, _ = utils.Run(reserveCmd)
 })
 
 var _ = AfterSuite(func() {

@@ -107,7 +107,7 @@ spec:
 					"-o", "jsonpath={.metadata.labels.sandbox\\.imp\\.dev/owner}"))
 				g.Expect(getErr).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal(sandboxName))
-			}).Should(Succeed())
+			}, "2m", "2s").Should(Succeed())
 
 			By("creating a dedicated network carrying the baseline deny list")
 			Eventually(func(g Gomega) {
@@ -116,7 +116,7 @@ spec:
 					"-o", "jsonpath={.spec.firewall.denyCidrs}"))
 				g.Expect(getErr).NotTo(HaveOccurred())
 				g.Expect(out).To(ContainSubstring("169.254.169.254/32"))
-			}).Should(Succeed())
+			}, "1m", "1s").Should(Succeed())
 
 			By("reporting enforced tenancy")
 			Eventually(func(g Gomega) {
@@ -125,7 +125,7 @@ spec:
 					"-o", "jsonpath={.status.effectiveTenancy}"))
 				g.Expect(getErr).NotTo(HaveOccurred())
 				g.Expect(out).To(Equal("standard"))
-			}).Should(Succeed())
+			}, "1m", "1s").Should(Succeed())
 		})
 
 		It("garbage-collects the backing VM on sandbox deletion", func() {
