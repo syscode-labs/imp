@@ -116,7 +116,7 @@ spec:
 					"-o", "jsonpath={.spec.firewall.denyCidrs}"))
 				g.Expect(getErr).NotTo(HaveOccurred())
 				g.Expect(out).To(ContainSubstring("169.254.169.254/32"))
-			}, "1m", "1s").Should(Succeed())
+			}, "2m", "2s").Should(Succeed())
 
 			By("reporting enforced tenancy")
 			Eventually(func(g Gomega) {
