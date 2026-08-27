@@ -82,6 +82,14 @@ rules:
   - patch
   - update
 - apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+- apiGroups:
   - imp.dev
   resources:
   - impnetworks/finalizers
