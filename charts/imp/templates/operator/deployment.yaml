@@ -25,6 +25,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "imp.operator.serviceAccountName" . }}
+      priorityClassName: {{ .Values.operator.priorityClassName }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -50,6 +51,10 @@ spec:
         env:
         - name: OTEL_SERVICE_NAME
           value: imp-operator
+        {{- if .Values.pressureLifecycle.enabled }}
+        - name: IMP_PRESSURE_LIFECYCLE_ENABLED
+          value: "true"
+        {{- end }}
         {{- with .Values.operator.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

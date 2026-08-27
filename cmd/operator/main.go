@@ -180,6 +180,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Opt-in pressure lifecycle: suspend ImpVMs on nodes reporting
+	// MemoryPressure (helm value pressureLifecycle.enabled -> env flag).
+	if os.Getenv("IMP_PRESSURE_LIFECYCLE_ENABLED") == "true" {
+		if err := controller.InitPressureMetrics(mp.Meter("imp.controller")); err != nil {
+			setupLog.Error(err, "unable to create pressure metrics")
+			os.Exit(1)
+		}
+		if err := (&controller.PressureReconciler{
+			Client:   mgr.GetClient(),
+			Scheme:   mgr.GetScheme(),
+			Recorder: mgr.GetEventRecorderFor("pressure-controller"), //nolint:staticcheck
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "PressureLifecycle")
+			os.Exit(1)
+		}
+	}
+
 	if err = (&controller.ImpNetworkReconciler{
 		Client:   mgr.GetClient(),
 		Scheme:   mgr.GetScheme(),
@@ -222,29 +239,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.ImpNetworkAttachmentReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("impnetworkattachment-controller"), //nolint:staticcheck
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ImpNetworkAttachment")
-		os.Exit(1)
-	}
-
 	if enableWebhooks {
 		if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpVM{}).
 			WithDefaulter(&webhookv1alpha1.ImpVMWebhook{}).
 			WithValidator(&webhookv1alpha1.ImpVMWebhook{}).
 			Complete(); err != nil {
 			setupLog.Error(err, "unable to register webhook", "webhook", "ImpVM")
-			os.Exit(1)
-		}
-
-		if err = builder.WebhookManagedBy(mgr, &impv1alpha1.ImpNetworkAttachment{}).
-			WithDefaulter(&webhookv1alpha1.ImpNetworkAttachmentWebhook{Client: mgr.GetClient()}).
-			WithValidator(&webhookv1alpha1.ImpNetworkAttachmentWebhook{Client: mgr.GetClient()}).
-			Complete(); err != nil {
-			setupLog.Error(err, "unable to register webhook", "webhook", "ImpNetworkAttachment")
 			os.Exit(1)
 		}
 

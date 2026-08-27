@@ -35,6 +35,26 @@ import (
 
 const labelImpEnabled = "imp/enabled"
 
+// defaultMemoryReserveMiB is applied when ClusterImpConfig does not set
+// CapacityConfig.memoryReserveMiB. It keeps headroom for non-ImpVM consumers
+// so scheduling decisions do not rely on a node being exactly at 100%.
+const defaultMemoryReserveMiB = 512
+
+// max64 returns the larger of two int64 values.
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// applyMemoryReserve subtracts the scheduling reserve from a node's memory,
+// clamped at zero. Used for every fit decision so non-ImpVM consumers and
+// measurement lag cannot drive a node to exactly 100%.
+func applyMemoryReserve(baseMiB, reserveMiB int64) int64 {
+	return max64(0, baseMiB-reserveMiB)
+}
+
 // nodeResourceUsage holds per-node resident and reserved usage. Resident is the
 // scheduling constraint; reserved is tracked for over-subscription visibility.
 type nodeResourceUsage struct {
@@ -139,6 +159,17 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 		vmMemMiB = classSpec.MemoryMiB
 	}
 
+	// 8. Fetch global capacity settings from ClusterImpConfig (best-effort)
+	globalFraction := 0.9
+	memoryReserveMiB := int64(defaultMemoryReserveMiB)
+	cfg := &impdevv1alpha1.ClusterImpConfig{}
+	if err := r.Get(ctx, client.ObjectKey{Name: "cluster"}, cfg); err == nil {
+		globalFraction = parseFraction(cfg.Spec.Capacity.DefaultFraction)
+		if cfg.Spec.Capacity.MemoryReserveMiB != nil && *cfg.Spec.Capacity.MemoryReserveMiB >= 0 {
+			memoryReserveMiB = int64(*cfg.Spec.Capacity.MemoryReserveMiB)
+		}
+	}
+
 	// 8a. Explicit-capacity scheduling
 	usedResources := sumUsedResources(ctx, r.Client, allVMs.Items)
 	var explicitNodes []NodeInfo
@@ -151,7 +182,7 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 		explicitNodes = append(explicitNodes, NodeInfo{
 			NodeName:          node.Name,
 			VCPUCapacity:      profile.Spec.VCPUCapacity,
-			MemoryMiB:         profile.Spec.MemoryMiB,
+			MemoryMiB:         applyMemoryReserve(int64(profile.Spec.MemoryMiB), memoryReserveMiB),
 			ResidentVCPU:      used.residentVCPU,
 			ResidentMemoryMiB: used.residentMem,
 			ReservedVCPU:      used.reservedVCPU,
@@ -164,13 +195,6 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 			return chosen, nil
 		}
 		// ErrUnschedulable from explicit-capacity nodes — fall through to fraction-based.
-	}
-
-	// 8. Fetch global default fraction from ClusterImpConfig (best-effort)
-	globalFraction := 0.9
-	cfg := &impdevv1alpha1.ClusterImpConfig{}
-	if err := r.Get(ctx, client.ObjectKey{Name: "cluster"}, cfg); err == nil {
-		globalFraction = parseFraction(cfg.Spec.Capacity.DefaultFraction)
 	}
 
 	// 9. Apply capacity caps
@@ -198,7 +222,7 @@ func (r *ImpVMReconciler) schedule(ctx context.Context, vm *impdevv1alpha1.ImpVM
 				fraction = parseFraction(profile.Spec.CapacityFraction)
 			}
 			allocCPU := node.Status.Allocatable.Cpu().MilliValue()
-			allocMem := node.Status.Allocatable.Memory().Value()
+			allocMem := applyMemoryReserve(node.Status.Allocatable.Memory().Value(), memoryReserveMiB*1024*1024)
 			maxVMs := effectiveMaxVMs(allocCPU, allocMem, vmVCPU, vmMemMiB, fraction)
 			if int32(running) >= maxVMs { //nolint:gosec
 				continue

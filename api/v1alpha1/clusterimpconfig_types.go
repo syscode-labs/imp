@@ -158,6 +158,15 @@ type CapacityConfig struct {
 	// +kubebuilder:default="0.9"
 	// +kubebuilder:validation:Pattern=`^(0(\.[0-9]+)?|1(\.0+)?)$`
 	DefaultFraction string `json:"defaultFraction,omitempty"`
+
+	// MemoryReserveMiB is node memory held back from ImpVM scheduling so
+	// non-ImpVM consumers (system pods, other tenants) and measurement lag
+	// cannot drive a node into memory pressure. The reserve is subtracted
+	// from per-node allocatable memory before any fit decision. When unset,
+	// the operator applies a 512 MiB default; an explicit value >= 0 is
+	// honored verbatim.
+	// +optional
+	MemoryReserveMiB *int32 `json:"memoryReserveMiB,omitempty"`
 }
 
 // ObservabilityConfig enables metrics and tracing.
