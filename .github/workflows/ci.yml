@@ -160,3 +160,15 @@ jobs:
 
       - name: Run smoke E2E suite
         run: go test -tags e2e ./test/e2e/... -v -timeout 15m -ginkgo.label-filter="smoke"
+
+      - name: Dump controller state on failure
+        if: failure()
+        run: |
+          echo "=== pods ==="
+          kubectl get pods -A -o wide || true
+          echo "=== imp-operator logs ==="
+          kubectl logs -n imp-system deploy/imp-operator --tail=100 2>/dev/null | grep -vE "^\s+/" | tail -60
+          echo "=== imp-sandbox logs (current) ==="
+          kubectl logs -n imp-system deploy/imp-sandbox-controller --tail=100 2>/dev/null | grep -vE "^\s+/" | tail -40
+          echo "=== imp-sandbox logs (previous) ==="
+          kubectl logs -n imp-system deploy/imp-sandbox-controller --previous --tail=100 2>/dev/null | grep -vE "^\s+/" | tail -40
