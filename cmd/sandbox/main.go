@@ -28,6 +28,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -59,22 +60,25 @@ func init() {
 
 // cniDetectRunnable runs CNI detection once after the manager cache syncs so
 // tenancy admission can verify Cilium capability without per-request discovery
-// calls.
+// calls. It reads through the API reader (uncached) on purpose: a cached
+// DaemonSet informer would need cluster-wide list RBAC, and any forbidden
+// informer poisons the manager's shared cache-sync gate.
 type cniDetectRunnable struct {
-	client   client.Client
+	reader   client.Reader
 	recorder record.EventRecorder
 	store    *cnidetect.Store
+	mapper   meta.RESTMapper
 }
 
 func (r *cniDetectRunnable) Start(ctx context.Context) error {
-	result, err := cnidetect.Detect(ctx, r.client)
+	result, err := cnidetect.Detect(ctx, r.reader, r.mapper)
 	if err != nil {
 		return err
 	}
 	r.store.Set(result)
 
 	cfg := &impv1alpha1.ClusterImpConfig{}
-	if getErr := r.client.Get(ctx, client.ObjectKey{Name: "cluster"}, cfg); getErr == nil {
+	if getErr := r.reader.Get(ctx, client.ObjectKey{Name: "cluster"}, cfg); getErr == nil {
 		r.recorder.Eventf(cfg, corev1.EventTypeNormal,
 			"SandboxCNIDetected",
 			"CNI detected: provider=%s", result.Provider)
@@ -149,7 +153,8 @@ func main() {
 	}
 
 	if err := mgr.Add(&cniDetectRunnable{
-		client:   mgr.GetClient(),
+		reader:   mgr.GetAPIReader(),
+		mapper:   mgr.GetRESTMapper(),
 		recorder: mgr.GetEventRecorderFor("sandbox-cni-detector"), //nolint:staticcheck
 		store:    cniStore,
 	}); err != nil {

@@ -5,6 +5,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -49,12 +50,12 @@ type Result struct {
 //     cilium-agent, kube-flannel-ds, calico-node
 //  4. Multiple signals → Ambiguous, iptables fallback.
 //  5. No signals → Unknown, iptables fallback.
-func Detect(ctx context.Context, c client.Client) (Result, error) {
+func Detect(ctx context.Context, r client.Reader, mapper meta.RESTMapper) (Result, error) {
 	log := logf.FromContext(ctx).WithName("cnidetect")
 
 	// 1. Explicit provider in ClusterImpConfig singleton.
 	cfg := &impdevv1alpha1.ClusterImpConfig{}
-	if err := c.Get(ctx, client.ObjectKey{Name: "cluster"}, cfg); err == nil {
+	if err := r.Get(ctx, client.ObjectKey{Name: "cluster"}, cfg); err == nil {
 		if p := cfg.Spec.Networking.CNI.Provider; p != "" {
 			log.Info("using explicit CNI provider", "provider", p)
 			return resultFromProvider(Provider(p)), nil
@@ -63,26 +64,26 @@ func Detect(ctx context.Context, c client.Client) (Result, error) {
 
 	// 2. CRD-based detection via REST mapper (no apiextensions scheme needed).
 	var signals []Provider
-	if hasCRD(c, "cilium.io", "ciliumnetworkpolicies") {
+	if hasCRD(mapper, "cilium.io", "ciliumnetworkpolicies") {
 		signals = append(signals, ProviderCilium)
 	}
-	if hasCRD(c, "projectcalico.org", "globalnetworkpolicies") {
+	if hasCRD(mapper, "projectcalico.org", "globalnetworkpolicies") {
 		signals = append(signals, ProviderCalico)
 	}
 
 	// 3. DaemonSet-based detection (graceful error handling).
 	if !containsProvider(signals, ProviderCilium) {
-		if hasDaemonSet(ctx, c, "cilium-agent") {
+		if hasDaemonSet(ctx, r, "cilium-agent") {
 			signals = append(signals, ProviderCilium)
 		}
 	}
 	if !containsProvider(signals, ProviderFlannel) {
-		if hasDaemonSet(ctx, c, "kube-flannel-ds") {
+		if hasDaemonSet(ctx, r, "kube-flannel-ds") {
 			signals = append(signals, ProviderFlannel)
 		}
 	}
 	if !containsProvider(signals, ProviderCalico) {
-		if hasDaemonSet(ctx, c, "calico-node") {
+		if hasDaemonSet(ctx, r, "calico-node") {
 			signals = append(signals, ProviderCalico)
 		}
 	}
@@ -102,8 +103,8 @@ func Detect(ctx context.Context, c client.Client) (Result, error) {
 }
 
 // hasCRD returns true if a CRD for the given group+resource exists in the cluster's REST mapper.
-func hasCRD(c client.Client, group, resource string) bool {
-	mappings, err := c.RESTMapper().ResourcesFor(schema.GroupVersionResource{
+func hasCRD(mapper meta.RESTMapper, group, resource string) bool {
+	mappings, err := mapper.ResourcesFor(schema.GroupVersionResource{
 		Group:    group,
 		Resource: resource,
 	})
@@ -113,9 +114,9 @@ func hasCRD(c client.Client, group, resource string) bool {
 // hasDaemonSet returns true if the named DaemonSet exists in kube-system.
 // Returns false on any error (including 403 Forbidden) to remain graceful in
 // clusters where the operator has minimal RBAC (design doc §9.4).
-func hasDaemonSet(ctx context.Context, c client.Client, name string) bool {
+func hasDaemonSet(ctx context.Context, r client.Reader, name string) bool {
 	ds := &appsv1.DaemonSet{}
-	err := c.Get(ctx, client.ObjectKey{Namespace: "kube-system", Name: name}, ds)
+	err := r.Get(ctx, client.ObjectKey{Namespace: "kube-system", Name: name}, ds)
 	if err == nil {
 		return true
 	}

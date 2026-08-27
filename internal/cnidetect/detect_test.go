@@ -129,7 +129,7 @@ func TestDetect(t *testing.T) {
 				WithRuntimeObjects(objs...).
 				Build()
 
-			got, err := cnidetect.Detect(context.Background(), c)
+			got, err := cnidetect.Detect(context.Background(), c, mapper)
 			if err != nil {
 				t.Fatalf("Detect() error = %v", err)
 			}
