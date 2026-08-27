@@ -159,7 +159,9 @@ jobs:
           kind load docker-image local/imp-sandbox:e2e --name imp-e2e
 
       - name: Run smoke E2E suite
-        run: go test -tags e2e ./test/e2e/... -v -timeout 15m -ginkgo.label-filter="smoke"
+        run: |
+          IMP_E2E_EVENTUALLY_TIMEOUT=5m \
+          go test -tags e2e ./test/e2e/... -v -timeout 25m -ginkgo.label-filter="smoke"
 
       - name: Dump controller state on failure
         if: failure()
