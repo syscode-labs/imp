@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.8.0](https://github.com/syscode-labs/imp/compare/v0.7.0...v0.8.0) (2026-08-28)
+
+
+### Features
+
+* **api:** add ImpNetworkAttachment CRD with LAN/VLAN allowlist types ([8ea0f3f](https://github.com/syscode-labs/imp/commit/8ea0f3f500da1facd844285f117cc3f0de0adbdc))
+* **network:** add RBAC-gated LAN/VLAN attachment for microVMs ([035fa58](https://github.com/syscode-labs/imp/commit/035fa580da98f03029373702d4a60a416178aac5))
+* **network:** gate LAN/VLAN attachment behind admission and node bindings ([42745c6](https://github.com/syscode-labs/imp/commit/42745c63fb77018d624ca7bbb13268f2ebe8499a))
+* **sandbox:** optional AI-agent sandbox add-on with tiered tenancy ([53259a8](https://github.com/syscode-labs/imp/commit/53259a8b553a3e360fd2984e2a14ce308ab65c91))
+* **sandbox:** optional AI-agent sandbox add-on with tiered tenancy ([b2087aa](https://github.com/syscode-labs/imp/commit/b2087aa22dc4c1242efd9eb3823410ab15c889dc))
+* **sandbox:** sandbox add-on (rebase + e2e harness fix) ([a0ec6a6](https://github.com/syscode-labs/imp/commit/a0ec6a6843909848931fc9d030a8522e771869cf))
+* **scheduling:** memory-pressure guardrails ([729a3df](https://github.com/syscode-labs/imp/commit/729a3dffbeabd8186c1a185748d15157a0b87a7a))
+* **scheduling:** memory-pressure guardrails — QoS/priority classes, scheduling reserve, opt-in pressure lifecycle ([185e492](https://github.com/syscode-labs/imp/commit/185e4925bad017cfef30e8cefc7a3fa230347f8e))
+
+
+### Bug Fixes
+
+* **agent:** scope wasLast correctly for egress-deny cleanup ([b96f8bc](https://github.com/syscode-labs/imp/commit/b96f8bc8f5ddb3687f885232d9e266f1222971ae))
+* **charts:** grant agent read on impnetworkattachments ([a3051ae](https://github.com/syscode-labs/imp/commit/a3051ae895982cd09d1049c716a00685774d5cfb))
+* **cnidetect:** stop spawning cached DaemonSet informer ([e848b67](https://github.com/syscode-labs/imp/commit/e848b67e74045f82ea8d28d6e0ded162475b2138))
+* correct RBAC order for leases (match controller-gen output) ([0b0f9c6](https://github.com/syscode-labs/imp/commit/0b0f9c67c0e064f11eabbf74e363fb27cf1d845e))
+* **e2e:** pin operator replicas to one on single-node kind clusters ([2375165](https://github.com/syscode-labs/imp/commit/2375165eb5b8b6a7237c202e5a112dc31280ade2))
+* **guest:** use overflow-safe exit-code conversion (gosec G115) ([72ead23](https://github.com/syscode-labs/imp/commit/72ead23173b58fdc3677339fe644a96c8c85fc88))
+* **sandbox:** reconcile firewall on existing ImpNetwork (was create-only, left empty deny list) ([4f69a1b](https://github.com/syscode-labs/imp/commit/4f69a1b5a0815f5457ba5d44b512817b3107816a))
+
 ## [0.7.0](https://github.com/syscode-labs/imp/compare/v0.6.3...v0.7.0) (2026-08-25)
 
 
