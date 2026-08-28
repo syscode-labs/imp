@@ -151,7 +151,9 @@ spec:
 				g.Expect(getErr).NotTo(HaveOccurred())
 			}).Should(Succeed())
 
-			delCmd := exec.Command("kubectl", "delete", "impsandbox", sandboxName, "-n", namespace)
+			// Submit deletion without waiting for finalizers. The assertion below is
+			// responsible for verifying that finalization garbage-collects the VM.
+			delCmd := exec.Command("kubectl", "delete", "impsandbox", sandboxName, "-n", namespace, "--wait=false")
 			_, delErr := utils.Run(delCmd)
 			Expect(delErr).NotTo(HaveOccurred())
 
