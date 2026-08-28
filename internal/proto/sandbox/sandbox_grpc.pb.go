@@ -26,6 +26,11 @@ const (
 	SandboxControl_OpenSession_FullMethodName  = "/sandbox.SandboxControl/OpenSession"
 	SandboxControl_CloseSession_FullMethodName = "/sandbox.SandboxControl/CloseSession"
 	SandboxControl_Exec_FullMethodName         = "/sandbox.SandboxControl/Exec"
+	SandboxControl_ReadFile_FullMethodName     = "/sandbox.SandboxControl/ReadFile"
+	SandboxControl_WriteFile_FullMethodName    = "/sandbox.SandboxControl/WriteFile"
+	SandboxControl_ListDir_FullMethodName      = "/sandbox.SandboxControl/ListDir"
+	SandboxControl_Stat_FullMethodName         = "/sandbox.SandboxControl/Stat"
+	SandboxControl_Remove_FullMethodName       = "/sandbox.SandboxControl/Remove"
 )
 
 // SandboxControlClient is the client API for SandboxControl service.
@@ -38,6 +43,16 @@ type SandboxControlClient interface {
 	CloseSession(ctx context.Context, in *CloseSessionRequest, opts ...grpc.CallOption) (*CloseSessionResponse, error)
 	// Exec runs a command inside the VM within an open session.
 	Exec(ctx context.Context, in *ExecRequest, opts ...grpc.CallOption) (*ExecResponse, error)
+	// ReadFile returns up to 1 MiB of a file inside the VM.
+	ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (*ReadFileResponse, error)
+	// WriteFile writes up to 1 MiB to a file inside the VM.
+	WriteFile(ctx context.Context, in *WriteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error)
+	// ListDir lists one directory level inside the VM.
+	ListDir(ctx context.Context, in *ListDirRequest, opts ...grpc.CallOption) (*ListDirResponse, error)
+	// Stat returns metadata for a path inside the VM.
+	Stat(ctx context.Context, in *StatRequest, opts ...grpc.CallOption) (*StatResponse, error)
+	// Remove deletes a file or empty directory inside the VM.
+	Remove(ctx context.Context, in *RemoveRequest, opts ...grpc.CallOption) (*RemoveResponse, error)
 }
 
 type sandboxControlClient struct {
@@ -78,6 +93,56 @@ func (c *sandboxControlClient) Exec(ctx context.Context, in *ExecRequest, opts .
 	return out, nil
 }
 
+func (c *sandboxControlClient) ReadFile(ctx context.Context, in *ReadFileRequest, opts ...grpc.CallOption) (*ReadFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReadFileResponse)
+	err := c.cc.Invoke(ctx, SandboxControl_ReadFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sandboxControlClient) WriteFile(ctx context.Context, in *WriteFileRequest, opts ...grpc.CallOption) (*WriteFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(WriteFileResponse)
+	err := c.cc.Invoke(ctx, SandboxControl_WriteFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sandboxControlClient) ListDir(ctx context.Context, in *ListDirRequest, opts ...grpc.CallOption) (*ListDirResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDirResponse)
+	err := c.cc.Invoke(ctx, SandboxControl_ListDir_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sandboxControlClient) Stat(ctx context.Context, in *StatRequest, opts ...grpc.CallOption) (*StatResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StatResponse)
+	err := c.cc.Invoke(ctx, SandboxControl_Stat_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sandboxControlClient) Remove(ctx context.Context, in *RemoveRequest, opts ...grpc.CallOption) (*RemoveResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveResponse)
+	err := c.cc.Invoke(ctx, SandboxControl_Remove_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SandboxControlServer is the server API for SandboxControl service.
 // All implementations must embed UnimplementedSandboxControlServer
 // for forward compatibility.
@@ -88,6 +153,16 @@ type SandboxControlServer interface {
 	CloseSession(context.Context, *CloseSessionRequest) (*CloseSessionResponse, error)
 	// Exec runs a command inside the VM within an open session.
 	Exec(context.Context, *ExecRequest) (*ExecResponse, error)
+	// ReadFile returns up to 1 MiB of a file inside the VM.
+	ReadFile(context.Context, *ReadFileRequest) (*ReadFileResponse, error)
+	// WriteFile writes up to 1 MiB to a file inside the VM.
+	WriteFile(context.Context, *WriteFileRequest) (*WriteFileResponse, error)
+	// ListDir lists one directory level inside the VM.
+	ListDir(context.Context, *ListDirRequest) (*ListDirResponse, error)
+	// Stat returns metadata for a path inside the VM.
+	Stat(context.Context, *StatRequest) (*StatResponse, error)
+	// Remove deletes a file or empty directory inside the VM.
+	Remove(context.Context, *RemoveRequest) (*RemoveResponse, error)
 	mustEmbedUnimplementedSandboxControlServer()
 }
 
@@ -106,6 +181,21 @@ func (UnimplementedSandboxControlServer) CloseSession(context.Context, *CloseSes
 }
 func (UnimplementedSandboxControlServer) Exec(context.Context, *ExecRequest) (*ExecResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Exec not implemented")
+}
+func (UnimplementedSandboxControlServer) ReadFile(context.Context, *ReadFileRequest) (*ReadFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReadFile not implemented")
+}
+func (UnimplementedSandboxControlServer) WriteFile(context.Context, *WriteFileRequest) (*WriteFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method WriteFile not implemented")
+}
+func (UnimplementedSandboxControlServer) ListDir(context.Context, *ListDirRequest) (*ListDirResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDir not implemented")
+}
+func (UnimplementedSandboxControlServer) Stat(context.Context, *StatRequest) (*StatResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Stat not implemented")
+}
+func (UnimplementedSandboxControlServer) Remove(context.Context, *RemoveRequest) (*RemoveResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Remove not implemented")
 }
 func (UnimplementedSandboxControlServer) mustEmbedUnimplementedSandboxControlServer() {}
 func (UnimplementedSandboxControlServer) testEmbeddedByValue()                        {}
@@ -182,6 +272,96 @@ func _SandboxControl_Exec_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SandboxControl_ReadFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReadFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxControlServer).ReadFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxControl_ReadFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxControlServer).ReadFile(ctx, req.(*ReadFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SandboxControl_WriteFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(WriteFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxControlServer).WriteFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxControl_WriteFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxControlServer).WriteFile(ctx, req.(*WriteFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SandboxControl_ListDir_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDirRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxControlServer).ListDir(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxControl_ListDir_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxControlServer).ListDir(ctx, req.(*ListDirRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SandboxControl_Stat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxControlServer).Stat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxControl_Stat_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxControlServer).Stat(ctx, req.(*StatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SandboxControl_Remove_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SandboxControlServer).Remove(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SandboxControl_Remove_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SandboxControlServer).Remove(ctx, req.(*RemoveRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SandboxControl_ServiceDesc is the grpc.ServiceDesc for SandboxControl service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -200,6 +380,26 @@ var SandboxControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Exec",
 			Handler:    _SandboxControl_Exec_Handler,
+		},
+		{
+			MethodName: "ReadFile",
+			Handler:    _SandboxControl_ReadFile_Handler,
+		},
+		{
+			MethodName: "WriteFile",
+			Handler:    _SandboxControl_WriteFile_Handler,
+		},
+		{
+			MethodName: "ListDir",
+			Handler:    _SandboxControl_ListDir_Handler,
+		},
+		{
+			MethodName: "Stat",
+			Handler:    _SandboxControl_Stat_Handler,
+		},
+		{
+			MethodName: "Remove",
+			Handler:    _SandboxControl_Remove_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -313,6 +313,620 @@ func (x *ExecResponse) GetStderr() string {
 	return ""
 }
 
+// MaxPayloadBytes is the hard cap the guest enforces on ReadFile/WriteFile
+// payloads; oversize requests are refused with ResourceExhausted.
+type ReadFileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadFileRequest) Reset() {
+	*x = ReadFileRequest{}
+	mi := &file_sandbox_sandbox_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadFileRequest) ProtoMessage() {}
+
+func (x *ReadFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sandbox_sandbox_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadFileRequest.ProtoReflect.Descriptor instead.
+func (*ReadFileRequest) Descriptor() ([]byte, []int) {
+	return file_sandbox_sandbox_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ReadFileRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ReadFileRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type ReadFileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Content       []byte                 `protobuf:"bytes,1,opt,name=content,proto3" json:"content,omitempty"`
+	Size          int64                  `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"` // total file size; content may be truncated to the cap
+	Truncated     bool                   `protobuf:"varint,3,opt,name=truncated,proto3" json:"truncated,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReadFileResponse) Reset() {
+	*x = ReadFileResponse{}
+	mi := &file_sandbox_sandbox_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReadFileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReadFileResponse) ProtoMessage() {}
+
+func (x *ReadFileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_sandbox_sandbox_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReadFileResponse.ProtoReflect.Descriptor instead.
+func (*ReadFileResponse) Descriptor() ([]byte, []int) {
+	return file_sandbox_sandbox_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ReadFileResponse) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+func (x *ReadFileResponse) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *ReadFileResponse) GetTruncated() bool {
+	if x != nil {
+		return x.Truncated
+	}
+	return false
+}
+
+type WriteFileRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Content       []byte                 `protobuf:"bytes,3,opt,name=content,proto3" json:"content,omitempty"`
+	Append        bool                   `protobuf:"varint,4,opt,name=append,proto3" json:"append,omitempty"`
+	Mode          int32                  `protobuf:"varint,5,opt,name=mode,proto3" json:"mode,omitempty"` // permission bits; 0 -> 0644
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteFileRequest) Reset() {
+	*x = WriteFileRequest{}
+	mi := &file_sandbox_sandbox_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteFileRequest) ProtoMessage() {}
+
+func (x *WriteFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sandbox_sandbox_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteFileRequest.ProtoReflect.Descriptor instead.
+func (*WriteFileRequest) Descriptor() ([]byte, []int) {
+	return file_sandbox_sandbox_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *WriteFileRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *WriteFileRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *WriteFileRequest) GetContent() []byte {
+	if x != nil {
+		return x.Content
+	}
+	return nil
+}
+
+func (x *WriteFileRequest) GetAppend() bool {
+	if x != nil {
+		return x.Append
+	}
+	return false
+}
+
+func (x *WriteFileRequest) GetMode() int32 {
+	if x != nil {
+		return x.Mode
+	}
+	return 0
+}
+
+type WriteFileResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	BytesWritten  int64                  `protobuf:"varint,1,opt,name=bytes_written,json=bytesWritten,proto3" json:"bytes_written,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WriteFileResponse) Reset() {
+	*x = WriteFileResponse{}
+	mi := &file_sandbox_sandbox_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WriteFileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WriteFileResponse) ProtoMessage() {}
+
+func (x *WriteFileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_sandbox_sandbox_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WriteFileResponse.ProtoReflect.Descriptor instead.
+func (*WriteFileResponse) Descriptor() ([]byte, []int) {
+	return file_sandbox_sandbox_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *WriteFileResponse) GetBytesWritten() int64 {
+	if x != nil {
+		return x.BytesWritten
+	}
+	return 0
+}
+
+type ListDirRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDirRequest) Reset() {
+	*x = ListDirRequest{}
+	mi := &file_sandbox_sandbox_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDirRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDirRequest) ProtoMessage() {}
+
+func (x *ListDirRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sandbox_sandbox_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDirRequest.ProtoReflect.Descriptor instead.
+func (*ListDirRequest) Descriptor() ([]byte, []int) {
+	return file_sandbox_sandbox_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ListDirRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *ListDirRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type ListDirResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*FileEntry           `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListDirResponse) Reset() {
+	*x = ListDirResponse{}
+	mi := &file_sandbox_sandbox_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListDirResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListDirResponse) ProtoMessage() {}
+
+func (x *ListDirResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_sandbox_sandbox_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListDirResponse.ProtoReflect.Descriptor instead.
+func (*ListDirResponse) Descriptor() ([]byte, []int) {
+	return file_sandbox_sandbox_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListDirResponse) GetEntries() []*FileEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+type FileEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Size          int64                  `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	IsDir         bool                   `protobuf:"varint,3,opt,name=is_dir,json=isDir,proto3" json:"is_dir,omitempty"`
+	ModifiedUnix  int64                  `protobuf:"varint,4,opt,name=modified_unix,json=modifiedUnix,proto3" json:"modified_unix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *FileEntry) Reset() {
+	*x = FileEntry{}
+	mi := &file_sandbox_sandbox_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *FileEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*FileEntry) ProtoMessage() {}
+
+func (x *FileEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_sandbox_sandbox_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use FileEntry.ProtoReflect.Descriptor instead.
+func (*FileEntry) Descriptor() ([]byte, []int) {
+	return file_sandbox_sandbox_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *FileEntry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *FileEntry) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *FileEntry) GetIsDir() bool {
+	if x != nil {
+		return x.IsDir
+	}
+	return false
+}
+
+func (x *FileEntry) GetModifiedUnix() int64 {
+	if x != nil {
+		return x.ModifiedUnix
+	}
+	return 0
+}
+
+type StatRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StatRequest) Reset() {
+	*x = StatRequest{}
+	mi := &file_sandbox_sandbox_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StatRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StatRequest) ProtoMessage() {}
+
+func (x *StatRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sandbox_sandbox_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StatRequest.ProtoReflect.Descriptor instead.
+func (*StatRequest) Descriptor() ([]byte, []int) {
+	return file_sandbox_sandbox_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *StatRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *StatRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type StatResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Size          int64                  `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
+	IsDir         bool                   `protobuf:"varint,2,opt,name=is_dir,json=isDir,proto3" json:"is_dir,omitempty"`
+	ModifiedUnix  int64                  `protobuf:"varint,3,opt,name=modified_unix,json=modifiedUnix,proto3" json:"modified_unix,omitempty"`
+	Mode          int32                  `protobuf:"varint,4,opt,name=mode,proto3" json:"mode,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StatResponse) Reset() {
+	*x = StatResponse{}
+	mi := &file_sandbox_sandbox_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StatResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StatResponse) ProtoMessage() {}
+
+func (x *StatResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_sandbox_sandbox_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StatResponse.ProtoReflect.Descriptor instead.
+func (*StatResponse) Descriptor() ([]byte, []int) {
+	return file_sandbox_sandbox_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *StatResponse) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *StatResponse) GetIsDir() bool {
+	if x != nil {
+		return x.IsDir
+	}
+	return false
+}
+
+func (x *StatResponse) GetModifiedUnix() int64 {
+	if x != nil {
+		return x.ModifiedUnix
+	}
+	return 0
+}
+
+func (x *StatResponse) GetMode() int32 {
+	if x != nil {
+		return x.Mode
+	}
+	return 0
+}
+
+type RemoveRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Path          string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`
+	Recursive     bool                   `protobuf:"varint,3,opt,name=recursive,proto3" json:"recursive,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveRequest) Reset() {
+	*x = RemoveRequest{}
+	mi := &file_sandbox_sandbox_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveRequest) ProtoMessage() {}
+
+func (x *RemoveRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_sandbox_sandbox_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveRequest.ProtoReflect.Descriptor instead.
+func (*RemoveRequest) Descriptor() ([]byte, []int) {
+	return file_sandbox_sandbox_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RemoveRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *RemoveRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *RemoveRequest) GetRecursive() bool {
+	if x != nil {
+		return x.Recursive
+	}
+	return false
+}
+
+type RemoveResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveResponse) Reset() {
+	*x = RemoveResponse{}
+	mi := &file_sandbox_sandbox_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveResponse) ProtoMessage() {}
+
+func (x *RemoveResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_sandbox_sandbox_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveResponse.ProtoReflect.Descriptor instead.
+func (*RemoveResponse) Descriptor() ([]byte, []int) {
+	return file_sandbox_sandbox_proto_rawDescGZIP(), []int{16}
+}
+
 var File_sandbox_sandbox_proto protoreflect.FileDescriptor
 
 const file_sandbox_sandbox_proto_rawDesc = "" +
@@ -335,11 +949,59 @@ const file_sandbox_sandbox_proto_rawDesc = "" +
 	"\fExecResponse\x12\x1b\n" +
 	"\texit_code\x18\x01 \x01(\x05R\bexitCode\x12\x16\n" +
 	"\x06stdout\x18\x02 \x01(\tR\x06stdout\x12\x16\n" +
-	"\x06stderr\x18\x03 \x01(\tR\x06stderr2\xdc\x01\n" +
+	"\x06stderr\x18\x03 \x01(\tR\x06stderr\"D\n" +
+	"\x0fReadFileRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"^\n" +
+	"\x10ReadFileResponse\x12\x18\n" +
+	"\acontent\x18\x01 \x01(\fR\acontent\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x03R\x04size\x12\x1c\n" +
+	"\ttruncated\x18\x03 \x01(\bR\ttruncated\"\x8b\x01\n" +
+	"\x10WriteFileRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x18\n" +
+	"\acontent\x18\x03 \x01(\fR\acontent\x12\x16\n" +
+	"\x06append\x18\x04 \x01(\bR\x06append\x12\x12\n" +
+	"\x04mode\x18\x05 \x01(\x05R\x04mode\"8\n" +
+	"\x11WriteFileResponse\x12#\n" +
+	"\rbytes_written\x18\x01 \x01(\x03R\fbytesWritten\"C\n" +
+	"\x0eListDirRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"?\n" +
+	"\x0fListDirResponse\x12,\n" +
+	"\aentries\x18\x01 \x03(\v2\x12.sandbox.FileEntryR\aentries\"o\n" +
+	"\tFileEntry\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x03R\x04size\x12\x15\n" +
+	"\x06is_dir\x18\x03 \x01(\bR\x05isDir\x12#\n" +
+	"\rmodified_unix\x18\x04 \x01(\x03R\fmodifiedUnix\"@\n" +
+	"\vStatRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\"r\n" +
+	"\fStatResponse\x12\x12\n" +
+	"\x04size\x18\x01 \x01(\x03R\x04size\x12\x15\n" +
+	"\x06is_dir\x18\x02 \x01(\bR\x05isDir\x12#\n" +
+	"\rmodified_unix\x18\x03 \x01(\x03R\fmodifiedUnix\x12\x12\n" +
+	"\x04mode\x18\x04 \x01(\x05R\x04mode\"`\n" +
+	"\rRemoveRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04path\x18\x02 \x01(\tR\x04path\x12\x1c\n" +
+	"\trecursive\x18\x03 \x01(\bR\trecursive\"\x10\n" +
+	"\x0eRemoveResponse2\x8f\x04\n" +
 	"\x0eSandboxControl\x12H\n" +
 	"\vOpenSession\x12\x1b.sandbox.OpenSessionRequest\x1a\x1c.sandbox.OpenSessionResponse\x12K\n" +
 	"\fCloseSession\x12\x1c.sandbox.CloseSessionRequest\x1a\x1d.sandbox.CloseSessionResponse\x123\n" +
-	"\x04Exec\x12\x14.sandbox.ExecRequest\x1a\x15.sandbox.ExecResponseB|\n" +
+	"\x04Exec\x12\x14.sandbox.ExecRequest\x1a\x15.sandbox.ExecResponse\x12?\n" +
+	"\bReadFile\x12\x18.sandbox.ReadFileRequest\x1a\x19.sandbox.ReadFileResponse\x12B\n" +
+	"\tWriteFile\x12\x19.sandbox.WriteFileRequest\x1a\x1a.sandbox.WriteFileResponse\x12<\n" +
+	"\aListDir\x12\x17.sandbox.ListDirRequest\x1a\x18.sandbox.ListDirResponse\x123\n" +
+	"\x04Stat\x12\x14.sandbox.StatRequest\x1a\x15.sandbox.StatResponse\x129\n" +
+	"\x06Remove\x12\x16.sandbox.RemoveRequest\x1a\x17.sandbox.RemoveResponseB|\n" +
 	"\vcom.sandboxB\fSandboxProtoP\x01Z#github.com/syscode-labs/imp/sandbox\xa2\x02\x03SXX\xaa\x02\aSandbox\xca\x02\aSandbox\xe2\x02\x13Sandbox\\GPBMetadata\xea\x02\aSandboxb\x06proto3"
 
 var (
@@ -354,7 +1016,7 @@ func file_sandbox_sandbox_proto_rawDescGZIP() []byte {
 	return file_sandbox_sandbox_proto_rawDescData
 }
 
-var file_sandbox_sandbox_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_sandbox_sandbox_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_sandbox_sandbox_proto_goTypes = []any{
 	(*OpenSessionRequest)(nil),   // 0: sandbox.OpenSessionRequest
 	(*OpenSessionResponse)(nil),  // 1: sandbox.OpenSessionResponse
@@ -362,19 +1024,41 @@ var file_sandbox_sandbox_proto_goTypes = []any{
 	(*CloseSessionResponse)(nil), // 3: sandbox.CloseSessionResponse
 	(*ExecRequest)(nil),          // 4: sandbox.ExecRequest
 	(*ExecResponse)(nil),         // 5: sandbox.ExecResponse
+	(*ReadFileRequest)(nil),      // 6: sandbox.ReadFileRequest
+	(*ReadFileResponse)(nil),     // 7: sandbox.ReadFileResponse
+	(*WriteFileRequest)(nil),     // 8: sandbox.WriteFileRequest
+	(*WriteFileResponse)(nil),    // 9: sandbox.WriteFileResponse
+	(*ListDirRequest)(nil),       // 10: sandbox.ListDirRequest
+	(*ListDirResponse)(nil),      // 11: sandbox.ListDirResponse
+	(*FileEntry)(nil),            // 12: sandbox.FileEntry
+	(*StatRequest)(nil),          // 13: sandbox.StatRequest
+	(*StatResponse)(nil),         // 14: sandbox.StatResponse
+	(*RemoveRequest)(nil),        // 15: sandbox.RemoveRequest
+	(*RemoveResponse)(nil),       // 16: sandbox.RemoveResponse
 }
 var file_sandbox_sandbox_proto_depIdxs = []int32{
-	0, // 0: sandbox.SandboxControl.OpenSession:input_type -> sandbox.OpenSessionRequest
-	2, // 1: sandbox.SandboxControl.CloseSession:input_type -> sandbox.CloseSessionRequest
-	4, // 2: sandbox.SandboxControl.Exec:input_type -> sandbox.ExecRequest
-	1, // 3: sandbox.SandboxControl.OpenSession:output_type -> sandbox.OpenSessionResponse
-	3, // 4: sandbox.SandboxControl.CloseSession:output_type -> sandbox.CloseSessionResponse
-	5, // 5: sandbox.SandboxControl.Exec:output_type -> sandbox.ExecResponse
-	3, // [3:6] is the sub-list for method output_type
-	0, // [0:3] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	12, // 0: sandbox.ListDirResponse.entries:type_name -> sandbox.FileEntry
+	0,  // 1: sandbox.SandboxControl.OpenSession:input_type -> sandbox.OpenSessionRequest
+	2,  // 2: sandbox.SandboxControl.CloseSession:input_type -> sandbox.CloseSessionRequest
+	4,  // 3: sandbox.SandboxControl.Exec:input_type -> sandbox.ExecRequest
+	6,  // 4: sandbox.SandboxControl.ReadFile:input_type -> sandbox.ReadFileRequest
+	8,  // 5: sandbox.SandboxControl.WriteFile:input_type -> sandbox.WriteFileRequest
+	10, // 6: sandbox.SandboxControl.ListDir:input_type -> sandbox.ListDirRequest
+	13, // 7: sandbox.SandboxControl.Stat:input_type -> sandbox.StatRequest
+	15, // 8: sandbox.SandboxControl.Remove:input_type -> sandbox.RemoveRequest
+	1,  // 9: sandbox.SandboxControl.OpenSession:output_type -> sandbox.OpenSessionResponse
+	3,  // 10: sandbox.SandboxControl.CloseSession:output_type -> sandbox.CloseSessionResponse
+	5,  // 11: sandbox.SandboxControl.Exec:output_type -> sandbox.ExecResponse
+	7,  // 12: sandbox.SandboxControl.ReadFile:output_type -> sandbox.ReadFileResponse
+	9,  // 13: sandbox.SandboxControl.WriteFile:output_type -> sandbox.WriteFileResponse
+	11, // 14: sandbox.SandboxControl.ListDir:output_type -> sandbox.ListDirResponse
+	14, // 15: sandbox.SandboxControl.Stat:output_type -> sandbox.StatResponse
+	16, // 16: sandbox.SandboxControl.Remove:output_type -> sandbox.RemoveResponse
+	9,  // [9:17] is the sub-list for method output_type
+	1,  // [1:9] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_sandbox_sandbox_proto_init() }
@@ -388,7 +1072,7 @@ func file_sandbox_sandbox_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_sandbox_sandbox_proto_rawDesc), len(file_sandbox_sandbox_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
