@@ -13,7 +13,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -194,4 +197,33 @@ func TestVSOCKPath_matchesAgentConvention(t *testing.T) {
 	assert.Equal(t, filepath.Join(dir, "team-a-sb1.vsock"), p)
 	_, err := os.Stat(p)
 	assert.Error(t, err, fmt.Sprintf("socket %s must not pre-exist", p))
+}
+
+func TestGateway_healthAndReflectionAuthGated(t *testing.T) {
+	srv, err := NewServer(Options{SocketDir: t.TempDir(), HMACKey: []byte(testKey)})
+	require.NoError(t, err)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	gs := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(srv.AuthUnary),
+		grpc.ChainStreamInterceptor(srv.AuthStream),
+	)
+	gwpb.RegisterSandboxGatewayServer(gs, srv)
+	// Mirror ListenAndServe: health/reflection registered server-level, so
+	// the auth interceptor must be what gates them.
+	grpc_health_v1.RegisterHealthServer(gs, health.NewServer())
+	reflection.Register(gs)
+	go func() { _ = gs.Serve(lis) }()
+	t.Cleanup(gs.Stop)
+
+	conn, err := grpc.NewClient(lis.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	// Health is a registered server-level service; the auth interceptor is
+	// server-scoped, so it must be gated exactly like gateway RPCs.
+	hc := grpc_health_v1.NewHealthClient(conn)
+	_, err = hc.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{})
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 }
