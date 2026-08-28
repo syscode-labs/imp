@@ -34,3 +34,8 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- $tag := default .Chart.AppVersion .Values.sandbox.image.tag -}}
 {{- printf "%s:%s" .Values.sandbox.image.repository $tag -}}
 {{- end }}
+
+{{- define "impsandbox.gateway.image" -}}
+{{- $tag := default .Chart.AppVersion .Values.gateway.image.tag -}}
+{{- printf "%s:%s" .Values.gateway.image.repository $tag -}}
+{{- end }}

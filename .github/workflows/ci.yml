@@ -151,12 +151,14 @@ jobs:
           docker build -f Dockerfile.operator -t local/imp-operator:e2e .
           docker build -f Dockerfile.agent -t local/imp-agent:e2e .
           docker build -f Dockerfile.sandbox -t local/imp-sandbox:e2e .
+          docker build -f Dockerfile.gateway -t local/imp-sandbox-gateway:e2e .
 
       - name: Load local E2E images into Kind
         run: |
           kind load docker-image local/imp-operator:e2e --name imp-e2e
           kind load docker-image local/imp-agent:e2e --name imp-e2e
           kind load docker-image local/imp-sandbox:e2e --name imp-e2e
+          kind load docker-image local/imp-sandbox-gateway:e2e --name imp-e2e
 
       - name: Run smoke E2E suite
         run: |

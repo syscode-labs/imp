@@ -31,3 +31,21 @@ webhook:
 
 rbac:
   create: true
+
+gateway:
+  enabled: true
+  image:
+    repository: ghcr.io/syscode-labs/imp-sandbox-gateway
+    tag: ""
+    pullPolicy: IfNotPresent
+  socketDir: /run/imp
+  hostPort: 9600
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+  nodeSelector:
+    imp/enabled: "true"
+  tolerations: []
