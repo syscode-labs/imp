@@ -304,8 +304,24 @@ func (r *ImpSandboxReconciler) ensureNetwork(ctx context.Context, sb *sandboxv1a
 	if err := controllerutil.SetControllerReference(sb, net, r.Scheme); err != nil {
 		return err
 	}
-	if err := r.Create(ctx, net); err != nil && !apierrors.IsAlreadyExists(err) {
-		return err
+	if err := r.Create(ctx, net); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+		existing := &impv1alpha1.ImpNetwork{}
+		if err := r.Get(ctx, client.ObjectKey{Name: name, Namespace: sb.Namespace}, existing); err != nil {
+			return err
+		}
+		before := existing.DeepCopy()
+		desired := r.baselineDenyCIDRs(ctx)
+		if existing.Spec.Firewall == nil {
+			existing.Spec.Firewall = &impv1alpha1.FirewallSpec{DenyCIDRs: desired}
+		} else {
+			existing.Spec.Firewall.DenyCIDRs = desired
+		}
+		if err := r.Patch(ctx, existing, client.MergeFrom(before)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
