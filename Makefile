@@ -143,11 +143,15 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 ##@ Build
 
 .PHONY: build
-build: build-operator build-agent build-runtime build-sandbox ## Build operator, agent, node runtime, and sandbox binaries.
+build: build-operator build-agent build-runtime build-sandbox build-gateway ## Build operator, agent, node runtime, and sandbox binaries.
 
 .PHONY: build-sandbox
 build-sandbox: manifests generate fmt vet ## Build the optional sandbox add-on binary.
 	go build -o bin/sandbox ./cmd/sandbox
+
+.PHONY: build-gateway
+build-gateway: manifests generate fmt vet ## Build the node-local sandbox gateway binary.
+	go build -o bin/sandbox-gateway ./cmd/sandbox-gateway
 
 .PHONY: build-operator
 build-operator: manifests generate fmt vet ## Build the operator binary.

@@ -145,6 +145,17 @@ var _ = BeforeSuite(func() {
 	_, err = utils.Run(impCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp failed")
 
+	By("installing imp-sandbox chart")
+	sandboxImageRepo := getenvOrDefault("IMP_E2E_SANDBOX_IMAGE_REPOSITORY", "local/imp-sandbox")
+	sandboxImageTag := getenvOrDefault("IMP_E2E_SANDBOX_IMAGE_TAG", "e2e")
+	sandboxCmd := exec.Command("helm", "install", "imp-sandbox", "charts/imp-sandbox",
+		"--namespace", namespace,
+		"--set", "sandbox.image.repository="+sandboxImageRepo,
+		"--set", "sandbox.image.tag="+sandboxImageTag,
+		"--wait", "--timeout", "5m")
+	_, err = utils.Run(sandboxCmd)
+	Expect(err).NotTo(HaveOccurred(), "helm install imp-sandbox failed")
+
 	By("disabling scheduling reserve for tiny kind cluster")
 	reserveCmd := exec.Command("kubectl", "apply", "-f", "-")
 	reserveCmd.Stdin = strings.NewReader(`

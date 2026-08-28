@@ -1,0 +1,107 @@
+syntax = "proto3";
+
+// Package sandboxgateway defines the node-local data-plane gateway service.
+// The gateway authenticates callers via per-sandbox HMAC bearer tokens and
+// proxies calls to the guest SandboxControl service over the VM's VSOCK
+// unix socket.
+package sandboxgateway;
+
+option go_package = "github.com/syscode-labs/imp/internal/proto/sandboxgateway";
+
+service SandboxGateway {
+  // Exec runs a command in the sandbox and streams output frames.
+  rpc Exec(ExecRequest) returns (stream ExecFrame);
+  // ReadFile returns up to 1 MiB of a file inside the sandbox.
+  rpc ReadFile(ReadFileRequest) returns (ReadFileResponse);
+  // WriteFile writes up to 1 MiB to a file inside the sandbox.
+  rpc WriteFile(WriteFileRequest) returns (WriteFileResponse);
+  // ListDir lists one directory level inside the sandbox.
+  rpc ListDir(ListDirRequest) returns (ListDirResponse);
+  // Stat returns metadata for a path inside the sandbox.
+  rpc Stat(StatRequest) returns (StatResponse);
+  // Remove deletes a file or empty directory inside the sandbox.
+  rpc Remove(RemoveRequest) returns (RemoveResponse);
+}
+
+// VMRef identifies the target sandbox's backing VM. Namespace + VM name map
+// 1:1 onto the node-local socket convention.
+message VMRef {
+  string namespace = 1;
+  string vm_name = 2;
+}
+
+message ExecRequest {
+  VMRef vm = 1;
+  repeated string command = 2;
+  int32 timeout_seconds = 3;
+}
+
+// ExecFrame carries incremental output; the terminal frame sets final=true
+// with exit_code.
+message ExecFrame {
+  oneof payload {
+    string stdout = 1;
+    string stderr = 2;
+  }
+  int32 exit_code = 3;
+  bool final = 4;
+}
+
+message ReadFileRequest {
+  VMRef vm = 1;
+  string path = 2;
+}
+
+message ReadFileResponse {
+  bytes content = 1;
+  int64 size = 2;
+  bool truncated = 3;
+}
+
+message WriteFileRequest {
+  VMRef vm = 1;
+  string path = 2;
+  bytes content = 3;
+  bool append = 4;
+  int32 mode = 5;
+}
+
+message WriteFileResponse {
+  int64 bytes_written = 1;
+}
+
+message ListDirRequest {
+  VMRef vm = 1;
+  string path = 2;
+}
+
+message ListDirResponse {
+  repeated GuestFileEntry entries = 1;
+}
+
+message GuestFileEntry {
+  string name = 1;
+  int64 size = 2;
+  bool is_dir = 3;
+  int64 modified_unix = 4;
+}
+
+message StatRequest {
+  VMRef vm = 1;
+  string path = 2;
+}
+
+message StatResponse {
+  int64 size = 1;
+  bool is_dir = 2;
+  int64 modified_unix = 3;
+  int32 mode = 4;
+}
+
+message RemoveRequest {
+  VMRef vm = 1;
+  string path = 2;
+  bool recursive = 3;
+}
+
+message RemoveResponse {}

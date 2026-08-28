@@ -1,0 +1,78 @@
+package sandboxgateway
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+
+	sandboxpb "github.com/syscode-labs/imp/internal/proto/sandbox"
+)
+
+// dialTimeout and callTimeout bound gateway→guest work so wedged guests
+// free the gateway's workers instead of accumulating them.
+const (
+	dialTimeout = 5 * time.Second
+	callTimeout = 30 * time.Second
+	execTimeout = 60 * time.Second
+)
+
+// withGuestConn dials the sandbox's VSOCK unix socket and invokes fn with a
+// client bound to the guest SandboxControl service, guaranteeing Close.
+// A missing socket means the VM is not on this node: callers get
+// Unavailable so SDKs can re-route.
+func withGuestConn(socketPath string, fn func(ctx context.Context, c sandboxpb.SandboxControlClient) error) error {
+	if _, err := os.Stat(socketPath); err != nil {
+		return status.Errorf(codes.Unavailable, "guest socket %s not present on this node", socketPath)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+	conn, err := grpc.NewClient(
+		"unix:"+socketPath,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		cancel()
+		return status.Errorf(codes.Unavailable, "dial guest %s: %v", socketPath, err)
+	}
+	client := sandboxpb.NewSandboxControlClient(conn)
+	err = fn(ctx, client)
+	cancel()
+	if cerr := conn.Close(); cerr != nil && err == nil {
+		err = fmt.Errorf("close guest conn: %w", cerr)
+	}
+	return err
+}
+
+// openGuestSession exchanges the shared guest token for a session handle.
+func openGuestSession(ctx context.Context, c sandboxpb.SandboxControlClient, guestToken string) (string, error) {
+	resp, err := c.OpenSession(ctx, &sandboxpb.OpenSessionRequest{Token: guestToken})
+	if err != nil {
+		return "", status.Errorf(codes.FailedPrecondition, "guest session: %v", err)
+	}
+	if resp.GetSessionId() == "" {
+		return "", status.Error(codes.FailedPrecondition, "guest returned empty session")
+	}
+	return resp.GetSessionId(), nil
+}
+
+// closeGuestSession is best-effort; the guest expires sessions anyway.
+func closeGuestSession(ctx context.Context, c sandboxpb.SandboxControlClient, sessionID string) {
+	_, _ = c.CloseSession(ctx, &sandboxpb.CloseSessionRequest{SessionId: sessionID}) //nolint:errcheck
+}
+
+// guestToken reads the shared guest control token. v1 uses one shared
+// token provisioned to guests via the VM env; per-sandbox guest tokens are
+// a Phase C hardening item.
+func guestToken() (string, error) {
+	t := os.Getenv("GATEWAY_GUEST_TOKEN")
+	if t == "" {
+		return "", status.Error(codes.FailedPrecondition,
+			"gateway missing GATEWAY_GUEST_TOKEN; guest would refuse sessions")
+	}
+	return t, nil
+}
