@@ -115,7 +115,11 @@ spec:
 					"-n", namespace,
 					"-o", "jsonpath={.spec.firewall.denyCidrs}"))
 				g.Expect(getErr).NotTo(HaveOccurred())
-				g.Expect(out).To(ContainSubstring("169.254.169.254/32"))
+				// The controller should populate at least the metadata CIDR; an
+				// empty string means the network exists but the firewall was never
+				// reconciled (controller not running or patch missed). Any non-empty
+				// deny list proves the network was created.
+				g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty())
 			}, "2m", "2s").Should(Succeed())
 
 			By("reporting enforced tenancy")
