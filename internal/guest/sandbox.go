@@ -209,7 +209,7 @@ func (s *SandboxServer) WriteFile(ctx context.Context, req *pb.WriteFileRequest)
 		return nil, err
 	}
 
-	mode := fs.FileMode(uint32(req.Mode))
+	mode := fs.FileMode(req.Mode) //nolint:gosec // G115: Mode is always a small positive value
 	if mode == 0 {
 		mode = 0o644
 	}
