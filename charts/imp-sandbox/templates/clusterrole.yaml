@@ -33,4 +33,9 @@ rules:
 - apiGroups: ["coordination.k8s.io"]
   resources: [leases]
   verbs: [get, create, update]
+{{- if .Values.gateway.enabled }}
+- apiGroups: [""]
+  resources: [secrets]
+  verbs: [get, create, update]
+{{- end }}
 {{- end }}

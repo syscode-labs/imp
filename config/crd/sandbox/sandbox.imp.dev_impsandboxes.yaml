@@ -181,6 +181,19 @@ spec:
                 description: NetworkName is the name of the attached or generated
                   ImpNetwork.
                 type: string
+              sessionSecretRef:
+                description: |-
+                  SessionSecretRef points to the Secret holding this sandbox's session
+                  token for data-plane access (gateway gRPC). The token is deterministic
+                  HMAC(clusterKey, sandboxUID): the Secret is the delivery mechanism for
+                  SDKs, not the source of truth — rotating the cluster key invalidates
+                  all sessions at once.
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
               vmName:
                 description: VMName is the name of the generated ImpVM.
                 type: string

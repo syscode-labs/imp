@@ -22,8 +22,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"os"
+	"path/filepath"
 
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
@@ -92,11 +94,13 @@ func main() {
 	var enableLeaderElection bool
 	var enableWebhooks bool
 	var probeAddr string
+	var sessionHMACKeyFile string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8090", "The address the metrics endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8091", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", true, "Enable leader election for controller manager.")
 	flag.BoolVar(&enableWebhooks, "enable-webhooks", true, "Enable admission webhooks.")
+	flag.StringVar(&sessionHMACKeyFile, "session-hmac-key-file", "", "File containing the cluster HMAC key used to mint sandbox session tokens. Empty disables session-secret minting.")
 
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
@@ -119,11 +123,28 @@ func main() {
 
 	cniStore := &cnidetect.Store{}
 
+	// Session-secret minting is enabled only when the cluster HMAC key is
+	// provisioned (mounted from the gateway-hmac Secret by the chart).
+	var sessionKey []byte
+	if sessionHMACKeyFile != "" {
+		key, err := os.ReadFile(filepath.Clean(sessionHMACKeyFile))
+		if err != nil {
+			setupLog.Error(err, "unable to read session hmac key", "file", sessionHMACKeyFile)
+			os.Exit(1)
+		}
+		if len(key) < 32 {
+			setupLog.Error(errors.New("session hmac key too short"), "need at least 32 bytes")
+			os.Exit(1)
+		}
+		sessionKey = key
+	}
+
 	if err = (&sandboxcontroller.ImpSandboxReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("impsandbox-controller"), //nolint:staticcheck
-		CNIStore: cniStore,
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		Recorder:       mgr.GetEventRecorderFor("impsandbox-controller"), //nolint:staticcheck
+		CNIStore:       cniStore,
+		SessionHMACKey: sessionKey,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ImpSandbox")
 		os.Exit(1)

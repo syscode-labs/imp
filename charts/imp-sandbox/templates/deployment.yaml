@@ -33,6 +33,9 @@ spec:
         imagePullPolicy: {{ .Values.sandbox.image.pullPolicy }}
         args:
           - --leader-elect
+        {{- if .Values.gateway.enabled }}
+          - --session-hmac-key-file=/etc/imp-sandbox-gateway/hmac-key
+        {{- end }}
         env:
           - name: POD_NAMESPACE
             valueFrom:
@@ -68,6 +71,11 @@ spec:
         volumeMounts:
         - name: tmp
           mountPath: /tmp
+        {{- if .Values.gateway.enabled }}
+        - name: gateway-hmac
+          mountPath: /etc/imp-sandbox-gateway
+          readOnly: true
+        {{- end }}
         {{- if and (default true .Values.webhook.enabled) .Values.webhook.certManager.enabled }}
         - name: webhook-tls
           mountPath: /tmp/k8s-webhook-server/serving-certs
@@ -76,6 +84,11 @@ spec:
       volumes:
       - name: tmp
         emptyDir: {}
+      {{- if .Values.gateway.enabled }}
+      - name: gateway-hmac
+        secret:
+          secretName: {{ include "impsandbox.fullname" . }}-gateway-hmac
+      {{- end }}
       {{- if and (default true .Values.webhook.enabled) .Values.webhook.certManager.enabled }}
       - name: webhook-tls
         secret:
