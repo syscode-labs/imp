@@ -33,30 +33,10 @@ import (
 
 var _ = Describe("Imp Sandbox add-on", Ordered, func() {
 	const (
-		helmRelease = "imp-sandbox"
 		sandboxName = "e2e-sbx"
 	)
 
 	SetDefaultEventuallyTimeout(3 * time.Minute)
-
-	BeforeAll(func() {
-		By("installing the imp-sandbox subchart")
-		cmd := exec.Command("helm", "upgrade", "--install", helmRelease, "charts/imp-sandbox",
-			"--namespace", namespace,
-			"--set", "sandbox.image.repository=local/imp-sandbox",
-			"--set", "sandbox.image.tag=e2e",
-			"--wait", "--timeout", "5m")
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "helm install imp-sandbox failed")
-	})
-
-	AfterAll(func() {
-		By("uninstalling the imp-sandbox subchart")
-		cmd := exec.Command("helm", "uninstall", helmRelease, "--namespace", namespace, "--wait")
-		_, _ = utils.Run(cmd)
-		crdCmd := exec.Command("kubectl", "delete", "crd", "impsandboxes.sandbox.imp.dev", "--ignore-not-found")
-		_, _ = utils.Run(crdCmd)
-	})
 
 	Context("Installation", Label("smoke"), func() {
 		It("installs the ImpSandbox CRD", func() {
