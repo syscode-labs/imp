@@ -187,15 +187,19 @@ var _ = AfterSuite(func() {
 	out, _ := utils.Run(podStatus)
 	fmt.Println("--- pre-teardown pod status ---\n" + out)
 
-	for _, label := range []string{
-		"app.kubernetes.io/component=operator",
-		"app.kubernetes.io/component=gateway",
-		"app.kubernetes.io/name=imp-sandbox",
+	for _, name := range []string{
+		"deploy/imp-operator",
+		"deploy/imp-sandbox-controller",
+		"daemonset/imp-sandbox-gateway",
 	} {
 		logsCmd := exec.Command("kubectl", "logs", "-n", namespace,
-			"-l", label, "--tail=120", "--prefix", "--all-containers")
+			name, "--tail=120", "--prefix", "--all-containers")
 		out, _ = utils.Run(logsCmd)
-		fmt.Printf("--- logs %s ---\n%s\n", label, out)
+		fmt.Printf("--- logs %s ---\n%s\n", name, out)
+		prevLogs := exec.Command("kubectl", "logs", "-n", namespace,
+			name, "--previous", "--tail=80", "--prefix")
+		out, _ = utils.Run(prevLogs)
+		fmt.Printf("--- previous logs %s ---\n%s\n", name, out)
 	}
 
 	if os.Getenv("IMP_E2E_REAL_AGENT") == "true" {
