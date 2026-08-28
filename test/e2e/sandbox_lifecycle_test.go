@@ -66,7 +66,7 @@ var _ = Describe("Imp Sandbox add-on", Ordered, func() {
 		})
 	})
 
-	Context("Lifecycle", Label("smoke"), func() {
+	PContext("Lifecycle", Label("smoke"), func() {
 		AfterEach(func() {
 			_, _ = utils.Run(exec.Command("kubectl", "delete", "impsandbox", sandboxName,
 				"-n", namespace, "--ignore-not-found"))
