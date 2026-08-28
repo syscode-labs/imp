@@ -209,7 +209,7 @@ func (s *SandboxServer) WriteFile(ctx context.Context, req *pb.WriteFileRequest)
 		return nil, err
 	}
 
-	mode := fs.FileMode(req.Mode)
+	mode := fs.FileMode(uint32(req.Mode))
 	if mode == 0 {
 		mode = 0o644
 	}
@@ -274,7 +274,7 @@ func (s *SandboxServer) Stat(ctx context.Context, req *pb.StatRequest) (*pb.Stat
 		Size:         info.Size(),
 		IsDir:        info.IsDir(),
 		ModifiedUnix: info.ModTime().Unix(),
-		Mode:         int32(info.Mode().Perm()),
+		Mode:         int32(info.Mode().Perm()), //nolint:gosec // G115: Mode() returns a small positive value (file permissions)
 	}, nil
 }
 
