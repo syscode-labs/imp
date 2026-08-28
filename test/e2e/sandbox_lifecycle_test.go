@@ -133,6 +133,20 @@ spec:
 		})
 
 		It("garbage-collects the backing VM on sandbox deletion", func() {
+			DeferCleanup(func() {
+				if !CurrentSpecReport().Failed() {
+					return
+				}
+				for _, args := range [][]string{
+					{"get", "impsandbox", sandboxName, "-n", namespace, "-o", "yaml"},
+					{"get", "impvm", sandboxName, "-n", namespace, "-o", "yaml"},
+					{"logs", "-n", namespace, "deploy/imp-sandbox-controller", "--tail=200", "--prefix"},
+				} {
+					out, _ := utils.Run(exec.Command("kubectl", args...))
+					fmt.Printf("--- sandbox GC failure: kubectl %s ---\n%s\n", strings.Join(args, " "), out)
+				}
+			})
+
 			manifest := fmt.Sprintf(`
 apiVersion: sandbox.imp.dev/v1alpha1
 kind: ImpSandbox
