@@ -255,5 +255,275 @@ func removeNATIptables(subnet, egressIface string) error {
 	return nil
 }
 
+// EnsureEgressDeny reconciles host-level destination drops for subnet so the
+// installed deny set exactly equals denyCIDRs. An empty list removes filtering.
+// Rules live in a per-subnet chain reached via a jump from the forward path,
+// placed at negative priority (nft) or position 1 (iptables) so drops win over
+// later accept rules from CNI plugins. Traffic is dropped before MASQUERADE.
+func (m *LinuxNetManager) EnsureEgressDeny(_ context.Context, subnet string, denyCIDRs []string) error {
+	if len(denyCIDRs) == 0 {
+		return m.RemoveEgressDeny(context.Background(), subnet)
+	}
+	if m.natBackend == "nftables" {
+		return ensureEgressDenyNftables(subnet, dedupCIDRs(denyCIDRs))
+	}
+	return ensureEgressDenyIptables(subnet, dedupCIDRs(denyCIDRs))
+}
+
+// RemoveEgressDeny removes the per-subnet deny chain and its jump rule.
+// Idempotent — no error when nothing exists.
+func (m *LinuxNetManager) RemoveEgressDeny(_ context.Context, subnet string) error {
+	if m.natBackend == "nftables" {
+		return removeEgressDenyNftables(subnet)
+	}
+	return removeEgressDenyIptables(subnet)
+}
+
+// dedupCIDRs returns a stable, de-duplicated copy of cidrs.
+func dedupCIDRs(cidrs []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(cidrs))
+	for _, c := range cidrs {
+		if !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// nftSandboxTable and related names isolate sandbox egress policy from other
+// nft state, including the imp_nat table used for MASQUERADE.
+const (
+	nftSandboxTable = "imp_sandbox_fw"
+	nftBaseChain    = "forward"
+)
+
+// egressChainName derives the per-subnet chain name for backend.
+func egressChainName(backend, subnet string) string {
+	replacer := strings.NewReplacer(".", "_", "/", "_")
+	prefix := "sb"
+	if backend == "iptables" {
+		// iptables chain names max 28 chars.
+		prefix = "IMP_SB"
+	}
+	return prefix + "_" + replacer.Replace(subnet)
+}
+
+// ensureEgressDenyNftables installs drops in table ip/imp_sandbox_fw:
+//
+//	forward (base, hook forward priority -10): ip saddr SUBNET jump sb_X
+//	sb_X: ip daddr CIDR drop   (reconciled to exactly denyCIDRs)
+func ensureEgressDenyNftables(subnet string, denyCIDRs []string) error {
+	chain := egressChainName("nftables", subnet)
+
+	steps := [][]string{
+		{"nft", "add", "table", "ip", nftSandboxTable},
+		{"nft", "add", "chain", "ip", nftSandboxTable, nftBaseChain,
+			"{ type filter hook forward priority -10; }"},
+		{"nft", "add", "chain", "ip", nftSandboxTable, chain},
+	}
+	for _, cmd := range steps { // creation steps are idempotent; ignore exists-errors
+		_ = exec.Command(cmd[0], cmd[1:]...).Run() //nolint:gosec
+	}
+
+	// Jump rule: add once per subnet.
+	baseOut, err := exec.Command("nft", "-a", "list", "chain", "ip", nftSandboxTable, nftBaseChain).Output() //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("nft list base chain: %w", err)
+	}
+	if !strings.Contains(string(baseOut), chain) {
+		jump := fmt.Sprintf("ip saddr %s jump %s", subnet, chain)
+		//nolint:gosec // G204: controlled inputs
+		if out, err := exec.Command("nft", "add", "rule", "ip", nftSandboxTable, nftBaseChain, jump).CombinedOutput(); err != nil {
+			return fmt.Errorf("nft add jump: %w: %s", err, out)
+		}
+	}
+
+	// Reconcile drop rules inside the per-subnet chain.
+	chainOut, err := exec.Command("nft", "-a", "list", "chain", "ip", nftSandboxTable, chain).Output() //nolint:gosec
+	if err != nil {
+		return fmt.Errorf("nft list subnet chain: %w", err)
+	}
+	existing := existingNftDropTargets(string(chainOut))
+	desired := map[string]bool{}
+	for _, cidr := range denyCIDRs {
+		desired[cidr] = true
+		if !existing[cidr] {
+			rule := fmt.Sprintf("ip daddr %s drop", cidr)
+			//nolint:gosec // G204: controlled inputs
+			if out, err := exec.Command("nft", "add", "rule", "ip", nftSandboxTable, chain, rule).CombinedOutput(); err != nil {
+				return fmt.Errorf("nft add drop %s: %w: %s", cidr, err, out)
+			}
+		}
+	}
+	for target, handle := range nftDropHandles(string(chainOut)) {
+		if !desired[target] {
+			//nolint:gosec // G204: handle parsed from nft output
+			if out, err := exec.Command("nft", "delete", "rule", "ip", nftSandboxTable, chain, "handle", handle).CombinedOutput(); err != nil {
+				return fmt.Errorf("nft delete stale drop %s: %w: %s", target, err, out)
+			}
+		}
+	}
+	return nil
+}
+
+// existingNftDropTargets extracts daddr values of drop rules from nft -a output.
+func existingNftDropTargets(output string) map[string]bool {
+	targets := map[string]bool{}
+	for _, line := range strings.Split(output, "\n") {
+		if !strings.Contains(line, "drop") {
+			continue
+		}
+		if idx := strings.Index(line, "daddr "); idx >= 0 {
+			rest := strings.Fields(line[idx+len("daddr "):])
+			if len(rest) > 0 {
+				targets[rest[0]] = true
+			}
+		}
+	}
+	return targets
+}
+
+// nftDropHandles maps each drop rule's daddr to its rule handle from nft -a output.
+func nftDropHandles(output string) map[string]string {
+	handles := map[string]string{}
+	for _, line := range strings.Split(output, "\n") {
+		if !strings.Contains(line, "drop") {
+			continue
+		}
+		fieldsIdx := strings.Index(line, "daddr ")
+		handleIdx := strings.Index(line, "# handle ")
+		if fieldsIdx < 0 || handleIdx < 0 {
+			continue
+		}
+		rest := strings.Fields(line[fieldsIdx+len("daddr "):])
+		handleFields := strings.Fields(line[handleIdx+len("# handle "):])
+		if len(rest) > 0 && len(handleFields) > 0 {
+			handles[rest[0]] = handleFields[0]
+		}
+	}
+	return handles
+}
+
+// removeEgressDenyNftables deletes the jump rule then the whole per-subnet chain.
+func removeEgressDenyNftables(subnet string) error {
+	chain := egressChainName("nftables", subnet)
+
+	//nolint:gosec
+	if baseOut, err := exec.Command("nft", "-a", "list", "chain", "ip", nftSandboxTable, nftBaseChain).Output(); err == nil {
+		if handle := findJumpHandle(string(baseOut), subnet); handle != "" {
+			//nolint:gosec // G204: handle parsed from nft output
+			_ = exec.Command("nft", "delete", "rule", "ip", nftSandboxTable, nftBaseChain, "handle", handle).Run() //nolint:errcheck,gosec
+		}
+	}
+	//nolint:gosec
+	_ = exec.Command("nft", "delete", "chain", "ip", nftSandboxTable, chain).Run() //nolint:errcheck,gosec
+	return nil
+}
+
+// findJumpHandle returns the handle of the jump rule for subnet in base chain output.
+func findJumpHandle(output, subnet string) string {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.Contains(line, subnet) && strings.Contains(line, "jump") {
+			if idx := strings.Index(line, "# handle "); idx >= 0 {
+				rest := strings.TrimSpace(line[idx+len("# handle "):])
+				if fields := strings.Fields(rest); len(fields) > 0 {
+					return fields[0]
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// ensureEgressDenyIptables mirrors the nftables layout in the filter table:
+// IMP_SB_<subnet> chain with DROP rules, reached via FORWARD jump at slot 1.
+func ensureEgressDenyIptables(subnet string, denyCIDRs []string) error {
+	chain := egressChainName("iptables", subnet)
+
+	// Create chain if absent.
+	//nolint:gosec
+	if err := exec.Command("iptables", "-L", chain, "-n").Run(); err != nil {
+		//nolint:gosec // G204: controlled inputs
+		if out, err := exec.Command("iptables", "-N", chain).CombinedOutput(); err != nil {
+			return fmt.Errorf("iptables -N %s: %w: %s", chain, err, out)
+		}
+	}
+
+	// Jump from FORWARD at position 1 so drops precede CNI accept rules.
+	check := exec.Command("iptables", "-C", "FORWARD", "-s", subnet, "-j", chain) //nolint:gosec
+	if check.Run() != nil {
+		//nolint:gosec // G204: controlled inputs
+		if out, err := exec.Command("iptables", "-I", "FORWARD", "1", "-s", subnet, "-j", chain).CombinedOutput(); err != nil {
+			return fmt.Errorf("iptables -I FORWARD jump: %w: %s", err, out)
+		}
+	}
+
+	// Reconcile drops inside the chain.
+	//nolint:gosec
+	listOut, err := exec.Command("iptables", "-S", chain).Output()
+	if err != nil {
+		return fmt.Errorf("iptables -S %s: %w", chain, err)
+	}
+	existing := existingIptDropTargets(string(listOut), chain)
+	desired := map[string]bool{}
+	for _, cidr := range denyCIDRs {
+		desired[cidr] = true
+		if !existing[cidr] {
+			//nolint:gosec // G204: controlled inputs
+			if out, err := exec.Command("iptables", "-A", chain, "-d", cidr, "-j", "DROP").CombinedOutput(); err != nil {
+				return fmt.Errorf("iptables -A drop %s: %w: %s", cidr, err, out)
+			}
+		}
+	}
+	for target := range existing {
+		if !desired[target] {
+			//nolint:gosec // G204: controlled inputs
+			if out, err := exec.Command("iptables", "-D", chain, "-d", target, "-j", "DROP").CombinedOutput(); err != nil {
+				return fmt.Errorf("iptables -D stale drop %s: %w: %s", target, err, out)
+			}
+		}
+	}
+	return nil
+}
+
+// existingIptDropTargets extracts daddr targets from `iptables -S CHAIN` output.
+func existingIptDropTargets(output, chain string) map[string]bool {
+	targets := map[string]bool{}
+	prefix := "-A " + chain + " "
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, prefix) || !strings.Contains(line, "-j DROP") {
+			continue
+		}
+		if idx := strings.Index(line, "-d "); idx >= 0 {
+			rest := strings.Fields(line[idx+3:])
+			if len(rest) > 0 {
+				targets[rest[0]] = true
+			}
+		}
+	}
+	return targets
+}
+
+// removeEgressDenyIptables flushes and removes the per-subnet chain plus its jump.
+func removeEgressDenyIptables(subnet string) error {
+	chain := egressChainName("iptables", subnet)
+
+	//nolint:gosec
+	if err := exec.Command("iptables", "-L", chain, "-n").Run(); err != nil {
+		return nil // chain absent — idempotent
+	}
+	check := exec.Command("iptables", "-C", "FORWARD", "-s", subnet, "-j", chain) //nolint:gosec
+	if check.Run() == nil {
+		//nolint:gosec // G204: controlled inputs
+		_ = exec.Command("iptables", "-D", "FORWARD", "-s", subnet, "-j", chain).Run() //nolint:errcheck,gosec
+	}
+	_ = exec.Command("iptables", "-F", chain).Run() //nolint:errcheck,gosec
+	_ = exec.Command("iptables", "-X", chain).Run() //nolint:errcheck,gosec
+	return nil
+}
+
 // compile-time assertion
 var _ NetManager = (*LinuxNetManager)(nil)

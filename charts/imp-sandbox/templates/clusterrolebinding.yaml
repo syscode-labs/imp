@@ -1,0 +1,16 @@
+{{- if .Values.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "impsandbox.fullname" . }}-controller
+  labels:
+    {{- include "impsandbox.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "impsandbox.fullname" . }}-controller
+subjects:
+- kind: ServiceAccount
+  name: {{ include "impsandbox.serviceAccountName" . }}
+  namespace: {{ .Release.Namespace }}
+{{- end }}

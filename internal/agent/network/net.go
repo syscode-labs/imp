@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"sort"
 	"strconv"
 )
 
@@ -36,6 +37,8 @@ type NetworkInfo struct {
 	// DHCP is true when the guest obtains its address via DHCP on the LAN;
 	// Firecracker then attaches the TAP without static IP configuration.
 	DHCP bool
+
+	DenyCIDRs []string // host-enforced destination denies for this network (empty = none)
 }
 
 // NetManager abstracts host-level network operations for a VM.
@@ -60,6 +63,17 @@ type NetManager interface {
 	// If egressIface is empty, the default-route interface is used.
 	RemoveNAT(ctx context.Context, subnet, egressIface string) error
 
+	// EnsureEgressDeny installs host-level drops so that traffic sourced from
+	// subnet towards any of denyCIDRs is discarded before MASQUERADE.
+	// Implementations must reconcile: the installed rule set for this subnet
+	// must exactly equal denyCIDRs after the call. Empty denyCIDRs removes
+	// filtering for the subnet. Idempotent.
+	EnsureEgressDeny(ctx context.Context, subnet string, denyCIDRs []string) error
+
+	// RemoveEgressDeny removes all egress deny rules for subnet.
+	// Idempotent — no error if none exist.
+	RemoveEgressDeny(ctx context.Context, subnet string) error
+
 	// EnsureVXLAN creates or reconciles the VXLAN interface for the given network,
 	// attaches it to bridgeName, and brings it up. bridgeName must already exist
 	// (call EnsureNetwork first). Idempotent.
@@ -78,21 +92,25 @@ type StubNetManager struct {
 	TeardownVMCalls        []string // tapName
 	EnsureNATCalls         []string // subnet
 	RemoveNATCalls         []string // subnet
+	EnsureEgressDenyCalls  []EgressDenyCall
+	RemoveEgressDenyCalls  []string // subnet
 	EnsureVXLANCalls       []string // ifaceName
 	EnsureVXLANBridgeCalls []string // bridgeName
 	SyncFDBCalls           []string // ifaceName
 	EnsureLANCalls         []string // "bridge|parent|vlanID"
 	TeardownLANCalls       []string // "bridge|parent|vlanID"
 
-	EnsureNetworkErr error
-	SetupVMErr       error
-	TeardownVMErr    error
-	EnsureNATErr     error
-	RemoveNATErr     error
-	EnsureVXLANErr   error
-	SyncFDBErr       error
-	EnsureLANErr     error
-	TeardownLANErr   error
+	EnsureNetworkErr    error
+	SetupVMErr          error
+	TeardownVMErr       error
+	EnsureNATErr        error
+	RemoveNATErr        error
+	EnsureEgressDenyErr error
+	RemoveEgressDenyErr error
+	EnsureVXLANErr      error
+	SyncFDBErr          error
+	EnsureLANErr        error
+	TeardownLANErr      error
 }
 
 func (s *StubNetManager) EnsureNetwork(_ context.Context, bridgeName, _ string, _ int) error {
@@ -118,6 +136,24 @@ func (s *StubNetManager) EnsureNAT(_ context.Context, subnet, _ string) error {
 func (s *StubNetManager) RemoveNAT(_ context.Context, subnet, _ string) error {
 	s.RemoveNATCalls = append(s.RemoveNATCalls, subnet)
 	return s.RemoveNATErr
+}
+
+// EgressDenyCall records one EnsureEgressDeny invocation.
+type EgressDenyCall struct {
+	Subnet    string
+	DenyCIDRs []string
+}
+
+func (s *StubNetManager) EnsureEgressDeny(_ context.Context, subnet string, denyCIDRs []string) error {
+	copied := append([]string(nil), denyCIDRs...)
+	sort.Strings(copied)
+	s.EnsureEgressDenyCalls = append(s.EnsureEgressDenyCalls, EgressDenyCall{Subnet: subnet, DenyCIDRs: copied})
+	return s.EnsureEgressDenyErr
+}
+
+func (s *StubNetManager) RemoveEgressDeny(_ context.Context, subnet string) error {
+	s.RemoveEgressDenyCalls = append(s.RemoveEgressDenyCalls, subnet)
+	return s.RemoveEgressDenyErr
 }
 
 func (s *StubNetManager) EnsureVXLAN(_ context.Context, _ uint32, ifaceName, _, bridgeName string) error {

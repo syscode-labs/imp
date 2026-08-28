@@ -44,26 +44,30 @@ type Backend interface {
 	TeardownVM(context.Context, string) error
 	EnsureNAT(context.Context, string, string) error
 	RemoveNAT(context.Context, string, string) error
+	EnsureEgressDeny(context.Context, string, []string) error
+	RemoveEgressDeny(context.Context, string) error
 	EnsureVXLAN(context.Context, uint32, string, string, string) error
 	SyncFDB(context.Context, string, []network.FDBEntry) error
 }
 
 // BackendFuncs makes protocol behavior testable without Firecracker.
 type BackendFuncs struct {
-	StartFunc         func(context.Context, *impdevv1alpha1.ImpVM) (int64, error)
-	StopFunc          func(context.Context, *impdevv1alpha1.ImpVM) error
-	GetFunc           func(context.Context, *impdevv1alpha1.ImpVM) (VMState, error)
-	SnapshotFunc      func(context.Context, *impdevv1alpha1.ImpVM, string) (SnapshotResult, error)
-	ReattachFunc      func(context.Context, *impdevv1alpha1.ImpVM) error
-	IsAliveFunc       func(int64) bool
-	GetVSockPathFunc  func(string) (string, bool)
-	EnsureNetworkFunc func(context.Context, string, string, int) error
-	SetupVMFunc       func(context.Context, string, string, string) error
-	TeardownVMFunc    func(context.Context, string) error
-	EnsureNATFunc     func(context.Context, string, string) error
-	RemoveNATFunc     func(context.Context, string, string) error
-	EnsureVXLANFunc   func(context.Context, uint32, string, string, string) error
-	SyncFDBFunc       func(context.Context, string, []network.FDBEntry) error
+	StartFunc            func(context.Context, *impdevv1alpha1.ImpVM) (int64, error)
+	StopFunc             func(context.Context, *impdevv1alpha1.ImpVM) error
+	GetFunc              func(context.Context, *impdevv1alpha1.ImpVM) (VMState, error)
+	SnapshotFunc         func(context.Context, *impdevv1alpha1.ImpVM, string) (SnapshotResult, error)
+	ReattachFunc         func(context.Context, *impdevv1alpha1.ImpVM) error
+	IsAliveFunc          func(int64) bool
+	GetVSockPathFunc     func(string) (string, bool)
+	EnsureNetworkFunc    func(context.Context, string, string, int) error
+	SetupVMFunc          func(context.Context, string, string, string) error
+	TeardownVMFunc       func(context.Context, string) error
+	EnsureNATFunc        func(context.Context, string, string) error
+	RemoveNATFunc        func(context.Context, string, string) error
+	EnsureEgressDenyFunc func(context.Context, string, []string) error
+	RemoveEgressDenyFunc func(context.Context, string) error
+	EnsureVXLANFunc      func(context.Context, uint32, string, string, string) error
+	SyncFDBFunc          func(context.Context, string, []network.FDBEntry) error
 }
 
 func (f BackendFuncs) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM) (int64, error) {
@@ -141,6 +145,18 @@ func (f BackendFuncs) RemoveNAT(ctx context.Context, subnet, egressInterface str
 		return errors.New("remove NAT is not supported")
 	}
 	return f.RemoveNATFunc(ctx, subnet, egressInterface)
+}
+func (f BackendFuncs) EnsureEgressDeny(ctx context.Context, subnet string, denyCIDRs []string) error {
+	if f.EnsureEgressDenyFunc == nil {
+		return errors.New("ensure egress deny is not supported")
+	}
+	return f.EnsureEgressDenyFunc(ctx, subnet, denyCIDRs)
+}
+func (f BackendFuncs) RemoveEgressDeny(ctx context.Context, subnet string) error {
+	if f.RemoveEgressDenyFunc == nil {
+		return errors.New("remove egress deny is not supported")
+	}
+	return f.RemoveEgressDenyFunc(ctx, subnet)
 }
 func (f BackendFuncs) EnsureVXLAN(ctx context.Context, vni uint32, ifaceName, nodeIP, bridgeName string) error {
 	if f.EnsureVXLANFunc == nil {
@@ -246,6 +262,11 @@ type NATArgs struct {
 	Subnet          string
 	EgressInterface string
 }
+type EgressDenyArgs struct {
+	Subnet    string
+	DenyCIDRs []string
+}
+type SubnetArgs struct{ Subnet string }
 type VXLANArgs struct {
 	VNI           uint32
 	InterfaceName string
@@ -309,6 +330,12 @@ func (s *rpcService) EnsureNAT(args NATArgs, _ *Empty) error {
 }
 func (s *rpcService) RemoveNAT(args NATArgs, _ *Empty) error {
 	return s.backend.RemoveNAT(context.Background(), args.Subnet, args.EgressInterface)
+}
+func (s *rpcService) EnsureEgressDeny(args EgressDenyArgs, _ *Empty) error {
+	return s.backend.EnsureEgressDeny(context.Background(), args.Subnet, args.DenyCIDRs)
+}
+func (s *rpcService) RemoveEgressDeny(args SubnetArgs, _ *Empty) error {
+	return s.backend.RemoveEgressDeny(context.Background(), args.Subnet)
 }
 func (s *rpcService) EnsureVXLAN(args VXLANArgs, _ *Empty) error {
 	return s.backend.EnsureVXLAN(context.Background(), args.VNI, args.InterfaceName, args.NodeIP, args.BridgeName)
@@ -404,6 +431,12 @@ func (c *Client) EnsureNAT(ctx context.Context, subnet, egressInterface string) 
 }
 func (c *Client) RemoveNAT(ctx context.Context, subnet, egressInterface string) error {
 	return c.call(ctx, "RemoveNAT", NATArgs{Subnet: subnet, EgressInterface: egressInterface}, &Empty{})
+}
+func (c *Client) EnsureEgressDeny(ctx context.Context, subnet string, denyCIDRs []string) error {
+	return c.call(ctx, "EnsureEgressDeny", EgressDenyArgs{Subnet: subnet, DenyCIDRs: denyCIDRs}, &Empty{})
+}
+func (c *Client) RemoveEgressDeny(ctx context.Context, subnet string) error {
+	return c.call(ctx, "RemoveEgressDeny", SubnetArgs{Subnet: subnet}, &Empty{})
 }
 func (c *Client) EnsureVXLAN(ctx context.Context, vni uint32, ifaceName, nodeIP, bridgeName string) error {
 	return c.call(ctx, "EnsureVXLAN", VXLANArgs{VNI: vni, InterfaceName: ifaceName, NodeIP: nodeIP, BridgeName: bridgeName}, &Empty{})

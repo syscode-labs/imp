@@ -11,6 +11,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/discovery"
@@ -81,6 +82,7 @@ func logCiliumPresence(cfg *rest.Config, log logr.Logger) {
 // stores the result, and emits an event on the ClusterImpConfig singleton.
 type cniDetectRunnable struct {
 	client   client.Client
+	mapper   meta.RESTMapper
 	recorder record.EventRecorder
 	store    *cnidetect.Store
 }
@@ -88,7 +90,7 @@ type cniDetectRunnable struct {
 func (r *cniDetectRunnable) Start(ctx context.Context) error {
 	log := ctrl.Log.WithName("cni-detect")
 
-	result, err := cnidetect.Detect(ctx, r.client)
+	result, err := cnidetect.Detect(ctx, r.client, r.mapper)
 	if err != nil {
 		return err
 	}

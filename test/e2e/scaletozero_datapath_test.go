@@ -85,10 +85,12 @@ spec:
   memoryMiB: 256
   diskGiB: 1
 `, className)
-		applyClass := exec.Command("kubectl", "apply", "-f", "-")
-		applyClass.Stdin = strings.NewReader(classManifest)
-		_, err = utils.Run(applyClass)
-		Expect(err).NotTo(HaveOccurred())
+		Eventually(func(g Gomega) {
+			applyClass := exec.Command("kubectl", "apply", "-f", "-")
+			applyClass.Stdin = strings.NewReader(classManifest)
+			_, err = utils.Run(applyClass)
+			g.Expect(err).NotTo(HaveOccurred())
+		}, "30s", "2s").Should(Succeed())
 
 		By("creating the ImpNetwork")
 		netManifest := fmt.Sprintf(`
@@ -100,10 +102,12 @@ metadata:
 spec:
   subnet: 10.45.0.0/24
 `, networkName)
-		applyNet := exec.Command("kubectl", "apply", "-f", "-")
-		applyNet.Stdin = strings.NewReader(netManifest)
-		_, err = utils.Run(applyNet)
-		Expect(err).NotTo(HaveOccurred())
+		Eventually(func(g Gomega) {
+			applyNet := exec.Command("kubectl", "apply", "-f", "-")
+			applyNet.Stdin = strings.NewReader(netManifest)
+			_, err = utils.Run(applyNet)
+			g.Expect(err).NotTo(HaveOccurred())
+		}, "30s", "2s").Should(Succeed())
 
 		By("creating the always-on pinger VM")
 		pingerManifest := fmt.Sprintf(`
@@ -119,10 +123,12 @@ spec:
     name: %s
   image: docker.io/library/nginx:alpine
 `, pingerName, className, networkName)
-		applyPinger := exec.Command("kubectl", "apply", "-f", "-")
-		applyPinger.Stdin = strings.NewReader(pingerManifest)
-		_, err = utils.Run(applyPinger)
-		Expect(err).NotTo(HaveOccurred())
+		Eventually(func(g Gomega) {
+			applyPinger := exec.Command("kubectl", "apply", "-f", "-")
+			applyPinger.Stdin = strings.NewReader(pingerManifest)
+			_, err = utils.Run(applyPinger)
+			g.Expect(err).NotTo(HaveOccurred())
+		}, "30s", "2s").Should(Succeed())
 
 		By("creating the ScaleToZero target VM with a short idleTimeout")
 		targetManifest := fmt.Sprintf(`
@@ -140,10 +146,12 @@ spec:
   desiredState: ScaleToZero
   idleTimeout: 15s
 `, targetName, className, networkName)
-		applyTarget := exec.Command("kubectl", "apply", "-f", "-")
-		applyTarget.Stdin = strings.NewReader(targetManifest)
-		_, err = utils.Run(applyTarget)
-		Expect(err).NotTo(HaveOccurred())
+		Eventually(func(g Gomega) {
+			applyTarget := exec.Command("kubectl", "apply", "-f", "-")
+			applyTarget.Stdin = strings.NewReader(targetManifest)
+			_, err = utils.Run(applyTarget)
+			g.Expect(err).NotTo(HaveOccurred())
+		}, "30s", "2s").Should(Succeed())
 
 		By("waiting for both VMs to reach Running")
 		Eventually(func(g Gomega) {

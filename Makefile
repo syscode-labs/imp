@@ -50,15 +50,29 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects.
-	"$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+	GOOS=linux "$(CONTROLLER_GEN)" rbac:roleName=manager-role crd webhook \
+		paths="./api/v1alpha1" paths="./internal/controller" paths="./internal/webhook/v1alpha1" \
+		paths="./internal/agent/..." paths="./cmd/operator" \
+		output:crd:artifacts:config=config/crd/bases
+
+.PHONY: manifests-sandbox
+manifests-sandbox: controller-gen ## Generate sandbox add-on RBAC and CRD manifests (kept separate from the base operator).
+	GOOS=linux "$(CONTROLLER_GEN)" rbac:roleName=sandbox-manager-role crd \
+		paths="./api/sandbox/v1alpha1" paths="./internal/controller/sandbox" paths="./internal/webhook/sandboxv1alpha1" \
+		output:rbac:artifacts:config=config/rbac/sandbox \
+		output:crd:artifacts:config=config/crd/sandbox
 
 .PHONY: sync-chart-crds
-sync-chart-crds: manifests ## Regenerate Helm chart CRDs from config/crd/bases (adds helm.sh/resource-policy: keep).
+sync-chart-crds: manifests manifests-sandbox ## Regenerate Helm chart CRDs from config/crd (adds helm.sh/resource-policy: keep).
 	@for base in config/crd/bases/imp.dev_*.yaml; do \
 		plural=$$(basename $$base | sed 's/^imp.dev_//'); \
 		awk '{print} /^  annotations:$$/ {print "    \"helm.sh/resource-policy\": keep"}' $$base > charts/imp-crds/templates/$$plural; \
 	done
-	@echo "Synced $$(ls config/crd/bases/imp.dev_*.yaml | wc -l | tr -d ' ') CRDs to charts/imp-crds/templates/"
+	@for base in config/crd/sandbox/sandbox.imp.dev_*.yaml; do \
+		plural=$$(basename $$base | sed 's/^sandbox.imp.dev_//'); \
+		awk '{print} /^  annotations:$$/ {print "    \"helm.sh/resource-policy\": keep"}' $$base > charts/imp-sandbox/crds/$$plural; \
+	done
+	@echo "Synced $$(ls config/crd/bases/imp.dev_*.yaml | wc -l | tr -d ' ') base CRDs and $$(ls config/crd/sandbox/sandbox.imp.dev_*.yaml | wc -l | tr -d ' ') sandbox CRDs"
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.
@@ -93,13 +107,22 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 			echo "Kind cluster '$(KIND_CLUSTER)' already exists. Skipping creation." ;; \
 		*) \
 			echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
-			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
+			$(KIND) create cluster --name $(KIND_CLUSTER) --config test/e2e/kind-e2e.yaml ;; \
 	esac
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+test-e2e: setup-test-e2e load-test-images manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
 	KIND=$(KIND) KIND_CLUSTER=$(KIND_CLUSTER) go test -tags=e2e ./test/e2e/ -v -ginkgo.v
 	$(MAKE) cleanup-test-e2e
+
+.PHONY: load-test-images
+load-test-images: ## Build and load local e2e images into the Kind cluster (mirrors CI steps).
+	docker build -f Dockerfile.operator -t local/imp-operator:e2e .
+	docker build -f Dockerfile.agent -t local/imp-agent:e2e .
+	docker build -f Dockerfile.sandbox -t local/imp-sandbox:e2e .
+	$(KIND) load docker-image local/imp-operator:e2e --name $(KIND_CLUSTER)
+	$(KIND) load docker-image local/imp-agent:e2e --name $(KIND_CLUSTER)
+	$(KIND) load docker-image local/imp-sandbox:e2e --name $(KIND_CLUSTER)
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
@@ -120,7 +143,11 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 ##@ Build
 
 .PHONY: build
-build: build-operator build-agent build-runtime ## Build operator, agent, and node runtime binaries.
+build: build-operator build-agent build-runtime build-sandbox ## Build operator, agent, node runtime, and sandbox binaries.
+
+.PHONY: build-sandbox
+build-sandbox: manifests generate fmt vet ## Build the optional sandbox add-on binary.
+	go build -o bin/sandbox ./cmd/sandbox
 
 .PHONY: build-operator
 build-operator: manifests generate fmt vet ## Build the operator binary.

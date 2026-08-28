@@ -31,10 +31,27 @@ type ImpNetworkSpec struct {
 	// +optional
 	IPAM *IPAMSpec `json:"ipam,omitempty"`
 
+	// Firewall optionally installs host-level egress deny rules for every VM
+	// on this network. Rules are enforced outside the guest and cannot be
+	// disabled from inside it. Nil means no filtering beyond NAT.
+	// +optional
+	Firewall *FirewallSpec `json:"firewall,omitempty"`
+
 	// Groups defines named VM groups that share subnets within this network.
 	// VMs not in any group receive an isolated /30 CIDR.
 	// +optional
 	Groups []NetworkGroupSpec `json:"groups,omitempty"`
+}
+
+// FirewallSpec declares host-enforced egress restrictions for a network.
+type FirewallSpec struct {
+	// DenyCIDRs lists destination CIDR blocks that VMs on this network must
+	// never reach. Drops are installed before MASQUERADE so denied traffic is
+	// never translated or forwarded.
+	// +optional
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:items:Pattern=`^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$`
+	DenyCIDRs []string `json:"denyCidrs,omitempty"`
 }
 
 // NATSpec configures outbound NAT for a network.

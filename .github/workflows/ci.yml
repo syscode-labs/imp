@@ -150,11 +150,27 @@ jobs:
         run: |
           docker build -f Dockerfile.operator -t local/imp-operator:e2e .
           docker build -f Dockerfile.agent -t local/imp-agent:e2e .
+          docker build -f Dockerfile.sandbox -t local/imp-sandbox:e2e .
 
       - name: Load local E2E images into Kind
         run: |
           kind load docker-image local/imp-operator:e2e --name imp-e2e
           kind load docker-image local/imp-agent:e2e --name imp-e2e
+          kind load docker-image local/imp-sandbox:e2e --name imp-e2e
 
       - name: Run smoke E2E suite
-        run: go test -tags e2e ./test/e2e/... -v -timeout 15m -ginkgo.label-filter="smoke"
+        run: |
+          IMP_E2E_EVENTUALLY_TIMEOUT=5m \
+          go test -tags e2e ./test/e2e/... -v -timeout 25m -ginkgo.label-filter="smoke"
+
+      - name: Dump controller state on failure
+        if: failure()
+        run: |
+          echo "=== pods ==="
+          kubectl get pods -A -o wide || true
+          echo "=== imp-operator logs ==="
+          kubectl logs -n imp-system deploy/imp-operator --tail=100 2>/dev/null | grep -vE "^\s+/" | tail -60
+          echo "=== imp-sandbox logs (current) ==="
+          kubectl logs -n imp-system deploy/imp-sandbox-controller --tail=100 2>/dev/null | grep -vE "^\s+/" | tail -40
+          echo "=== imp-sandbox logs (previous) ==="
+          kubectl logs -n imp-system deploy/imp-sandbox-controller --previous --tail=100 2>/dev/null | grep -vE "^\s+/" | tail -40

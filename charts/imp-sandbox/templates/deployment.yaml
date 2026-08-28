@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "impsandbox.fullname" . }}-controller
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "impsandbox.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  replicas: {{ .Values.sandbox.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "impsandbox.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        {{- include "impsandbox.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "impsandbox.serviceAccountName" . }}
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: controller
+        image: {{ include "impsandbox.image" . }}
+        imagePullPolicy: {{ .Values.sandbox.image.pullPolicy }}
+        args:
+          - --leader-elect
+        env:
+          - name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+        {{- with .Values.sandbox.extraEnv }}
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+        ports:
+        - name: webhook
+          containerPort: 9443
+          protocol: TCP
+        - name: metrics
+          containerPort: 8090
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8091
+          initialDelaySeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8091
+          initialDelaySeconds: 5
+        resources:
+          {{- toYaml .Values.sandbox.resources | nindent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        {{- if and (default true .Values.webhook.enabled) .Values.webhook.certManager.enabled }}
+        - name: webhook-tls
+          mountPath: /tmp/k8s-webhook-server/serving-certs
+          readOnly: true
+        {{- end }}
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      {{- if and (default true .Values.webhook.enabled) .Values.webhook.certManager.enabled }}
+      - name: webhook-tls
+        secret:
+          secretName: {{ include "impsandbox.fullname" . }}-webhook-tls
+      {{- end }}
+      {{- with .Values.sandbox.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sandbox.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

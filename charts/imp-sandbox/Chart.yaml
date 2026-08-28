@@ -1,0 +1,16 @@
+apiVersion: v2
+name: imp-sandbox
+description: Imp Sandbox — optional AI-agent sandbox add-on for Imp
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - firecracker
+  - microvm
+  - sandbox
+  - ai-agents
+home: https://github.com/syscode-labs/imp
+kubeVersion: ">=1.29.0-0"
+annotations:
+  # The add-on reconciles base imp resources; it requires an installed imp.
+  imp.dev/requires: imp>=0.1.0

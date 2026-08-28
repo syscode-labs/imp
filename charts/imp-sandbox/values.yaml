@@ -1,0 +1,33 @@
+nameOverride: ""
+fullnameOverride: ""
+imagePullSecrets: []
+
+sandbox:
+  image:
+    repository: ghcr.io/syscode-labs/imp-sandbox
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      memory: 128Mi
+  nodeSelector: {}
+  tolerations: []
+  extraEnv: []
+
+webhook:
+  enabled: true
+  certManager:
+    enabled: true
+    duration: 2160h # 90d
+    renewBefore: 360h # 15d
+    issuerRef:
+      group: cert-manager.io
+      kind: Issuer
+      name: "" # empty → use the chart's self-signed Issuer
+
+rbac:
+  create: true

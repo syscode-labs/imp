@@ -1,0 +1,24 @@
+{{- if and (default true .Values.webhook.enabled) .Values.webhook.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "impsandbox.fullname" . }}-webhook-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "impsandbox.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "impsandbox.fullname" . }}-webhook-tls
+  duration: {{ .Values.webhook.certManager.duration }}
+  renewBefore: {{ .Values.webhook.certManager.renewBefore }}
+  dnsNames:
+    - {{ include "impsandbox.fullname" . }}-webhook.{{ .Release.Namespace }}.svc
+    - {{ include "impsandbox.fullname" . }}-webhook.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    {{- if .Values.webhook.certManager.issuerRef.name }}
+    {{- toYaml .Values.webhook.certManager.issuerRef | nindent 4 }}
+    {{- else }}
+    name: {{ include "impsandbox.fullname" . }}-selfsigned
+    kind: Issuer
+    group: cert-manager.io
+    {{- end }}
+{{- end }}

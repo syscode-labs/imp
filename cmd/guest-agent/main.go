@@ -13,6 +13,7 @@ import (
 
 	"github.com/syscode-labs/imp/internal/guest"
 	pb "github.com/syscode-labs/imp/internal/proto/guest"
+	sandboxpb "github.com/syscode-labs/imp/internal/proto/sandbox"
 )
 
 const vsockPort = 10000
@@ -27,6 +28,8 @@ func main() {
 
 	srv := grpc.NewServer()
 	pb.RegisterGuestAgentServer(srv, guest.NewServer())
+	// Dormant unless IMP_SANDBOX_CONTROL_TOKEN is set in the VM environment.
+	sandboxpb.RegisterSandboxControlServer(srv, guest.NewSandboxServer())
 	if err := srv.Serve(l); err != nil {
 		fmt.Fprintf(os.Stderr, "guest-agent: serve: %v\n", err)
 		os.Exit(1)

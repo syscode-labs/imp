@@ -102,6 +102,10 @@ var _ = BeforeSuite(func() {
 	agentTag := getenvOrDefault("IMP_E2E_AGENT_IMAGE_TAG", "e2e")
 	runtimeRepo := getenvOrDefault("IMP_E2E_RUNTIME_IMAGE_REPOSITORY", "local/imp-agent")
 	runtimeTag := getenvOrDefault("IMP_E2E_RUNTIME_IMAGE_TAG", "e2e")
+	// The Kind cluster used by this suite is single-node (helm/kind-action),
+	// so the operator's required pod anti-affinity cannot schedule two
+	// replicas. Default to 1 and let larger harnesses override.
+	operatorReplicas := getenvOrDefault("IMP_E2E_OPERATOR_REPLICAS", "1")
 
 	impArgs := []string{"install", helmRelease, "charts/imp",
 		"--namespace", namespace,
@@ -111,6 +115,7 @@ var _ = BeforeSuite(func() {
 		"--set", "agent.image.tag=" + agentTag,
 		"--set", "runtime.image.repository=" + runtimeRepo,
 		"--set", "runtime.image.tag=" + runtimeTag,
+		"--set", "operator.replicaCount=" + operatorReplicas,
 		"--set", "agent.env.kernelPath=/var/lib/imp/vmlinux",
 		"--set", "metrics.serviceMonitor.enabled=false",
 		"--set", "metrics.podMonitor.enabled=false",
@@ -139,6 +144,28 @@ var _ = BeforeSuite(func() {
 	impCmd := exec.Command("helm", impArgs...)
 	_, err = utils.Run(impCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp failed")
+
+	By("disabling scheduling reserve for tiny kind cluster")
+	reserveCmd := exec.Command("kubectl", "apply", "-f", "-")
+	reserveCmd.Stdin = strings.NewReader(`
+apiVersion: imp.dev/v1alpha1
+kind: ClusterImpConfig
+metadata:
+  name: cluster
+spec:
+  capacity:
+    memoryReserveMiB: 0
+`)
+	_, _ = utils.Run(reserveCmd)
+
+	By("waiting for operator webhook to be ready")
+	Eventually(func(g Gomega) {
+		cmd := exec.Command("kubectl", "get", "endpoints", "imp-operator", "-n", namespace,
+			"-o", "jsonpath={.subsets[0].addresses[0].ip}")
+		out, err := utils.Run(cmd)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(strings.TrimSpace(out)).NotTo(BeEmpty())
+	}, "2m", "2s").Should(Succeed())
 })
 
 var _ = AfterSuite(func() {
@@ -167,6 +194,10 @@ var _ = AfterSuite(func() {
 	By("uninstalling imp chart")
 	unimpCmd := exec.Command("helm", "uninstall", helmRelease, "--namespace", namespace)
 	_, _ = utils.Run(unimpCmd)
+
+	By("uninstalling imp-sandbox chart")
+	unsandboxCmd := exec.Command("helm", "uninstall", "imp-sandbox", "--namespace", namespace)
+	_, _ = utils.Run(unsandboxCmd)
 
 	By("uninstalling imp-crds chart")
 	uncrdsCmd := exec.Command("helm", "uninstall", helmCRDRelease, "--namespace", namespace)

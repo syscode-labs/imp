@@ -90,6 +90,12 @@ func (m *RuntimeNetManager) EnsureNAT(ctx context.Context, subnet, egressInterfa
 func (m *RuntimeNetManager) RemoveNAT(ctx context.Context, subnet, egressInterface string) error {
 	return m.client.RemoveNAT(ctx, subnet, egressInterface)
 }
+func (m *RuntimeNetManager) EnsureEgressDeny(ctx context.Context, subnet string, denyCIDRs []string) error {
+	return m.client.EnsureEgressDeny(ctx, subnet, denyCIDRs)
+}
+func (m *RuntimeNetManager) RemoveEgressDeny(ctx context.Context, subnet string) error {
+	return m.client.RemoveEgressDeny(ctx, subnet)
+}
 func (m *RuntimeNetManager) EnsureVXLAN(ctx context.Context, vni uint32, ifaceName, nodeIP, bridgeName string) error {
 	return m.client.EnsureVXLAN(ctx, vni, ifaceName, nodeIP, bridgeName)
 }

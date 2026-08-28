@@ -402,6 +402,11 @@ func (d *FirecrackerDriver) Stop(ctx context.Context, vm *impdevv1alpha1.ImpVM) 
 					logf.FromContext(ctx).Error(err, "RemoveNAT failed", "subnet", proc.netInfo.Subnet)
 				}
 			}
+			if wasLast && len(proc.netInfo.DenyCIDRs) > 0 && d.Net != nil {
+				if err := d.Net.RemoveEgressDeny(ctx, proc.netInfo.Subnet); err != nil {
+					logf.FromContext(ctx).Error(err, "RemoveEgressDeny failed", "subnet", proc.netInfo.Subnet)
+				}
+			}
 		}
 	}
 
@@ -600,6 +605,21 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 		}
 	}
 
+	// Install host-enforced egress denies when the network declares a firewall.
+	// Unlike NAT this is fail-closed: a sandbox network that cannot enforce its
+	// deny list must not boot with unrestricted egress.
+	denyCIDRs := []string{}
+	if impNet.Spec.Firewall != nil {
+		denyCIDRs = impNet.Spec.Firewall.DenyCIDRs
+	}
+	if len(denyCIDRs) > 0 {
+		if err := d.Net.EnsureEgressDeny(ctx, allocSubnet, denyCIDRs); err != nil {
+			d.releaseNetworkIP(ctx, &network.NetworkInfo{NetworkKey: netKey, IP: ip, ClaimHolder: vKey})
+			_ = d.Net.TeardownVM(ctx, tapName)
+			return nil, fmt.Errorf("ensure egress deny policy: %w", err)
+		}
+	}
+
 	return &network.NetworkInfo{
 		TAPName:         tapName,
 		BridgeName:      bridgeName,
@@ -613,6 +633,7 @@ func (d *FirecrackerDriver) setupNetwork(ctx context.Context, vm *impdevv1alpha1
 		ClaimHolder:     vKey,
 		NATEnabled:      impNet.Spec.NAT.Enabled,
 		EgressInterface: impNet.Spec.NAT.EgressInterface,
+		DenyCIDRs:       denyCIDRs,
 	}, nil
 }
 

@@ -26,6 +26,22 @@ type ClusterImpConfigSpec struct {
 	// Disabled by default.
 	// +optional
 	DefaultHttpCheck *HTTPCheckSpec `json:"defaultHttpCheck,omitempty"`
+
+	// Sandbox configures settings for the optional Imp Sandbox add-on.
+	// Ignored when the imp-sandbox component is not installed.
+	// +optional
+	Sandbox *SandboxConfig `json:"sandbox,omitempty"`
+}
+
+// SandboxConfig holds cluster-wide settings for the Imp Sandbox add-on.
+type SandboxConfig struct {
+	// FloorTenancy raises the minimum tenancy tier accepted for sandboxes
+	// cluster-wide. When set to "hard", all sandboxes must request hard
+	// tenancy regardless of their spec. Requires the imp-sandbox add-on.
+	// +optional
+	// +kubebuilder:default=standard
+	// +kubebuilder:validation:Enum=standard;hard
+	FloorTenancy string `json:"floorTenancy,omitempty"`
 }
 
 // NetworkingConfig holds cluster-wide networking settings.

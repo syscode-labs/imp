@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+// Package sandbox defines the control-session RPC surface used by the optional
+// Imp Sandbox add-on. It is compiled into the guest agent but remains inert
+// unless a session is opened with the configured control token.
+package sandbox;
+
+option go_package = "github.com/syscode-labs/imp/internal/proto/sandbox";
+
+service SandboxControl {
+  // OpenSession exchanges a one-time control token for a session handle.
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+  // CloseSession invalidates a previously opened session handle.
+  rpc CloseSession(CloseSessionRequest) returns (CloseSessionResponse);
+  // Exec runs a command inside the VM within an open session.
+  rpc Exec(ExecRequest) returns (ExecResponse);
+}
+
+message OpenSessionRequest {
+  string token = 1;
+}
+
+message OpenSessionResponse {
+  string session_id = 1;
+}
+
+message CloseSessionRequest {
+  string session_id = 1;
+}
+
+message CloseSessionResponse {}
+
+message ExecRequest {
+  string session_id = 1;
+  repeated string command = 2;
+  int32 timeout_seconds = 3;
+}
+
+message ExecResponse {
+  int32 exit_code = 1;
+  string stdout = 2;
+  string stderr = 3;
+}

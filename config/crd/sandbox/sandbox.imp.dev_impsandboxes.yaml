@@ -1,0 +1,192 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: impsandboxes.sandbox.imp.dev
+spec:
+  group: sandbox.imp.dev
+  names:
+    categories:
+    - imp
+    kind: ImpSandbox
+    listKind: ImpSandboxList
+    plural: impsandboxes
+    shortNames:
+    - isbx
+    singular: impsandbox
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.effectiveTenancy
+      name: Tenancy
+      type: string
+    - jsonPath: .status.conditions[?(@.type=='Ready')].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ImpSandbox is an AI-agent sandbox backed by an Imp microVM. It expands into
+          owned ImpVM/ImpNetwork resources in its own namespace and is managed by the
+          optional imp-sandbox add-on.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ImpSandboxSpec defines the desired state of an ImpSandbox.
+            properties:
+              classRef:
+                description: ClassRef references an ImpVMClass directly. Mutually
+                  exclusive with TemplateRef.
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              expireAfter:
+                description: |-
+                  ExpireAfter caps sandbox wall-clock runtime from first Running
+                  transition. 0 or unset disables automatic expiration. Minimum enabled
+                  value is 60s. Resolution precedence mirrors ImpVM: sandbox-level value
+                  wins over template defaults.
+                type: string
+              image:
+                description: |-
+                  Image is the OCI image used as the VM rootfs when ClassRef is set
+                  directly without a template.
+                type: string
+              networkRef:
+                description: |-
+                  NetworkRef references an existing ImpNetwork to attach the sandbox to.
+                  When unset, the controller creates a dedicated ImpNetwork per sandbox.
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              nodeSelector:
+                additionalProperties:
+                  type: string
+                description: NodeSelector constrains scheduling of the underlying
+                  VM.
+                type: object
+              templateRef:
+                description: |-
+                  TemplateRef references an ImpVMTemplate used as the sandbox image source.
+                  Mutually exclusive with ClassRef.
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+              tenancy:
+                default: standard
+                description: Tenancy selects the isolation tier.
+                enum:
+                - standard
+                - hard
+                type: string
+            type: object
+          status:
+            description: ImpSandboxStatus reflects the observed state of an ImpSandbox.
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the sandbox.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              effectiveTenancy:
+                description: |-
+                  EffectiveTenancy records the tenancy actually enforced after floor
+                  resolution. May differ from spec.tenancy when a cluster floor applies.
+                type: string
+              networkName:
+                description: NetworkName is the name of the attached or generated
+                  ImpNetwork.
+                type: string
+              vmName:
+                description: VMName is the name of the generated ImpVM.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
