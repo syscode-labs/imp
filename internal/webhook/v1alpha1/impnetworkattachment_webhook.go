@@ -24,13 +24,19 @@ import (
 
 	admissionv1 "k8s.io/api/admission/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	sandboxv1alpha1 "github.com/syscode-labs/imp/api/sandbox/v1alpha1"
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
+
+// sandboxOwnerLabel aliases the sandbox add-on's owner label so admission
+// and the sandbox controller cannot drift apart.
+const sandboxOwnerLabel = sandboxv1alpha1.SandboxOwnerLabel
 
 var impnetworkattachmentlog = logf.Log.WithName("impnetworkattachment-webhook")
 
@@ -127,6 +133,33 @@ func (w *ImpNetworkAttachmentWebhook) validateSpec(ctx context.Context, att *imp
 		allErrs = append(allErrs, field.Required(specPath.Child("attachmentRef"), "attachment definition name is required"))
 		return allErrs
 	}
+
+	// Sandbox isolation guard: sandbox-owned VMs rely on host egress deny
+	// rules scoped to their primary subnet. A second LAN address would let
+	// the guest source traffic outside that subnet and bypass the baseline,
+	// so such attachments are refused at admission (fail closed on lookup
+	// errors other than NotFound).
+	if w.Client != nil && att.Spec.VMRef.Name != "" {
+		vm := &impdevv1alpha1.ImpVM{}
+		err := w.Client.Get(ctx, client.ObjectKey{
+			Namespace: att.Namespace,
+			Name:      att.Spec.VMRef.Name,
+		}, vm)
+		switch {
+		case err == nil:
+			if owner, owned := vm.Labels[sandboxOwnerLabel]; owned {
+				allErrs = append(allErrs, field.Forbidden(specPath.Child("vmRef"),
+					fmt.Sprintf("ImpVM %q is sandbox-owned (label %q=%q): a privileged LAN interface would give the guest a second source IP outside its sandbox subnet, bypassing the sandbox egress-deny rules",
+						att.Spec.VMRef.Name, sandboxOwnerLabel, owner)))
+			}
+		case apierrors.IsNotFound(err):
+			// Target VM absent — definition resolution above already
+			// governs whether the attachment can proceed.
+		default:
+			allErrs = append(allErrs, field.InternalError(specPath.Child("vmRef"), err))
+		}
+	}
+
 	if att.Spec.Mode != "" && att.Spec.Mode != impdevv1alpha1.AttachmentModeAccess {
 		allErrs = append(allErrs, field.NotSupported(specPath.Child("mode"), att.Spec.Mode,
 			[]string{string(impdevv1alpha1.AttachmentModeAccess)}))

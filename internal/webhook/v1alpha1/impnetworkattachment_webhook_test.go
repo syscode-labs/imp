@@ -18,6 +18,7 @@ package v1alpha1
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	admissionv1 "k8s.io/api/admission/v1"
@@ -211,6 +212,56 @@ func TestImpNetworkAttachmentWebhook_ValidateUpdate_Immutable(t *testing.T) {
 	newAtt2.Annotations[impdevv1alpha1.AnnotationRequester] = "mallory"
 	if _, err := wh.ValidateUpdate(context.Background(), oldAtt, newAtt2); err == nil {
 		t.Error("expected requester annotation mutation rejected")
+	}
+}
+
+func TestImpNetworkAttachmentWebhook_ValidateCreate_SandboxOwnedVMDenied(t *testing.T) {
+	cfg := clusterConfigWithDefs(defUntagged())
+	vm := &impdevv1alpha1.ImpVM{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "tiny-vm",
+			Namespace: "default",
+			Labels:    map[string]string{sandboxOwnerLabel: "sbx-demo"},
+		},
+	}
+	wh := attachmentWebhook(t, cfg, vm)
+
+	att := newAttachment("lab-lan")
+	att.Spec.DHCP = &impdevv1alpha1.DHCPRequestSpec{Enabled: true}
+	_, err := wh.ValidateCreate(createRequest("bob"), att)
+	if err == nil {
+		t.Fatal("expected attachment targeting sandbox-owned VM rejected")
+	}
+	if !strings.Contains(err.Error(), "bypassing the sandbox egress-deny rules") {
+		t.Errorf("rejection must explain the sandbox bypass rationale, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "sandbox.imp.dev/owner") {
+		t.Errorf("rejection should name the owner label, got: %v", err)
+	}
+}
+
+func TestImpNetworkAttachmentWebhook_ValidateCreate_UnlabeledVMAccepted(t *testing.T) {
+	cfg := clusterConfigWithDefs(defUntagged())
+	vm := &impdevv1alpha1.ImpVM{
+		ObjectMeta: metav1.ObjectMeta{Name: "tiny-vm", Namespace: "default"},
+	}
+	wh := attachmentWebhook(t, cfg, vm)
+
+	att := newAttachment("lab-lan")
+	att.Spec.DHCP = &impdevv1alpha1.DHCPRequestSpec{Enabled: true}
+	if _, err := wh.ValidateCreate(createRequest("bob"), att); err != nil {
+		t.Errorf("expected unlabeled VM still accepted, got: %v", err)
+	}
+}
+
+func TestImpNetworkAttachmentWebhook_ValidateCreate_MissingVMUnchangedBehavior(t *testing.T) {
+	cfg := clusterConfigWithDefs(defUntagged())
+	wh := attachmentWebhook(t, cfg)
+
+	att := newAttachment("lab-lan")
+	att.Spec.DHCP = &impdevv1alpha1.DHCPRequestSpec{Enabled: true}
+	if _, err := wh.ValidateCreate(createRequest("bob"), att); err != nil {
+		t.Errorf("expected missing target VM to behave unchanged (accepted), got: %v", err)
 	}
 }
 

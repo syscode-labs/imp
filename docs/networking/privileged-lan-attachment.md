@@ -77,6 +77,14 @@ Before the runtime creates any host networking resource, the request must pass:
 Status, Events, and logs record the requester, authorization result, target
 node, MAC address, and assigned static IP or DHCP lease state.
 
+### Sandbox Interaction
+
+Attachments targeting an `ImpVM` carrying the `sandbox.imp.dev/owner` label are
+refused at admission. Sandbox VMs rely on host-side egress deny rules scoped to
+their dedicated subnet; a privileged LAN interface would give the guest a second
+source IP outside that subnet, silently bypassing those rules. A sandbox VM must
+keep its single sandbox network.
+
 ### Teardown Invariants
 
 Deletion is refused while the referenced VM runs so teardown always flows
