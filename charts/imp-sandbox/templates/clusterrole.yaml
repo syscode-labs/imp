@@ -36,6 +36,8 @@ rules:
 {{- if .Values.gateway.enabled }}
 - apiGroups: [""]
   resources: [secrets]
-  verbs: [get, create, update]
+  # The controller-runtime cache lists and watches Secrets when session
+  # tokens are enabled; without these verbs its cache never synchronizes.
+  verbs: [get, list, watch, create, update]
 {{- end }}
 {{- end }}
