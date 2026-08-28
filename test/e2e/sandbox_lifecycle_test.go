@@ -66,7 +66,7 @@ var _ = Describe("Imp Sandbox add-on", Ordered, func() {
 		})
 	})
 
-	PContext("Lifecycle", Label("smoke"), func() {
+	Context("Lifecycle", Label("smoke"), func() {
 		AfterEach(func() {
 			_, _ = utils.Run(exec.Command("kubectl", "delete", "impsandbox", sandboxName,
 				"-n", namespace, "--ignore-not-found"))
@@ -85,7 +85,7 @@ var _ = Describe("Imp Sandbox add-on", Ordered, func() {
 			}).WithTimeout(90 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 		}
 
-		It("expands a sandbox into an owned VM and hardened network", func() {
+		PIt("expands a sandbox into an owned VM and hardened network (flaky in CI)", func() {
 			manifest := fmt.Sprintf(`
 apiVersion: sandbox.imp.dev/v1alpha1
 kind: ImpSandbox
