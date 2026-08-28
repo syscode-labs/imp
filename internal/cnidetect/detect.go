@@ -103,7 +103,11 @@ func Detect(ctx context.Context, r client.Reader, mapper meta.RESTMapper) (Resul
 }
 
 // hasCRD returns true if a CRD for the given group+resource exists in the cluster's REST mapper.
+// A nil mapper reports false rather than panicking: detection is best-effort.
 func hasCRD(mapper meta.RESTMapper, group, resource string) bool {
+	if mapper == nil {
+		return false
+	}
 	mappings, err := mapper.ResourcesFor(schema.GroupVersionResource{
 		Group:    group,
 		Resource: resource,
