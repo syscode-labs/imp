@@ -180,6 +180,24 @@ spec:
 })
 
 var _ = AfterSuite(func() {
+	// Always dump compact state BEFORE teardown: once helm uninstalls, logs
+	// and objects are gone and post-mortem workflow steps see nothing.
+	By("dumping pre-teardown diagnostics")
+	podStatus := exec.Command("kubectl", "get", "pods", "-A", "-o", "wide")
+	out, _ := utils.Run(podStatus)
+	fmt.Println("--- pre-teardown pod status ---\n" + out)
+
+	for _, label := range []string{
+		"app.kubernetes.io/component=operator",
+		"app.kubernetes.io/component=gateway",
+		"app.kubernetes.io/name=imp-sandbox",
+	} {
+		logsCmd := exec.Command("kubectl", "logs", "-n", namespace,
+			"-l", label, "--tail=120", "--prefix", "--all-containers")
+		out, _ = utils.Run(logsCmd)
+		fmt.Printf("--- logs %s ---\n%s\n", label, out)
+	}
+
 	if os.Getenv("IMP_E2E_REAL_AGENT") == "true" {
 		By("dumping pod status + agent/operator logs before teardown")
 		podStatus := exec.Command("kubectl", "get", "pods", "-n", namespace, "-o", "wide")
