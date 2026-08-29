@@ -35,10 +35,14 @@ func main() {
 		socketDir   string
 		addr        string
 		hmacKeyFile string
+		tlsCertFile string
+		tlsKeyFile  string
 	)
 	flag.StringVar(&socketDir, "socket-dir", sandboxgateway.SocketDirDefault, "Directory containing per-VM .vsock unix sockets.")
 	flag.StringVar(&addr, "addr", ":9600", "gRPC listen address.")
 	flag.StringVar(&hmacKeyFile, "hmac-key-file", "/etc/imp-sandbox-gateway/hmac-key", "File containing the cluster HMAC key for sandbox session tokens.")
+	flag.StringVar(&tlsCertFile, "tls-cert-file", "", "TLS certificate file for gRPC. When set, --tls-key-file must also be set; otherwise the gateway serves plaintext.")
+	flag.StringVar(&tlsKeyFile, "tls-key-file", "", "TLS private key file for gRPC. When set, --tls-cert-file must also be set.")
 	flag.Parse()
 
 	key, err := os.ReadFile(filepath.Clean(hmacKeyFile))
@@ -50,8 +54,10 @@ func main() {
 	}
 
 	srv, err := sandboxgateway.NewServer(sandboxgateway.Options{
-		SocketDir: socketDir,
-		HMACKey:   key,
+		SocketDir:   socketDir,
+		HMACKey:     key,
+		TLSCertFile: tlsCertFile,
+		TLSKeyFile:  tlsKeyFile,
 	})
 	if err != nil {
 		fatal("construct server", err)

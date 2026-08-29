@@ -346,7 +346,11 @@ guest DHCP — see `examples/lan-vlan-attachment/`.
 The optional `imp-sandbox` add-on has an internal-preview, node-local gRPC
 gateway for guest command and file operations. Its current support status,
 security model, wire contract, and release gates are documented in
-[`docs/sandbox/gateway-api.md`](docs/sandbox/gateway-api.md).
+[`docs/sandbox/gateway-api.md`](docs/sandbox/gateway-api.md). An opt-in
+server-side TLS mode (TLS 1.3 minimum, `gateway.tls.*` in
+`charts/imp-sandbox`) now exists; SDK endpoint discovery (which node gateway to
+dial for a backing `ImpVM`) remains the open gap and is not claimed by this
+slice.
 
 ## Metrics & Observability
 

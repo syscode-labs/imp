@@ -17,14 +17,20 @@ OpenSpec task B.1.1 is complete.
 The RPC implementation and its unit/integration coverage exist. The sandbox
 controller derives a distinct per-sandbox guest-control token from its cluster
 HMAC key and injects it into the backing VM; the gateway derives the same token
-only after authenticating the caller's sandbox scope. The gateway still exposes
-plaintext gRPC through a node `hostPort`; it has no public endpoint discovery,
-TLS, or mTLS configuration.
+only after authenticating the caller's sandbox scope. The gateway serves
+plaintext gRPC through a node `hostPort` by default and now supports an opt-in
+TLS mode: when `gateway.tls.enabled=true` the DaemonSet serves gRPC over TLS
+with a minimum of TLS 1.3 using `gateway.tls.certManager`-issued material
+(secret `gateway.tls.secretName` or `{{ fullname }}-gateway-tls`). When TLS
+values are unset, plaintext is preserved for compatibility and internal
+preview. Production endpoint discovery (which node-IP/host to dial for a
+backing `ImpVM`) remains unresolved and is not claimed by this slice.
 
 Do not expose port `9600` outside a trusted cluster network. Do not build a
 production integration on this API. The release gate is:
 
-1. Protected endpoint discovery plus TLS or mTLS transport.
+1. Protected endpoint discovery plus TLS or mTLS transport (TLS server-side
+   opt-in now exists; endpoint discovery and client trust/mTLS are still open).
 2. A chart-installed end-to-end gateway test.
 3. A published, versioned TypeScript SDK and executable quickstart.
 
@@ -48,7 +54,38 @@ client -> node-local gRPC gateway -> /run/imp/<namespace>-<vm>.vsock -> guest ag
 The gateway runs only on nodes selected with `imp/enabled=true`. A request can
 reach only a guest on the same node as that gateway instance. Future SDKs will
 resolve the backing `ImpVM` node and select the corresponding gateway; callers
-must not guess or scan node endpoints.
+must not guess or scan node endpoints. The current Helm `Certificate` is issued
+for in-cluster DNS `{{ fullname }}-gateway.<namespace>.svc` (and
+`.cluster.local`); node-IP SANs are not populated by default and client-side
+endpoint discovery is still the open gap — extra `ipAddresses`/`dnsNames` can
+be supplied via `gateway.tls.certManager` but do not by themselves solve
+placement-aware dialing.
+
+## TLS (Opt-In Preview)
+
+The gateway binary accepts `--tls-cert-file` and `--tls-key-file`. When both
+are provided the server loads the keypair and enforces TLS 1.3 minimum
+(`tls.Config.MinVersion = TLS 1.3`); when absent it preserves plaintext. The
+chart exposes this as:
+
+```yaml
+gateway:
+  tls:
+    enabled: true
+    secretName: "" # default {{ fullname }}-gateway-tls
+    certManager:
+      enabled: true
+      issuerRef: { group: cert-manager.io, kind: Issuer, name: "" } # chart self-signed
+      dnsNames: []  # override default svc DNS SANs if needed
+      ipAddresses: []
+```
+
+Set `certManager.enabled=false` to bring your own `Secret` (keys `tls.crt` /
+`tls.key`) without creating a `Certificate`. The DaemonSet mounts the secret at
+`/etc/imp-sandbox-gateway/tls` and passes the flags automatically. Clients must
+present the same sandbox bearer metadata even over TLS; TLS does not replace
+per-sandbox HMAC auth and mTLS (client certificates) is not implemented in this
+slice.
 
 ## Authentication And Authorization
 
@@ -149,7 +186,9 @@ not available in this preview:
 - Public ingress, browser access, REST, JSON, or Connect RPC.
 - Background process handles or reattachment.
 - Chunked files larger than 1 MiB.
-- Production endpoint discovery, TLS, or mTLS.
+- Production endpoint discovery and node-IP dialing (TLS server opt-in now
+  exists via `gateway.tls.*` with TLS 1.3 minimum; client trust wiring and
+  placement-aware discovery remain open, and mTLS is not implemented).
 
 When the SDK is released, this page will define its supported version range,
 deprecation policy, migration notes, and runnable examples.

@@ -1,0 +1,35 @@
+{{- if and .Values.gateway.enabled .Values.gateway.tls.enabled .Values.gateway.tls.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "impsandbox.fullname" . }}-gateway-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "impsandbox.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "impsandbox.gateway.tlsSecretName" . }}
+  duration: {{ .Values.gateway.tls.certManager.duration }}
+  renewBefore: {{ .Values.gateway.tls.certManager.renewBefore }}
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  dnsNames:
+    {{- if .Values.gateway.tls.certManager.dnsNames }}
+    {{- toYaml .Values.gateway.tls.certManager.dnsNames | nindent 4 }}
+    {{- else }}
+    - {{ include "impsandbox.fullname" . }}-gateway.{{ .Release.Namespace }}.svc
+    - {{ include "impsandbox.fullname" . }}-gateway.{{ .Release.Namespace }}.svc.cluster.local
+    {{- end }}
+  {{- with .Values.gateway.tls.certManager.ipAddresses }}
+  ipAddresses:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  issuerRef:
+    {{- if .Values.gateway.tls.certManager.issuerRef.name }}
+    {{- toYaml .Values.gateway.tls.certManager.issuerRef | nindent 4 }}
+    {{- else }}
+    name: {{ include "impsandbox.fullname" . }}-selfsigned
+    kind: Issuer
+    group: cert-manager.io
+    {{- end }}
+{{- end }}
