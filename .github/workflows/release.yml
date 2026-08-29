@@ -76,6 +76,28 @@ jobs:
             ${{ env.IMAGE_BASE }}/imp-agent:${{ github.event.release.tag_name || inputs.release_tag }}-${{ matrix.arch }}
             ${{ env.IMAGE_BASE }}/imp-agent:latest-${{ matrix.arch }}
 
+      - name: Build and push sandbox controller image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.sandbox
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_BASE }}/imp-sandbox:${{ github.event.release.tag_name || inputs.release_tag }}-${{ matrix.arch }}
+            ${{ env.IMAGE_BASE }}/imp-sandbox:latest-${{ matrix.arch }}
+
+      - name: Build and push sandbox gateway image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.gateway
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_BASE }}/imp-sandbox-gateway:${{ github.event.release.tag_name || inputs.release_tag }}-${{ matrix.arch }}
+            ${{ env.IMAGE_BASE }}/imp-sandbox-gateway:latest-${{ matrix.arch }}
+
   merge-manifests:
     runs-on: ubuntu-24.04
     needs: [release-arch]
@@ -83,6 +105,8 @@ jobs:
       packages: write
       contents: read
     steps:
+      - uses: actions/checkout@v7
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -118,3 +142,34 @@ jobs:
             -t "${{ env.IMAGE_BASE }}/imp-agent:latest" \
             "${{ env.IMAGE_BASE }}/imp-agent:latest-amd64" \
             "${{ env.IMAGE_BASE }}/imp-agent:latest-arm64"
+
+          docker buildx imagetools create \
+            -t "${{ env.IMAGE_BASE }}/imp-sandbox:${TAG}" \
+            "${{ env.IMAGE_BASE }}/imp-sandbox:${TAG}-amd64" \
+            "${{ env.IMAGE_BASE }}/imp-sandbox:${TAG}-arm64"
+
+          docker buildx imagetools create \
+            -t "${{ env.IMAGE_BASE }}/imp-sandbox:latest" \
+            "${{ env.IMAGE_BASE }}/imp-sandbox:latest-amd64" \
+            "${{ env.IMAGE_BASE }}/imp-sandbox:latest-arm64"
+
+          docker buildx imagetools create \
+            -t "${{ env.IMAGE_BASE }}/imp-sandbox-gateway:${TAG}" \
+            "${{ env.IMAGE_BASE }}/imp-sandbox-gateway:${TAG}-amd64" \
+            "${{ env.IMAGE_BASE }}/imp-sandbox-gateway:${TAG}-arm64"
+
+          docker buildx imagetools create \
+            -t "${{ env.IMAGE_BASE }}/imp-sandbox-gateway:latest" \
+            "${{ env.IMAGE_BASE }}/imp-sandbox-gateway:latest-amd64" \
+            "${{ env.IMAGE_BASE }}/imp-sandbox-gateway:latest-arm64"
+
+      - uses: azure/setup-helm@v5
+
+      - name: Package and push sandbox Helm chart
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name || inputs.release_tag }}"
+          VERSION="${TAG#v}"
+          helm package charts/imp-sandbox --version "${VERSION}" --app-version "${VERSION}"
+          helm push "imp-sandbox-${VERSION}.tgz" oci://${{ env.IMAGE_BASE }}/charts
