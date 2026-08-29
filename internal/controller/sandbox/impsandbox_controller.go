@@ -21,6 +21,7 @@ package sandbox
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -46,6 +47,7 @@ import (
 	sandboxv1alpha1 "github.com/syscode-labs/imp/api/sandbox/v1alpha1"
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/cnidetect"
+	"github.com/syscode-labs/imp/internal/sandboxgateway"
 )
 
 const (
@@ -86,6 +88,11 @@ type ImpSandboxReconciler struct {
 
 	// CNIStore exposes CNI detection results shared at manager startup.
 	CNIStore *cnidetect.Store
+
+	// SessionHMACKey is the cluster-wide key the gateway also holds; the
+	// controller mints per-sandbox session tokens with it. Empty disables
+	// session-secret minting (gateway-less installs).
+	SessionHMACKey []byte
 }
 
 // +kubebuilder:rbac:groups=sandbox.imp.dev,resources=impsandboxes,verbs=get;list;watch;create;update;patch;delete
@@ -97,6 +104,7 @@ type ImpSandboxReconciler struct {
 // +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;create;update
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;create;update
 
 // Reconcile drives an ImpSandbox toward its desired backing microVM.
 func (r *ImpSandboxReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -174,6 +182,9 @@ func (r *ImpSandboxReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		s.VMName = vmName
 		s.NetworkName = networkName
 		s.EffectiveTenancy = effective
+		if len(r.SessionHMACKey) > 0 {
+			s.SessionSecretRef = &impv1alpha1.LocalObjectRef{Name: sessionSecretName(sb.Name)}
+		}
 		apimeta.SetStatusCondition(&s.Conditions, metav1.Condition{
 			Type:               ConditionTenancyEnforced,
 			Status:             metav1.ConditionTrue,
@@ -184,8 +195,60 @@ func (r *ImpSandboxReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		setReadyFromPhase(s, vm.Status.Phase)
 	})
 
+	if len(r.SessionHMACKey) > 0 {
+		if err := r.ensureSessionSecret(ctx, sb); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
+
 	log.Info("Reconciled sandbox", "vm", vmName, "network", networkName, "tenancy", effective)
 	return ctrl.Result{}, nil
+}
+
+// sessionSecretName is the per-sandbox Secret carrying the data-plane token.
+func sessionSecretName(sandboxName string) string { return sandboxName + "-session" }
+
+// ensureSessionSecret creates or reconciles the per-sandbox session token
+// Secret. The token is deterministic HMAC(clusterKey, sandboxUID): the
+// Secret exists so SDKs with namespace read access can fetch it; the
+// gateway verifies by recomputation, so deleting the Secret revokes SDK
+// access without touching the gateway.
+func (r *ImpSandboxReconciler) ensureSessionSecret(ctx context.Context, sb *sandboxv1alpha1.ImpSandbox) error {
+	token := sandboxgateway.Token(r.SessionHMACKey, string(sb.UID), sb.Namespace, sb.Name)
+	desired := func(sec *corev1.Secret) {
+		sec.Type = corev1.SecretTypeOpaque
+		sec.Data = map[string][]byte{"token": []byte(token)}
+	}
+
+	existing := &corev1.Secret{}
+	err := r.Get(ctx, client.ObjectKey{Namespace: sb.Namespace, Name: sessionSecretName(sb.Name)}, existing)
+	switch {
+	case apierrors.IsNotFound(err):
+		sec := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      sessionSecretName(sb.Name),
+				Namespace: sb.Namespace,
+				Labels:    sandboxLabels(sb),
+			},
+		}
+		desired(sec)
+		if err := controllerutil.SetControllerReference(sb, sec, r.Scheme); err != nil {
+			return err
+		}
+		return r.Create(ctx, sec)
+	case err != nil:
+		return err
+	}
+
+	if subtle.ConstantTimeCompare(existing.Data["token"], []byte(token)) == 1 {
+		return nil
+	}
+	before := existing.DeepCopy()
+	desired(existing)
+	if err := controllerutil.SetControllerReference(sb, existing, r.Scheme); err != nil {
+		return err
+	}
+	return r.Patch(ctx, existing, client.MergeFrom(before))
 }
 
 func (r *ImpSandboxReconciler) reconcileDelete(ctx context.Context, sb *sandboxv1alpha1.ImpSandbox) (ctrl.Result, error) {
@@ -329,6 +392,12 @@ func (r *ImpSandboxReconciler) ensureVM(ctx context.Context, sb *sandboxv1alpha1
 			Lifecycle:    impv1alpha1.VMLifecyclePersistent,
 			NodeSelector: sb.Spec.NodeSelector,
 			ExpireAfter:  sb.Spec.ExpireAfter.DeepCopy(),
+		}
+		if len(r.SessionHMACKey) > 0 {
+			vm.Spec.Env = []corev1.EnvVar{{
+				Name:  "IMP_SANDBOX_CONTROL_TOKEN",
+				Value: sandboxgateway.GuestToken(r.SessionHMACKey, string(sb.UID), sb.Namespace, vmName),
+			}}
 		}
 	}
 

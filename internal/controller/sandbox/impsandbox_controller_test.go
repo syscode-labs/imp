@@ -37,6 +37,7 @@ import (
 	sandboxv1alpha1 "github.com/syscode-labs/imp/api/sandbox/v1alpha1"
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/cnidetect"
+	"github.com/syscode-labs/imp/internal/sandboxgateway"
 )
 
 func newReconcilerScheme(t *testing.T) *runtime.Scheme {
@@ -328,4 +329,64 @@ func findCondition(conds []metav1.Condition, condType string) *metav1.Condition 
 		}
 	}
 	return nil
+}
+
+func TestSessionSecret_mintedAndDelivered(t *testing.T) {
+	sb := newTestSandbox()
+	sb.UID = "uid-1234"
+	f := newFixture(t, sb)
+	f.r.SessionHMACKey = []byte("test-cluster-key-32-bytes-long!!")
+
+	_, err := f.r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "team-a", Name: "sb"}})
+	require.NoError(t, err)
+
+	sec := &corev1.Secret{}
+	require.NoError(t, f.r.Get(context.Background(), types.NamespacedName{Namespace: "team-a", Name: "sb-session"}, sec))
+	want := sandboxgateway.Token([]byte("test-cluster-key-32-bytes-long!!"), "uid-1234", "team-a", "sb")
+	assert.Equal(t, want, string(sec.Data["token"]))
+
+	vm := &impv1alpha1.ImpVM{}
+	require.NoError(t, f.r.Get(context.Background(), types.NamespacedName{Namespace: "team-a", Name: "sb"}, vm))
+	require.Len(t, vm.Spec.Env, 1)
+	assert.Equal(t, "IMP_SANDBOX_CONTROL_TOKEN", vm.Spec.Env[0].Name)
+	assert.Equal(t, sandboxgateway.GuestToken([]byte("test-cluster-key-32-bytes-long!!"), "uid-1234", "team-a", "sb"), vm.Spec.Env[0].Value)
+
+	got := &sandboxv1alpha1.ImpSandbox{}
+	require.NoError(t, f.r.Get(context.Background(), types.NamespacedName{Namespace: "team-a", Name: "sb"}, got))
+	require.NotNil(t, got.Status.SessionSecretRef)
+	assert.Equal(t, "sb-session", got.Status.SessionSecretRef.Name)
+}
+
+func TestSessionSecret_skippedWithoutKey(t *testing.T) {
+	f := newFixture(t, newTestSandbox())
+
+	_, err := f.r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "team-a", Name: "sb"}})
+	require.NoError(t, err)
+
+	secrets := &corev1.SecretList{}
+	require.NoError(t, f.r.List(context.Background(), secrets))
+	assert.Empty(t, secrets.Items)
+
+	got := &sandboxv1alpha1.ImpSandbox{}
+	require.NoError(t, f.r.Get(context.Background(), types.NamespacedName{Namespace: "team-a", Name: "sb"}, got))
+	assert.Nil(t, got.Status.SessionSecretRef)
+}
+
+func TestSessionSecret_rotatesOnKeyChange(t *testing.T) {
+	sb := newTestSandbox()
+	sb.UID = "uid-rotate"
+	f := newFixture(t, sb)
+	f.r.SessionHMACKey = []byte("old-key-old-key-old-key-old-key!!")
+
+	_, err := f.r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "team-a", Name: "sb"}})
+	require.NoError(t, err)
+
+	// Cluster key rotates.
+	f.r.SessionHMACKey = []byte("new-key-new-key-new-key-new-key!!")
+	_, err = f.r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "team-a", Name: "sb"}})
+	require.NoError(t, err)
+
+	sec := &corev1.Secret{}
+	require.NoError(t, f.r.Get(context.Background(), types.NamespacedName{Namespace: "team-a", Name: "sb-session"}, sec))
+	assert.Equal(t, sandboxgateway.Token([]byte("new-key-new-key-new-key-new-key!!"), "uid-rotate", "team-a", "sb"), string(sec.Data["token"]))
 }

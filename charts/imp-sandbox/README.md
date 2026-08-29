@@ -65,7 +65,24 @@ The generated `ImpVM` (`agent-1`) and `ImpNetwork` (`agent-1-net`, unless
 
 Set a cluster-wide minimum via `ClusterImpConfig.spec.sandbox.floorTenancy`.
 
+## Gateway TLS (Opt-In, Minimal Slice)
+
+`gateway.tls.enabled=true` makes the DaemonSet serve gRPC over TLS 1.3 using a
+Secret mounted at `/etc/imp-sandbox-gateway/tls` (`tls.crt`/`tls.key`). With
+`gateway.tls.certManager.enabled=true` (default) the chart creates a
+`Certificate` `{{ fullname }}-gateway-tls` issued by
+`gateway.tls.certManager.issuerRef` (defaults to the chart's self-signed
+`Issuer`, mirroring `webhook.certManager`). Set
+`gateway.tls.certManager.enabled=false` to provide your own Secret. When
+`gateway.tls.enabled=false` (default) plaintext is preserved for
+compatibility/internal preview.
+
+This slice does not claim node-IP endpoint discovery. The issued cert covers
+`{{ fullname }}-gateway.<namespace>.svc` DNS by default; node-IP SANs and
+client-side placement-aware dialing remain open. See
+[`docs/sandbox/gateway-api.md`](../../docs/sandbox/gateway-api.md#tls-opt-in-preview).
+
 ## Values
 
 See `values.yaml`. Everything is namespaced under `sandbox.` (deployment),
-`webhook.` and `rbac.`.
+`webhook.` and `rbac.`, with `gateway.tls.*` for the opt-in TLS material.

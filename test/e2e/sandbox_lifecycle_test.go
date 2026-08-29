@@ -33,30 +33,10 @@ import (
 
 var _ = Describe("Imp Sandbox add-on", Ordered, func() {
 	const (
-		helmRelease = "imp-sandbox"
 		sandboxName = "e2e-sbx"
 	)
 
 	SetDefaultEventuallyTimeout(3 * time.Minute)
-
-	BeforeAll(func() {
-		By("installing the imp-sandbox subchart")
-		cmd := exec.Command("helm", "upgrade", "--install", helmRelease, "charts/imp-sandbox",
-			"--namespace", namespace,
-			"--set", "sandbox.image.repository=local/imp-sandbox",
-			"--set", "sandbox.image.tag=e2e",
-			"--wait", "--timeout", "5m")
-		_, err := utils.Run(cmd)
-		Expect(err).NotTo(HaveOccurred(), "helm install imp-sandbox failed")
-	})
-
-	AfterAll(func() {
-		By("uninstalling the imp-sandbox subchart")
-		cmd := exec.Command("helm", "uninstall", helmRelease, "--namespace", namespace, "--wait")
-		_, _ = utils.Run(cmd)
-		crdCmd := exec.Command("kubectl", "delete", "crd", "impsandboxes.sandbox.imp.dev", "--ignore-not-found")
-		_, _ = utils.Run(crdCmd)
-	})
 
 	Context("Installation", Label("smoke"), func() {
 		It("installs the ImpSandbox CRD", func() {
@@ -133,6 +113,20 @@ spec:
 		})
 
 		It("garbage-collects the backing VM on sandbox deletion", func() {
+			DeferCleanup(func() {
+				if !CurrentSpecReport().Failed() {
+					return
+				}
+				for _, args := range [][]string{
+					{"get", "impsandbox", sandboxName, "-n", namespace, "-o", "yaml"},
+					{"get", "impvm", sandboxName, "-n", namespace, "-o", "yaml"},
+					{"logs", "-n", namespace, "deploy/imp-sandbox-controller", "--tail=200", "--prefix"},
+				} {
+					out, _ := utils.Run(exec.Command("kubectl", args...))
+					fmt.Printf("--- sandbox GC failure: kubectl %s ---\n%s\n", strings.Join(args, " "), out)
+				}
+			})
+
 			manifest := fmt.Sprintf(`
 apiVersion: sandbox.imp.dev/v1alpha1
 kind: ImpSandbox
@@ -151,7 +145,9 @@ spec:
 				g.Expect(getErr).NotTo(HaveOccurred())
 			}).Should(Succeed())
 
-			delCmd := exec.Command("kubectl", "delete", "impsandbox", sandboxName, "-n", namespace)
+			// Submit deletion without waiting for finalizers. The assertion below is
+			// responsible for verifying that finalization garbage-collects the VM.
+			delCmd := exec.Command("kubectl", "delete", "impsandbox", sandboxName, "-n", namespace, "--wait=false")
 			_, delErr := utils.Run(delCmd)
 			Expect(delErr).NotTo(HaveOccurred())
 

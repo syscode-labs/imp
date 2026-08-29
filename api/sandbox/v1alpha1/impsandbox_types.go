@@ -102,6 +102,14 @@ type ImpSandboxStatus struct {
 	// resolution. May differ from spec.tenancy when a cluster floor applies.
 	// +optional
 	EffectiveTenancy TenancyMode `json:"effectiveTenancy,omitempty"`
+
+	// SessionSecretRef points to the Secret holding this sandbox's session
+	// token for data-plane access (gateway gRPC). The token is deterministic
+	// HMAC(clusterKey, sandboxUID): the Secret is the delivery mechanism for
+	// SDKs, not the source of truth — rotating the cluster key invalidates
+	// all sessions at once.
+	// +optional
+	SessionSecretRef *basev1alpha1.LocalObjectRef `json:"sessionSecretRef,omitempty"`
 }
 
 // +kubebuilder:object:root=true

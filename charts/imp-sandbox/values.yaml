@@ -49,3 +49,16 @@ gateway:
   nodeSelector:
     imp/enabled: "true"
   tolerations: []
+  tls:
+    enabled: false
+    secretName: "" # empty → {{ fullname }}-gateway-tls
+    certManager:
+      enabled: true
+      duration: 2160h # 90d
+      renewBefore: 360h # 15d
+      issuerRef:
+        group: cert-manager.io
+        kind: Issuer
+        name: "" # empty → use the chart's self-signed Issuer
+      dnsNames: []
+      ipAddresses: []

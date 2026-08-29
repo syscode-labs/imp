@@ -39,3 +39,11 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- $tag := default .Chart.AppVersion .Values.gateway.image.tag -}}
 {{- printf "%s:%s" .Values.gateway.image.repository $tag -}}
 {{- end }}
+
+{{- define "impsandbox.gateway.tlsSecretName" -}}
+{{- if .Values.gateway.tls.secretName }}
+{{- .Values.gateway.tls.secretName | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%s-gateway-tls" (include "impsandbox.fullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}

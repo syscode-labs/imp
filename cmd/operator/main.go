@@ -276,6 +276,7 @@ func main() {
 
 	if err := mgr.Add(&cniDetectRunnable{
 		client:   mgr.GetClient(),
+		mapper:   mgr.GetRESTMapper(),
 		recorder: mgr.GetEventRecorderFor("cni-detector"), //nolint:staticcheck
 		store:    cniStore,
 	}); err != nil {

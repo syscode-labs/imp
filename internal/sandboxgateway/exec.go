@@ -16,18 +16,17 @@ import (
 // stderr frame (when non-empty), and a final exit frame; the streaming
 // signature keeps the wire contract stable for incremental streaming later.
 func (s *Server) Exec(req *gwpb.ExecRequest, stream gwpb.SandboxGateway_ExecServer) error {
-	if req.GetVm() == nil || req.GetVm().GetNamespace() == "" || req.GetVm().GetVmName() == "" {
-		return status.Error(codes.InvalidArgument, "vm.namespace and vm.vm_name are required")
+	socket, err := s.requireVM(stream.Context(), req.GetVm())
+	if err != nil {
+		return err
 	}
 	if len(req.GetCommand()) == 0 {
 		return status.Error(codes.InvalidArgument, "command is required")
 	}
-	guestToken, err := guestToken()
+	guestToken, err := s.guestToken(stream.Context())
 	if err != nil {
 		return err
 	}
-	socket := VSOCKPath(s.opts.SocketDir, req.GetVm().GetNamespace(), req.GetVm().GetVmName())
-
 	timeout := time.Duration(req.GetTimeoutSeconds()) * time.Second
 	if timeout <= 0 || timeout > execTimeout {
 		timeout = execTimeout

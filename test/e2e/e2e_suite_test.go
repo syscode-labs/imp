@@ -92,7 +92,7 @@ var _ = BeforeSuite(func() {
 	By("installing imp-crds chart")
 	crdsCmd := exec.Command("helm", "install", helmCRDRelease, "charts/imp-crds",
 		"--namespace", namespace, "--wait", "--create-namespace")
-	_, err := utils.Run(crdsCmd)
+	_, err := utils.RunWithTimeout(6*time.Minute, crdsCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp-crds failed")
 
 	By("installing imp chart")
@@ -142,7 +142,7 @@ var _ = BeforeSuite(func() {
 	impArgs = append(impArgs, "--wait", "--timeout", "10m")
 
 	impCmd := exec.Command("helm", impArgs...)
-	_, err = utils.Run(impCmd)
+	_, err = utils.RunWithTimeout(12*time.Minute, impCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp failed")
 
 	By("installing imp-sandbox chart")
@@ -153,7 +153,7 @@ var _ = BeforeSuite(func() {
 		"--set", "sandbox.image.repository="+sandboxImageRepo,
 		"--set", "sandbox.image.tag="+sandboxImageTag,
 		"--wait", "--timeout", "5m")
-	_, err = utils.Run(sandboxCmd)
+	_, err = utils.RunWithTimeout(6*time.Minute, sandboxCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp-sandbox failed")
 
 	By("disabling scheduling reserve for tiny kind cluster")
@@ -180,6 +180,28 @@ spec:
 })
 
 var _ = AfterSuite(func() {
+	// Always dump compact state BEFORE teardown: once helm uninstalls, logs
+	// and objects are gone and post-mortem workflow steps see nothing.
+	By("dumping pre-teardown diagnostics")
+	podStatus := exec.Command("kubectl", "get", "pods", "-A", "-o", "wide")
+	out, _ := utils.Run(podStatus)
+	fmt.Println("--- pre-teardown pod status ---\n" + out)
+
+	for _, name := range []string{
+		"deploy/imp-operator",
+		"deploy/imp-sandbox-controller",
+		"daemonset/imp-sandbox-gateway",
+	} {
+		logsCmd := exec.Command("kubectl", "logs", "-n", namespace,
+			name, "--tail=120", "--prefix", "--all-containers")
+		out, _ = utils.Run(logsCmd)
+		fmt.Printf("--- logs %s ---\n%s\n", name, out)
+		prevLogs := exec.Command("kubectl", "logs", "-n", namespace,
+			name, "--previous", "--tail=80", "--prefix")
+		out, _ = utils.Run(prevLogs)
+		fmt.Printf("--- previous logs %s ---\n%s\n", name, out)
+	}
+
 	if os.Getenv("IMP_E2E_REAL_AGENT") == "true" {
 		By("dumping pod status + agent/operator logs before teardown")
 		podStatus := exec.Command("kubectl", "get", "pods", "-n", namespace, "-o", "wide")

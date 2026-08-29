@@ -19,10 +19,12 @@ package utils
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2" // nolint:revive,staticcheck
 )
@@ -39,19 +41,44 @@ func warnError(err error) {
 	_, _ = fmt.Fprintf(GinkgoWriter, "warning: %v\n", err)
 }
 
-// Run executes the provided command within this context
-func Run(cmd *exec.Cmd) (string, error) {
-	dir, _ := GetProjectDir()
-	cmd.Dir = dir
+const defaultRunTimeout = 60 * time.Second
 
-	if err := os.Chdir(cmd.Dir); err != nil {
+// Run executes the provided command within this context with a bounded timeout.
+// The default timeout (60s) turns wedged apiserver/kubectl hangs into actionable
+// errors instead of freezing the whole Ginkgo suite past its global wall.
+func Run(cmd *exec.Cmd) (string, error) {
+	return RunWithTimeout(defaultRunTimeout, cmd)
+}
+
+// RunWithTimeout executes the provided command with an explicit timeout.
+// Use for operations whose legitimate duration exceeds defaultRunTimeout
+// (e.g. helm install --wait, kind load, kubectl wait --timeout).
+func RunWithTimeout(timeout time.Duration, cmd *exec.Cmd) (string, error) {
+	dir, _ := GetProjectDir()
+	// Work with a context-aware copy so DeadlineExceeded kills the process
+	// tree even when the caller built the command with exec.Command.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	command := strings.Join(cmd.Args, " ")
+	_, _ = fmt.Fprintf(GinkgoWriter, "running: %q (timeout %s)\n", command, timeout)
+
+	ctxCmd := exec.CommandContext(ctx, cmd.Args[0], cmd.Args[1:]...) //nolint:gosec
+	ctxCmd.Dir = dir
+	ctxCmd.Stdin = cmd.Stdin
+	if err := os.Chdir(ctxCmd.Dir); err != nil {
 		_, _ = fmt.Fprintf(GinkgoWriter, "chdir dir: %q\n", err)
 	}
+	ctxCmd.Env = append(os.Environ(), "GO111MODULE=on")
+	// Preserve any caller-provided Env overrides on top of the base.
+	if len(cmd.Env) > 0 {
+		ctxCmd.Env = append(ctxCmd.Env, cmd.Env...)
+	}
 
-	cmd.Env = append(os.Environ(), "GO111MODULE=on")
-	command := strings.Join(cmd.Args, " ")
-	_, _ = fmt.Fprintf(GinkgoWriter, "running: %q\n", command)
-	output, err := cmd.CombinedOutput()
+	output, err := ctxCmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		return string(output), fmt.Errorf("%q timed out after %s (output %q): %w", command, timeout, string(output), ctx.Err())
+	}
 	if err != nil {
 		return string(output), fmt.Errorf("%q failed with error %q: %w", command, string(output), err)
 	}
@@ -85,7 +112,7 @@ func UninstallCertManager() {
 func InstallCertManager() error {
 	url := fmt.Sprintf(certmanagerURLTmpl, certmanagerVersion)
 	cmd := exec.Command("kubectl", "apply", "-f", url) //nolint:gosec
-	if _, err := Run(cmd); err != nil {
+	if _, err := RunWithTimeout(2*time.Minute, cmd); err != nil {
 		return err
 	}
 	// Wait for cert-manager-webhook to be ready, which can take time if cert-manager
@@ -96,7 +123,7 @@ func InstallCertManager() error {
 		"--timeout", "5m",
 	)
 
-	_, err := Run(cmd)
+	_, err := RunWithTimeout(6*time.Minute, cmd)
 	return err
 }
 
@@ -145,7 +172,7 @@ func LoadImageToKindClusterWithName(name string) error {
 		kindBinary = v
 	}
 	cmd := exec.Command(kindBinary, kindOptions...) //nolint:gosec
-	_, err := Run(cmd)
+	_, err := RunWithTimeout(5*time.Minute, cmd)
 	return err
 }
 

@@ -13,7 +13,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
+	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
@@ -27,26 +30,28 @@ func TestAuthorize_missingAndBadMetadata(t *testing.T) {
 	s, err := NewServer(Options{SocketDir: t.TempDir(), HMACKey: []byte(testKey)})
 	require.NoError(t, err)
 
-	err = s.authorize(context.Background())
+	_, err = s.authorize(context.Background())
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 
 	md := metadata.Pairs(metaSandboxUID, "uid1")
-	err = s.authorize(metadata.NewIncomingContext(context.Background(), md))
+	_, err = s.authorize(metadata.NewIncomingContext(context.Background(), md))
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 
 	md = metadata.Join(metadata.Pairs(metaSandboxUID, "uid1"), metadata.Pairs(metaAuthorization, "Basic abc"))
-	err = s.authorize(metadata.NewIncomingContext(context.Background(), md))
+	_, err = s.authorize(metadata.NewIncomingContext(context.Background(), md))
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 
 	md = metadata.Join(
-		metadata.Pairs(metaSandboxUID, "uid1"),
-		metadata.Pairs(metaAuthorization, "Bearer "+Token([]byte(testKey), "uid1")))
-	assert.NoError(t, s.authorize(metadata.NewIncomingContext(context.Background(), md)))
+		metadata.Pairs(metaSandboxUID, "uid1", metaSandboxNS, "ns1", metaSandboxVMName, "vm1"),
+		metadata.Pairs(metaAuthorization, "Bearer "+Token([]byte(testKey), "uid1", "ns1", "vm1")))
+	_, err = s.authorize(metadata.NewIncomingContext(context.Background(), md))
+	assert.NoError(t, err)
 
 	md = metadata.Join(
-		metadata.Pairs(metaSandboxUID, "uid1"),
-		metadata.Pairs(metaAuthorization, "Bearer "+Token([]byte(testKey), "uid2")))
-	assert.Equal(t, codes.Unauthenticated, status.Code(s.authorize(metadata.NewIncomingContext(context.Background(), md))))
+		metadata.Pairs(metaSandboxUID, "uid1", metaSandboxNS, "ns1", metaSandboxVMName, "vm1"),
+		metadata.Pairs(metaAuthorization, "Bearer "+Token([]byte(testKey), "uid2", "ns1", "vm1")))
+	_, err = s.authorize(metadata.NewIncomingContext(context.Background(), md))
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
 // fakeGuest is a minimal guest SandboxControl server for proxy tests.
@@ -118,18 +123,19 @@ func startStack(t *testing.T, guest *fakeGuest) gwpb.SandboxGatewayClient {
 	return gwpb.NewSandboxGatewayClient(conn)
 }
 
-func authed(ctx context.Context, uid string) context.Context {
+func authed(ctx context.Context, uid, namespace, vmName string) context.Context {
 	// Outgoing: client-sent metadata. Incoming-context metadata is a
 	// server-side concept and never leaves the process.
 	return metadata.AppendToOutgoingContext(ctx,
 		metaSandboxUID, uid,
-		metaAuthorization, "Bearer "+Token([]byte(testKey), uid))
+		metaSandboxNS, namespace,
+		metaSandboxVMName, vmName,
+		metaAuthorization, "Bearer "+Token([]byte(testKey), uid, namespace, vmName))
 }
 
 func TestGateway_endToEndExecAndFiles(t *testing.T) {
-	t.Setenv("GATEWAY_GUEST_TOKEN", "guest-secret")
-	client := startStack(t, &fakeGuest{token: "guest-secret"})
-	ctx := authed(context.Background(), "uid1")
+	client := startStack(t, &fakeGuest{token: GuestToken([]byte(testKey), "uid1", "ns1", "vm1")})
+	ctx := authed(context.Background(), "uid1", "ns1", "vm1")
 
 	stream, err := client.Exec(ctx, &gwpb.ExecRequest{
 		Vm:      &gwpb.VMRef{Namespace: "ns1", VmName: "vm1"},
@@ -169,18 +175,35 @@ func TestGateway_unauthenticatedRejectedBeforeGuest(t *testing.T) {
 	// Valid-format token bound to a different uid: mismatch.
 	bad := metadata.AppendToOutgoingContext(context.Background(),
 		metaSandboxUID, "someone-else",
-		metaAuthorization, "Bearer "+Token([]byte(testKey), "uid1"))
+		metaSandboxNS, "ns1",
+		metaSandboxVMName, "vm1",
+		metaAuthorization, "Bearer "+Token([]byte(testKey), "uid1", "ns1", "vm1"))
 	_, err = client.ReadFile(bad, &gwpb.ReadFileRequest{
 		Vm: &gwpb.VMRef{Namespace: "ns1", VmName: "vm1"}, Path: "/etc/passwd",
 	})
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
-func TestGateway_guestSocketAbsent(t *testing.T) {
-	client := startStack(t, &fakeGuest{token: "guest-secret"})
-	ctx := authed(context.Background(), "uid1")
+func TestGateway_crossSandboxVMRefRejected(t *testing.T) {
+	client := startStack(t, &fakeGuest{token: "unused"})
+	ctx := authed(context.Background(), "uid-a", "ns-a", "sandbox-a")
+	victim := &gwpb.VMRef{Namespace: "ns-b", VmName: "sandbox-b"}
 
-	t.Setenv("GATEWAY_GUEST_TOKEN", "guest-secret")
+	// File RPCs share requireVM; a token scoped to sandbox-a must not reach
+	// sandbox-b even if both sockets are hosted by this gateway node.
+	_, err := client.ReadFile(ctx, &gwpb.ReadFileRequest{Vm: victim, Path: "/tmp/x"})
+	assert.Equal(t, codes.PermissionDenied, status.Code(err))
+
+	stream, err := client.Exec(ctx, &gwpb.ExecRequest{Vm: victim, Command: []string{"id"}})
+	require.NoError(t, err)
+	_, err = stream.Recv()
+	assert.Equal(t, codes.PermissionDenied, status.Code(err))
+}
+
+func TestGateway_guestSocketAbsent(t *testing.T) {
+	client := startStack(t, &fakeGuest{token: "unused"})
+	ctx := authed(context.Background(), "uid1", "ns1", "ghost")
+
 	_, err := client.ReadFile(ctx, &gwpb.ReadFileRequest{
 		Vm: &gwpb.VMRef{Namespace: "ns1", VmName: "ghost"}, Path: "/x",
 	})
@@ -194,4 +217,33 @@ func TestVSOCKPath_matchesAgentConvention(t *testing.T) {
 	assert.Equal(t, filepath.Join(dir, "team-a-sb1.vsock"), p)
 	_, err := os.Stat(p)
 	assert.Error(t, err, fmt.Sprintf("socket %s must not pre-exist", p))
+}
+
+func TestGateway_healthAndReflectionAuthGated(t *testing.T) {
+	srv, err := NewServer(Options{SocketDir: t.TempDir(), HMACKey: []byte(testKey)})
+	require.NoError(t, err)
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	gs := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(srv.AuthUnary),
+		grpc.ChainStreamInterceptor(srv.AuthStream),
+	)
+	gwpb.RegisterSandboxGatewayServer(gs, srv)
+	// Mirror ListenAndServe: health/reflection registered server-level, so
+	// the auth interceptor must be what gates them.
+	grpc_health_v1.RegisterHealthServer(gs, health.NewServer())
+	reflection.Register(gs)
+	go func() { _ = gs.Serve(lis) }()
+	t.Cleanup(gs.Stop)
+
+	conn, err := grpc.NewClient(lis.Addr().String(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	// Health is a registered server-level service; the auth interceptor is
+	// server-scoped, so it must be gated exactly like gateway RPCs.
+	hc := grpc_health_v1.NewHealthClient(conn)
+	_, err = hc.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{})
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 }

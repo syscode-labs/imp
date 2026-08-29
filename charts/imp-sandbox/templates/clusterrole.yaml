@@ -33,4 +33,11 @@ rules:
 - apiGroups: ["coordination.k8s.io"]
   resources: [leases]
   verbs: [get, create, update]
+{{- if .Values.gateway.enabled }}
+- apiGroups: [""]
+  resources: [secrets]
+  # The controller-runtime cache lists and watches Secrets when session
+  # tokens are enabled; without these verbs its cache never synchronizes.
+  verbs: [get, list, watch, create, update]
+{{- end }}
 {{- end }}
