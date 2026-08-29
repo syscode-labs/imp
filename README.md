@@ -341,6 +341,13 @@ Need a VM on a physical, administrator-allowlisted VLAN (tagged or untagged)?
 `ImpNetworkAttachment` provides RBAC-gated access-mode attachment with optional
 guest DHCP — see `examples/lan-vlan-attachment/`.
 
+## Sandbox API
+
+The optional `imp-sandbox` add-on has an internal-preview, node-local gRPC
+gateway for guest command and file operations. Its current support status,
+security model, wire contract, and release gates are documented in
+[`docs/sandbox/gateway-api.md`](docs/sandbox/gateway-api.md).
+
 ## Metrics & Observability
 
 Imp exposes operator and agent metrics so you can monitor VM lifecycle and platform health:
