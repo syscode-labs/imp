@@ -11,9 +11,16 @@ import (
 )
 
 // requireVM validates the VMRef and returns the guest socket path.
-func (s *Server) requireVM(vm *gwpb.VMRef) (string, error) {
+func (s *Server) requireVM(ctx context.Context, vm *gwpb.VMRef) (string, error) {
 	if vm == nil || vm.GetNamespace() == "" || vm.GetVmName() == "" {
 		return "", status.Error(codes.InvalidArgument, "vm.namespace and vm.vm_name are required")
+	}
+	p, ok := principalFromContext(ctx)
+	if !ok {
+		return "", status.Error(codes.Unauthenticated, "missing authenticated sandbox identity")
+	}
+	if vm.GetNamespace() != p.namespace || vm.GetVmName() != p.vmName {
+		return "", status.Error(codes.PermissionDenied, "VMRef is not owned by authenticated sandbox")
 	}
 	return VSOCKPath(s.opts.SocketDir, vm.GetNamespace(), vm.GetVmName()), nil
 }
@@ -35,7 +42,7 @@ func (s *Server) withSession(socket string, fn func(ctx context.Context, c sandb
 }
 
 func (s *Server) ReadFile(ctx context.Context, req *gwpb.ReadFileRequest) (*gwpb.ReadFileResponse, error) {
-	socket, err := s.requireVM(req.GetVm())
+	socket, err := s.requireVM(ctx, req.GetVm())
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +59,7 @@ func (s *Server) ReadFile(ctx context.Context, req *gwpb.ReadFileRequest) (*gwpb
 }
 
 func (s *Server) WriteFile(ctx context.Context, req *gwpb.WriteFileRequest) (*gwpb.WriteFileResponse, error) {
-	socket, err := s.requireVM(req.GetVm())
+	socket, err := s.requireVM(ctx, req.GetVm())
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +82,7 @@ func (s *Server) WriteFile(ctx context.Context, req *gwpb.WriteFileRequest) (*gw
 }
 
 func (s *Server) ListDir(ctx context.Context, req *gwpb.ListDirRequest) (*gwpb.ListDirResponse, error) {
-	socket, err := s.requireVM(req.GetVm())
+	socket, err := s.requireVM(ctx, req.GetVm())
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +108,7 @@ func (s *Server) ListDir(ctx context.Context, req *gwpb.ListDirRequest) (*gwpb.L
 }
 
 func (s *Server) Stat(ctx context.Context, req *gwpb.StatRequest) (*gwpb.StatResponse, error) {
-	socket, err := s.requireVM(req.GetVm())
+	socket, err := s.requireVM(ctx, req.GetVm())
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +130,7 @@ func (s *Server) Stat(ctx context.Context, req *gwpb.StatRequest) (*gwpb.StatRes
 }
 
 func (s *Server) Remove(ctx context.Context, req *gwpb.RemoveRequest) (*gwpb.RemoveResponse, error) {
-	socket, err := s.requireVM(req.GetVm())
+	socket, err := s.requireVM(ctx, req.GetVm())
 	if err != nil {
 		return nil, err
 	}

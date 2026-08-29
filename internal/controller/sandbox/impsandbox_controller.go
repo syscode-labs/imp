@@ -214,7 +214,7 @@ func sessionSecretName(sandboxName string) string { return sandboxName + "-sessi
 // gateway verifies by recomputation, so deleting the Secret revokes SDK
 // access without touching the gateway.
 func (r *ImpSandboxReconciler) ensureSessionSecret(ctx context.Context, sb *sandboxv1alpha1.ImpSandbox) error {
-	token := sandboxgateway.Token(r.SessionHMACKey, string(sb.UID))
+	token := sandboxgateway.Token(r.SessionHMACKey, string(sb.UID), sb.Namespace, sb.Name)
 	desired := func(sec *corev1.Secret) {
 		sec.Type = corev1.SecretTypeOpaque
 		sec.Data = map[string][]byte{"token": []byte(token)}

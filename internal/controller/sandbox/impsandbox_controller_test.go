@@ -342,7 +342,7 @@ func TestSessionSecret_mintedAndDelivered(t *testing.T) {
 
 	sec := &corev1.Secret{}
 	require.NoError(t, f.r.Get(context.Background(), types.NamespacedName{Namespace: "team-a", Name: "sb-session"}, sec))
-	want := sandboxgateway.Token([]byte("test-cluster-key-32-bytes-long!!"), "uid-1234")
+	want := sandboxgateway.Token([]byte("test-cluster-key-32-bytes-long!!"), "uid-1234", "team-a", "sb")
 	assert.Equal(t, want, string(sec.Data["token"]))
 
 	got := &sandboxv1alpha1.ImpSandbox{}
@@ -382,5 +382,5 @@ func TestSessionSecret_rotatesOnKeyChange(t *testing.T) {
 
 	sec := &corev1.Secret{}
 	require.NoError(t, f.r.Get(context.Background(), types.NamespacedName{Namespace: "team-a", Name: "sb-session"}, sec))
-	assert.Equal(t, sandboxgateway.Token([]byte("new-key-new-key-new-key-new-key!!"), "uid-rotate"), string(sec.Data["token"]))
+	assert.Equal(t, sandboxgateway.Token([]byte("new-key-new-key-new-key-new-key!!"), "uid-rotate", "team-a", "sb"), string(sec.Data["token"]))
 }
