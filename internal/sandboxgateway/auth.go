@@ -25,3 +25,12 @@ func Verify(clusterKey []byte, sandboxUID, namespace, vmName, presented string) 
 	expected := Token(clusterKey, sandboxUID, namespace, vmName)
 	return hmac.Equal([]byte(expected), []byte(presented))
 }
+
+// GuestToken derives the control token presented by the gateway to the guest.
+// It uses a separate HMAC domain from the client session token so either token
+// cannot be replayed at the other authentication boundary.
+func GuestToken(clusterKey []byte, sandboxUID, namespace, vmName string) string {
+	mac := hmac.New(sha256.New, clusterKey)
+	mac.Write([]byte("guest:" + sandboxUID + "\x00" + namespace + "\x00" + vmName))
+	return hex.EncodeToString(mac.Sum(nil))
+}

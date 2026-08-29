@@ -134,8 +134,7 @@ func authed(ctx context.Context, uid, namespace, vmName string) context.Context 
 }
 
 func TestGateway_endToEndExecAndFiles(t *testing.T) {
-	t.Setenv("GATEWAY_GUEST_TOKEN", "guest-secret")
-	client := startStack(t, &fakeGuest{token: "guest-secret"})
+	client := startStack(t, &fakeGuest{token: GuestToken([]byte(testKey), "uid1", "ns1", "vm1")})
 	ctx := authed(context.Background(), "uid1", "ns1", "vm1")
 
 	stream, err := client.Exec(ctx, &gwpb.ExecRequest{
@@ -186,7 +185,7 @@ func TestGateway_unauthenticatedRejectedBeforeGuest(t *testing.T) {
 }
 
 func TestGateway_crossSandboxVMRefRejected(t *testing.T) {
-	client := startStack(t, &fakeGuest{token: "guest-secret"})
+	client := startStack(t, &fakeGuest{token: "unused"})
 	ctx := authed(context.Background(), "uid-a", "ns-a", "sandbox-a")
 	victim := &gwpb.VMRef{Namespace: "ns-b", VmName: "sandbox-b"}
 
@@ -202,10 +201,9 @@ func TestGateway_crossSandboxVMRefRejected(t *testing.T) {
 }
 
 func TestGateway_guestSocketAbsent(t *testing.T) {
-	client := startStack(t, &fakeGuest{token: "guest-secret"})
+	client := startStack(t, &fakeGuest{token: "unused"})
 	ctx := authed(context.Background(), "uid1", "ns1", "ghost")
 
-	t.Setenv("GATEWAY_GUEST_TOKEN", "guest-secret")
 	_, err := client.ReadFile(ctx, &gwpb.ReadFileRequest{
 		Vm: &gwpb.VMRef{Namespace: "ns1", VmName: "ghost"}, Path: "/x",
 	})

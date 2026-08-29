@@ -14,18 +14,19 @@ OpenSpec task B.1.1 is complete.
 
 ## Release Status
 
-The RPC implementation and its unit/integration coverage exist, but the chart
-does not yet provision the guest control credential required by the gateway.
-The gateway also exposes plaintext gRPC through a node `hostPort`; it has no
-public endpoint discovery, TLS, or mTLS configuration.
+The RPC implementation and its unit/integration coverage exist. The sandbox
+controller derives a distinct per-sandbox guest-control token from its cluster
+HMAC key and injects it into the backing VM; the gateway derives the same token
+only after authenticating the caller's sandbox scope. The gateway still exposes
+plaintext gRPC through a node `hostPort`; it has no public endpoint discovery,
+TLS, or mTLS configuration.
 
 Do not expose port `9600` outside a trusted cluster network. Do not build a
 production integration on this API. The release gate is:
 
-1. Per-guest control-token delivery to the gateway and guest.
-2. Protected endpoint discovery plus TLS or mTLS transport.
-3. A chart-installed end-to-end gateway test.
-4. A published, versioned TypeScript SDK and executable quickstart.
+1. Protected endpoint discovery plus TLS or mTLS transport.
+2. A chart-installed end-to-end gateway test.
+3. A published, versioned TypeScript SDK and executable quickstart.
 
 ## Contract Source
 

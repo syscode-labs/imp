@@ -26,8 +26,8 @@ func (s *Server) requireVM(ctx context.Context, vm *gwpb.VMRef) (string, error) 
 }
 
 // withSession runs fn with a freshly opened guest session for socket.
-func (s *Server) withSession(socket string, fn func(ctx context.Context, c sandboxpb.SandboxControlClient, sessionID string) error) error {
-	guestToken, err := guestToken()
+func (s *Server) withSession(ctx context.Context, socket string, fn func(ctx context.Context, c sandboxpb.SandboxControlClient, sessionID string) error) error {
+	guestToken, err := s.guestToken(ctx)
 	if err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func (s *Server) ReadFile(ctx context.Context, req *gwpb.ReadFileRequest) (*gwpb
 		return nil, err
 	}
 	var resp *gwpb.ReadFileResponse
-	err = s.withSession(socket, func(ctx context.Context, c sandboxpb.SandboxControlClient, session string) error {
+	err = s.withSession(ctx, socket, func(ctx context.Context, c sandboxpb.SandboxControlClient, session string) error {
 		r, err := c.ReadFile(ctx, &sandboxpb.ReadFileRequest{SessionId: session, Path: req.GetPath()})
 		if err != nil {
 			return err
@@ -64,7 +64,7 @@ func (s *Server) WriteFile(ctx context.Context, req *gwpb.WriteFileRequest) (*gw
 		return nil, err
 	}
 	var resp *gwpb.WriteFileResponse
-	err = s.withSession(socket, func(ctx context.Context, c sandboxpb.SandboxControlClient, session string) error {
+	err = s.withSession(ctx, socket, func(ctx context.Context, c sandboxpb.SandboxControlClient, session string) error {
 		w, err := c.WriteFile(ctx, &sandboxpb.WriteFileRequest{
 			SessionId: session,
 			Path:      req.GetPath(),
@@ -87,7 +87,7 @@ func (s *Server) ListDir(ctx context.Context, req *gwpb.ListDirRequest) (*gwpb.L
 		return nil, err
 	}
 	var resp *gwpb.ListDirResponse
-	err = s.withSession(socket, func(ctx context.Context, c sandboxpb.SandboxControlClient, session string) error {
+	err = s.withSession(ctx, socket, func(ctx context.Context, c sandboxpb.SandboxControlClient, session string) error {
 		l, err := c.ListDir(ctx, &sandboxpb.ListDirRequest{SessionId: session, Path: req.GetPath()})
 		if err != nil {
 			return err
@@ -113,7 +113,7 @@ func (s *Server) Stat(ctx context.Context, req *gwpb.StatRequest) (*gwpb.StatRes
 		return nil, err
 	}
 	var resp *gwpb.StatResponse
-	err = s.withSession(socket, func(ctx context.Context, c sandboxpb.SandboxControlClient, session string) error {
+	err = s.withSession(ctx, socket, func(ctx context.Context, c sandboxpb.SandboxControlClient, session string) error {
 		st, err := c.Stat(ctx, &sandboxpb.StatRequest{SessionId: session, Path: req.GetPath()})
 		if err != nil {
 			return err
@@ -134,7 +134,7 @@ func (s *Server) Remove(ctx context.Context, req *gwpb.RemoveRequest) (*gwpb.Rem
 	if err != nil {
 		return nil, err
 	}
-	err = s.withSession(socket, func(ctx context.Context, c sandboxpb.SandboxControlClient, session string) error {
+	err = s.withSession(ctx, socket, func(ctx context.Context, c sandboxpb.SandboxControlClient, session string) error {
 		_, err := c.Remove(ctx, &sandboxpb.RemoveRequest{
 			SessionId: session,
 			Path:      req.GetPath(),

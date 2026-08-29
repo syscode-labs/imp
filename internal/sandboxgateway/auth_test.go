@@ -24,6 +24,14 @@ func TestVerify(t *testing.T) {
 	assert.False(t, Verify([]byte("other"), "uid", "ns", "vm", token))
 }
 
+func TestGuestToken_isDistinctFromSessionToken(t *testing.T) {
+	key := []byte("k")
+	session := Token(key, "uid", "ns", "vm")
+	guest := GuestToken(key, "uid", "ns", "vm")
+	assert.NotEqual(t, session, guest)
+	assert.NotEqual(t, guest, GuestToken(key, "uid", "ns", "other-vm"))
+}
+
 func TestVSOCKPath(t *testing.T) {
 	assert.Equal(t,
 		"/run/imp/team-a-sb1.vsock",

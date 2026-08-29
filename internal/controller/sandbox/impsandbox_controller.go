@@ -393,6 +393,12 @@ func (r *ImpSandboxReconciler) ensureVM(ctx context.Context, sb *sandboxv1alpha1
 			NodeSelector: sb.Spec.NodeSelector,
 			ExpireAfter:  sb.Spec.ExpireAfter.DeepCopy(),
 		}
+		if len(r.SessionHMACKey) > 0 {
+			vm.Spec.Env = []corev1.EnvVar{{
+				Name:  "IMP_SANDBOX_CONTROL_TOKEN",
+				Value: sandboxgateway.GuestToken(r.SessionHMACKey, string(sb.UID), sb.Namespace, vmName),
+			}}
+		}
 	}
 
 	existing := &impv1alpha1.ImpVM{}

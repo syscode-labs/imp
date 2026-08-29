@@ -23,7 +23,7 @@ func (s *Server) Exec(req *gwpb.ExecRequest, stream gwpb.SandboxGateway_ExecServ
 	if len(req.GetCommand()) == 0 {
 		return status.Error(codes.InvalidArgument, "command is required")
 	}
-	guestToken, err := guestToken()
+	guestToken, err := s.guestToken(stream.Context())
 	if err != nil {
 		return err
 	}

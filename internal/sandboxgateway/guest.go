@@ -64,14 +64,10 @@ func closeGuestSession(ctx context.Context, c sandboxpb.SandboxControlClient, se
 	_, _ = c.CloseSession(ctx, &sandboxpb.CloseSessionRequest{SessionId: sessionID}) //nolint:errcheck
 }
 
-// guestToken reads the shared guest control token. v1 uses one shared
-// token provisioned to guests via the VM env; per-sandbox guest tokens are
-// a Phase C hardening item.
-func guestToken() (string, error) {
-	t := os.Getenv("GATEWAY_GUEST_TOKEN")
-	if t == "" {
-		return "", status.Error(codes.FailedPrecondition,
-			"gateway missing GATEWAY_GUEST_TOKEN; guest would refuse sessions")
+func (s *Server) guestToken(ctx context.Context) (string, error) {
+	p, ok := principalFromContext(ctx)
+	if !ok {
+		return "", status.Error(codes.Unauthenticated, "missing authenticated sandbox identity")
 	}
-	return t, nil
+	return GuestToken(s.hmacKey, p.uid, p.namespace, p.vmName), nil
 }

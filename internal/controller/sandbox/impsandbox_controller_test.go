@@ -345,6 +345,12 @@ func TestSessionSecret_mintedAndDelivered(t *testing.T) {
 	want := sandboxgateway.Token([]byte("test-cluster-key-32-bytes-long!!"), "uid-1234", "team-a", "sb")
 	assert.Equal(t, want, string(sec.Data["token"]))
 
+	vm := &impv1alpha1.ImpVM{}
+	require.NoError(t, f.r.Get(context.Background(), types.NamespacedName{Namespace: "team-a", Name: "sb"}, vm))
+	require.Len(t, vm.Spec.Env, 1)
+	assert.Equal(t, "IMP_SANDBOX_CONTROL_TOKEN", vm.Spec.Env[0].Name)
+	assert.Equal(t, sandboxgateway.GuestToken([]byte("test-cluster-key-32-bytes-long!!"), "uid-1234", "team-a", "sb"), vm.Spec.Env[0].Value)
+
 	got := &sandboxv1alpha1.ImpSandbox{}
 	require.NoError(t, f.r.Get(context.Background(), types.NamespacedName{Namespace: "team-a", Name: "sb"}, got))
 	require.NotNil(t, got.Status.SessionSecretRef)
