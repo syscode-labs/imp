@@ -6,7 +6,7 @@
  ( ●  ● )~~✦ ║║║║╠═╝
   \ ‿  /     ╩╩ ╩╚
   (    )~,
-  /\  /\     v0.1.0 · imp.dev
+   /\  /\     v0.9.0 · impvm.dev
 ```
 
 [![CI](https://github.com/syscode-labs/imp/actions/workflows/ci.yml/badge.svg)](https://github.com/syscode-labs/imp/actions/workflows/ci.yml)
@@ -27,6 +27,8 @@ A microVM is a very small virtual machine with stronger isolation than a contain
 
 <br clear="left" />
 
+> **Alpha:** Imp is `v1alpha1` across CRDs; APIs/operations may change or break. Pin images by digest in production.
+
 It provides CRDs for VM lifecycle, VM networking, snapshots, migrations, warm pools, and runner pools, with Cilium-first networking support, VXLAN fallback for non-Cilium CNIs, and built-in metrics for VM state, latency, and health.
 
 ## What Imp Manages
@@ -39,6 +41,10 @@ It provides CRDs for VM lifecycle, VM networking, snapshots, migrations, warm po
 - `ImpWarmPool`: prewarmed VMs from snapshots
 - `ImpVMRunnerPool`: VM pools for CI-style runner workloads
 - `ImpVMClass`, `ImpVMTemplate`, `ClusterImpConfig`, `ClusterImpNodeProfile`
+
+### ImpSandbox (optional)
+
+ImpSandbox is an optional add-on for AI-agent sandbox workloads — install the `imp-sandbox` chart separately (`oci://ghcr.io/syscode-labs/charts/imp-sandbox --version 0.9.0`). See the portal sandbox journey at `https://impvm.dev/sandbox/` or `charts/imp-sandbox/` in this repo. Core ImpVM operation does not require it — imp-sandbox is optional.
 
 ## Architecture
 
@@ -76,13 +82,24 @@ cluster.
 kubectl create namespace imp-system --dry-run=client -o yaml | kubectl apply -f -
 kubectl label namespace imp-system pod-security.kubernetes.io/enforce=privileged --overwrite
 kubectl get nodes -l imp/enabled=true
-helm upgrade --install imp ./charts/imp -n imp-system --create-namespace
+helm upgrade --install imp oci://ghcr.io/syscode-labs/charts/imp --version 0.9.0 -n imp-system --create-namespace
 kubectl -n imp-system get pods
 ```
+
+Alternative (pull then install from local chart archive):
+
+```sh
+helm pull oci://ghcr.io/syscode-labs/charts/imp --version 0.9.0
+helm upgrade --install imp ./imp-0.9.0.tgz -n imp-system --create-namespace
+```
+
+Pin images by digest in production values (`agent.image.digest`, `operator.image.digest`). Verify digests before promotion.
 
 The chart defaults `agent.nodeSelector` and `kvm.preflight.nodeSelector` to
 `imp/enabled=true`. Keep that required selector when adding placement
 constraints.
+
+> **Runtime:** `imp-runtime` DaemonSet uses `updateStrategy: OnDelete` — it never rolls or drains automatically. Cordon/drain the node and delete the runtime pod manually to roll it. `pressureLifecycle.enabled` is `false` by default (opt-in); when enabled the operator suspends resident ImpVMs — largest memory first — on nodes reporting `MemoryPressure` until it clears and never auto-resumes.
 
 ### Production Posture
 
@@ -218,7 +235,7 @@ See [examples/runner-pool-expiration](examples/runner-pool-expiration/README.md)
 When using `ImpVMRunnerPool` with GitHub Actions, GitHub does not read pool objects directly.
 It only sees registered self-hosted runner instances.
 
-Read: [github-capacity-signaling.md](https://github.com/syscode-labs/syscode-ai-internal-plans/blob/main/projects/imp/docs/runner-pool/github-capacity-signaling.md)
+Read: [Runner Pool — Capacity Signaling](https://impvm.dev/manual/runner-pool#capacity-signaling) and [examples/github-scaling-explicit](examples/github-scaling-explicit/README.md)
 
 ## Runner Scaling Mode (GitHub-First)
 
@@ -236,7 +253,7 @@ This avoids hidden capacity assumptions and makes scaling intent explicit.
 
 Example:
 - [examples/github-scaling-explicit](examples/github-scaling-explicit/README.md)
-- [scaling.md](https://github.com/syscode-labs/syscode-ai-internal-plans/blob/main/projects/imp/docs/runner-pool/scaling.md)
+- [Runner Pool Scaling — Manual](https://impvm.dev/manual/runner-pool#scaling)
 
 ## Development
 
@@ -410,13 +427,31 @@ sequenceDiagram
 
 ## Distribution
 
-Create a single install bundle:
+### OCI Chart (recommended)
+
+Imp publishes versioned OCI charts. Install directly from the registry or pull first for air-gapped use:
+
+```sh
+helm upgrade --install imp oci://ghcr.io/syscode-labs/charts/imp --version 0.9.0 -n imp-system --create-namespace
+# pull alternative
+helm pull oci://ghcr.io/syscode-labs/charts/imp --version 0.9.0
+```
+
+Optional add-on:
+
+```sh
+helm upgrade --install imp-sandbox oci://ghcr.io/syscode-labs/charts/imp-sandbox --version 0.9.0 -n imp-sandbox-system --create-namespace
+```
+
+### Raw Manifest Bundle
+
+Create a single install bundle from Kustomize manifests:
 
 ```sh
 make build-installer IMG=<registry>/imp-operator:<tag>
 ```
 
-This generates `dist/install.yaml`.
+This generates `dist/install.yaml` (CRDs, RBAC, Deployment) for `kubectl apply -f dist/install.yaml` installs without Helm.
 
 ## Contributing
 
