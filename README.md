@@ -74,7 +74,11 @@ cluster.
 
 ```sh
 kubectl create namespace imp-system --dry-run=client -o yaml | kubectl apply -f -
-kubectl label namespace imp-system pod-security.kubernetes.io/enforce=privileged --overwrite
+kubectl label namespace imp-system \
+  pod-security.kubernetes.io/enforce=privileged \
+  pod-security.kubernetes.io/audit=privileged \
+  pod-security.kubernetes.io/warn=privileged \
+  --overwrite
 kubectl get nodes -l imp/enabled=true
 helm upgrade --install imp ./charts/imp -n imp-system --create-namespace
 kubectl -n imp-system get pods
