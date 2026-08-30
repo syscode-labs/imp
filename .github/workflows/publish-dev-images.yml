@@ -55,7 +55,7 @@ jobs:
         run: |
           jq -n --arg commit_sha "$SHA" --arg agent "ghcr.io/syscode-labs/imp-agent@$AGENT_DIGEST" '{commit_sha:$commit_sha,agent:$agent}' > image-digests.json
           cat image-digests.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: image-digests-${{ steps.target.outputs.sha }}
           path: image-digests.json
