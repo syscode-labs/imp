@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 
 	"github.com/google/go-github/v67/github"
@@ -52,6 +54,49 @@ func NewForgejoDriver(token, serverURL, scope string, hmacSecret []byte) (*GitHu
 		return nil, fmt.Errorf("forgejo client: %w", err)
 	}
 	return newGitHubDriverWithClient(client, scope, hmacSecret)
+}
+
+// NewGitHubAppDriver creates a driver for github.com authenticated as a
+// GitHub App installation. The source mints installation tokens on demand
+// (re-minted near expiry or after a 401; never refreshed) and signs each App
+// JWT from the private key held in creds.
+func NewGitHubAppDriver(creds GitHubAppCredentials, scope string, hmacSecret []byte) (*GitHubDriver, error) {
+	src, err := newGitHubAppSource(creds)
+	if err != nil {
+		return nil, err
+	}
+	client := github.NewClient(&http.Client{Transport: src})
+	return newGitHubDriverWithClient(client, scope, hmacSecret)
+}
+
+// RoundTrip implements http.RoundTripper: it supplies a valid installation
+// token on every request, minting when the cached one is stale, and retries
+// exactly once on a 401 after invalidating the cache (401 may mean the
+// installation was revoked or the App's permissions changed — not just expiry).
+func (s *githubAppSource) RoundTrip(req *http.Request) (*http.Response, error) {
+	tok, err := s.installationTokenFor(req.Context())
+	if err != nil {
+		return nil, err
+	}
+	clone := req.Clone(req.Context())
+	clone.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := http.DefaultTransport.RoundTrip(clone)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode == http.StatusUnauthorized {
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		s.invalidate()
+		tok, err = s.installationTokenFor(req.Context())
+		if err != nil {
+			return nil, err
+		}
+		clone = req.Clone(req.Context())
+		clone.Header.Set("Authorization", "Bearer "+tok)
+		return http.DefaultTransport.RoundTrip(clone)
+	}
+	return resp, nil
 }
 
 func newGitHubDriverWithClient(client *github.Client, scope string, hmacSecret []byte) (*GitHubDriver, error) {

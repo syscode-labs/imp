@@ -60,6 +60,17 @@ type RunnerPlatformSpec struct {
 
 	// CredentialsSecret names a Secret containing the registration token or PAT.
 	CredentialsSecret string `json:"credentialsSecret"`
+
+	// TokenSource selects how the credential in CredentialsSecret is interpreted.
+	//   - "pat" (default): a static PAT (github-actions) or platform token.
+	//     Deprecated for github-actions; logs a deprecation warning.
+	//   - "github_app": the Secret holds the GitHub App fields
+	//     github-app-private-key (PEM), github-app-id, github-app-installation-id.
+	//     Imp signs a short-lived RS256 JWT and exchanges it for a one-hour
+	//     installation token on demand (re-minted, never refreshed).
+	// +kubebuilder:validation:Enum=pat;github_app
+	// +optional
+	TokenSource string `json:"tokenSource,omitempty"`
 }
 
 // RunnerScopeSpec selects org-level or repo-level runner registration.

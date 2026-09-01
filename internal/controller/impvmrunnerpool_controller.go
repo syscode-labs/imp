@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -339,10 +340,6 @@ func defaultRunnerDriverFactory(
 	}, &creds); err != nil {
 		return nil, err
 	}
-	token := pickSecretValue(creds.Data, "token")
-	if token == "" {
-		return nil, fmt.Errorf("credentials secret %s/%s has no token value", pool.Namespace, creds.Name)
-	}
 
 	scope, err := platformScope(pool)
 	if err != nil {
@@ -351,10 +348,34 @@ func defaultRunnerDriverFactory(
 
 	switch pool.Spec.Platform.Type {
 	case "github-actions":
+		if pool.Spec.Platform.TokenSource == "github_app" {
+			appCreds, err := githubAppCredsFromSecret(creds.Data)
+			if err != nil {
+				return nil, fmt.Errorf("credentials secret %s/%s: %w", pool.Namespace, creds.Name, err)
+			}
+			return runner.NewGitHubAppDriver(appCreds, scope, nil)
+		}
+		log := logf.FromContext(ctx)
+		if pool.Spec.Platform.TokenSource == "pat" {
+			log.Info("runner pool uses deprecated PAT token source; migrate to tokenSource: github_app",
+				"pool", pool.Name, "namespace", pool.Namespace)
+		}
+		token := pickSecretValue(creds.Data, "token")
+		if token == "" {
+			return nil, fmt.Errorf("credentials secret %s/%s has no token value", pool.Namespace, creds.Name)
+		}
 		return runner.NewGitHubDriver(token, scope, nil)
 	case "forgejo":
+		token := pickSecretValue(creds.Data, "token")
+		if token == "" {
+			return nil, fmt.Errorf("credentials secret %s/%s has no token value", pool.Namespace, creds.Name)
+		}
 		return runner.NewForgejoDriver(token, pool.Spec.Platform.ServerURL, scope, nil)
 	case "gitlab":
+		token := pickSecretValue(creds.Data, "token")
+		if token == "" {
+			return nil, fmt.Errorf("credentials secret %s/%s has no token value", pool.Namespace, creds.Name)
+		}
 		return runner.NewGitLabDriver(token, pool.Spec.Platform.ServerURL, scope, nil)
 	default:
 		return nil, fmt.Errorf("unsupported platform type %q", pool.Spec.Platform.Type)
@@ -398,6 +419,23 @@ func pickSecretValue(m map[string][]byte, preferredKey string) string {
 		}
 	}
 	return ""
+}
+
+// githubAppCredsFromSecret extracts the three-field GitHub App secret surface.
+func githubAppCredsFromSecret(data map[string][]byte) (runner.GitHubAppCredentials, error) {
+	pemStr := pickSecretValue(data, "github-app-private-key")
+	if pemStr == "" {
+		return runner.GitHubAppCredentials{}, fmt.Errorf("missing github-app-private-key (PEM)")
+	}
+	appID, err := strconv.ParseInt(strings.TrimSpace(pickSecretValue(data, "github-app-id")), 10, 64)
+	if err != nil {
+		return runner.GitHubAppCredentials{}, fmt.Errorf("github-app-id: %w", err)
+	}
+	instID, err := strconv.ParseInt(strings.TrimSpace(pickSecretValue(data, "github-app-installation-id")), 10, 64)
+	if err != nil {
+		return runner.GitHubAppCredentials{}, fmt.Errorf("github-app-installation-id: %w", err)
+	}
+	return runner.GitHubAppCredentials{PrivateKeyPEM: pemStr, AppID: appID, Installation: instID}, nil
 }
 
 func runnerDemandFromAnnotation(pool *impv1alpha1.ImpVMRunnerPool, enabled bool) int32 {
