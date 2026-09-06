@@ -127,12 +127,17 @@ func (b *Builder) buildFromImage(ctx context.Context, img v1.Image, opts ...Buil
 		return "", fmt.Errorf("write init: %w", err)
 	}
 
-	// Calculate size + 64 MiB headroom, then assemble ext4.
+	// Calculate the payload size and leave enough room for ext4 metadata.
 	size, err := dirSize(tmpDir)
 	if err != nil {
 		return "", fmt.Errorf("dir size: %w", err)
 	}
-	sizeMiB := size/(1024*1024) + 64
+	sizeMiB := (size + (1024*1024 - 1)) / (1024 * 1024)
+	headroomMiB := sizeMiB / 10
+	if headroomMiB < 256 {
+		headroomMiB = 256
+	}
+	sizeMiB += headroomMiB
 
 	// Write to a temp file first, then atomically rename to the cache path.
 	// This prevents a partially-written file from poisoning the cache.
