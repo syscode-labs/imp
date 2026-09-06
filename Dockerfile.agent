@@ -10,10 +10,8 @@ COPY cmd/runtime/ cmd/runtime/
 COPY internal/ internal/
 ARG TARGETARCH
 RUN --mount=type=cache,id=agent-gomod,target=/root/go/pkg/mod \
-    --mount=type=cache,id=agent-gobuild,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o agent ./cmd/agent
 RUN --mount=type=cache,id=agent-gomod,target=/root/go/pkg/mod \
-    --mount=type=cache,id=agent-gobuild,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o runtime ./cmd/runtime
 
 FROM golang:1.26-alpine AS guest-agent-builder
