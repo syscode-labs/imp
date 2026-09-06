@@ -578,6 +578,15 @@ spec:
                     - cool-down
                     type: string
                 type: object
+              runnerConfigSecret:
+                description: |-
+                  RunnerConfigSecret names a Secret in the VM namespace carrying the
+                  platform's one-time runner registration payload (key: "jitconfig").
+                  When set, the node agent launches /usr/local/bin/runner in the guest
+                  after boot, passing the payload via the guest agent; the Secret is
+                  deleted after handoff. Set by the ImpVMRunnerPool controller; do not
+                  set manually.
+                type: string
               runnerLayer:
                 description: |-
                   RunnerLayer is an optional OCI image whose filesystem layers are composited

@@ -25,6 +25,8 @@ rules:
   resources:
   - secrets
   verbs:
+  - create
+  - delete
   - get
 - apiGroups:
   - cilium.io

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -39,6 +40,16 @@ func (s *Server) Exec(ctx context.Context, req *pb.ExecRequest) (*pb.ExecRespons
 	cmd := exec.CommandContext(ctx, req.Command[0], req.Command[1:]...) //nolint:gosec
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
+	if len(req.Env) > 0 {
+		// Command-specified vars are applied on top of the agent's own
+		// environment. Values are caller-supplied secrets (e.g. runner JIT
+		// config): never log them.
+		env := make([]string, 0, len(req.Env))
+		for k, v := range req.Env {
+			env = append(env, k+"="+v)
+		}
+		cmd.Env = append(os.Environ(), env...)
+	}
 
 	exitCode := int32(0)
 	if err := cmd.Run(); err != nil {

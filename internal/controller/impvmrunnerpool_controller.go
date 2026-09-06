@@ -46,6 +46,13 @@ type runnerQueueDepthReader interface {
 	QueueDepth(ctx context.Context) (int, error)
 }
 
+// runnerJITMinter is the subset of runner.PlatformDriver needed to register a
+// runner VM. runnerQueueDepthReader already embeds the rest of the usage
+// surface; drivers returned by the factory satisfy both.
+type runnerJITMinter interface {
+	GetJITConfig(ctx context.Context) (*runner.JITConfig, error)
+}
+
 type RunnerDriverFactory func(
 	ctx context.Context,
 	c client.Client,
@@ -62,7 +69,7 @@ const (
 // +kubebuilder:rbac:groups=imp.dev,resources=impvmrunnerpools/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=imp.dev,resources=impvmtemplates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;create;delete
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;create;delete
 
 func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
@@ -318,7 +325,63 @@ func (r *ImpVMRunnerPoolReconciler) createRunnerVM(ctx context.Context, pool *im
 	if err := ctrl.SetControllerReference(pool, vm, r.Scheme); err != nil {
 		return err
 	}
-	return r.Create(ctx, vm)
+	if err := r.Create(ctx, vm); err != nil {
+		return err
+	}
+	// Mint the one-time runner registration payload and store it in a Secret the
+	// node agent hands to the guest (see internal/agent/runnerlaunch). Created
+	// after the VM so the owner reference resolves; a mint failure orphans no VM
+	// because the next reconcile deletes terminal/failed members and this VM
+	// boots only to serve one job — without a payload it is useless. Minting
+	// after Create also means the reconcile loop's backoff covers GitHub 429s.
+	return r.mintRunnerConfig(ctx, pool, vm)
+}
+
+// mintRunnerConfig exchanges the pool credential for a one-time JIT config
+// and stores it in a Secret owned by vm. It sets vm.Spec.RunnerConfigSecret.
+func (r *ImpVMRunnerPoolReconciler) mintRunnerConfig(
+	ctx context.Context,
+	pool *impv1alpha1.ImpVMRunnerPool,
+	vm *impv1alpha1.ImpVM,
+) error {
+	factory := r.DriverFactory
+	if factory == nil {
+		factory = defaultRunnerDriverFactory
+	}
+	d, err := factory(ctx, r.Client, pool)
+	if err != nil {
+		return fmt.Errorf("build platform driver: %w", err)
+	}
+	minter, ok := d.(runnerJITMinter)
+	if !ok {
+		return fmt.Errorf("platform driver for %s does not support JIT runner registration", pool.Spec.Platform.Type)
+	}
+	jit, err := minter.GetJITConfig(ctx)
+	if err != nil {
+		return fmt.Errorf("mint runner JIT config: %w", err)
+	}
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        fmt.Sprintf("%s-jitconfig-%d", vm.Name, time.Now().UnixNano()),
+			Namespace:   vm.Namespace,
+			Labels:      map[string]string{impv1alpha1.LabelRunnerPool: pool.Name},
+			Annotations: map[string]string{"imp.dev/runner-name": jit.RunnerName},
+		},
+		Data: map[string][]byte{
+			"jitconfig": []byte(jit.EncodedConfig),
+		},
+	}
+	if err := ctrl.SetControllerReference(vm, secret, r.Scheme); err != nil {
+		return err
+	}
+	if err := r.Create(ctx, secret); err != nil {
+		return err
+	}
+
+	base := vm.DeepCopy()
+	vm.Spec.RunnerConfigSecret = secret.Name
+	return r.Patch(ctx, vm, client.MergeFrom(base))
 }
 
 func (r *ImpVMRunnerPoolReconciler) SetupWithManager(mgr ctrl.Manager) error {

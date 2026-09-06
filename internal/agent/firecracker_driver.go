@@ -463,6 +463,12 @@ func (d *FirecrackerDriver) socketPath(vm *impdevv1alpha1.ImpVM) string {
 	return filepath.Join(d.SocketDir, vm.Namespace+"-"+vm.Name+".sock")
 }
 
+// VSOCKPath returns the path of the VM's VSOCK unix socket proxy. It is the
+// dial target for the guest agent (used by probes and the runner launcher).
+func (d *FirecrackerDriver) VSOCKPath(vm *impdevv1alpha1.ImpVM) string {
+	return vsockPathFromSocket(d.socketPath(vm))
+}
+
 // buildConfig constructs a firecracker.Config for the given VM class and rootfs.
 func (d *FirecrackerDriver) buildConfig(
 	class *impdevv1alpha1.ImpVMClass,

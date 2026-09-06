@@ -29,6 +29,7 @@ import (
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent/network"
+	"github.com/syscode-labs/imp/internal/agent/runnerlaunch"
 	"github.com/syscode-labs/imp/internal/tracing"
 )
 
@@ -216,8 +217,44 @@ func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha
 	// Register VTEP entry so the operator and other nodes know where this VM lives.
 	r.ensureVTEPAndFDB(ctx, vm, state.IP)
 
+	// Runner pool VMs: hand the one-time runner config to the guest and
+	// launch the runner. Fire-and-forget; exit handling stays with the
+	// normal process-exit path (ephemeral → Succeeded).
+	r.maybeLaunchRunner(ctx, vm)
+
 	log.Info("VM started", "pid", pid, "ip", state.IP)
 	return ctrl.Result{}, nil
+}
+
+// maybeLaunchRunner starts the runner handoff goroutine when the VM carries
+// a runner config Secret reference. Best-effort: failures are recorded as
+// events; the VM's own exit path drives its lifecycle.
+func (r *ImpVMReconciler) maybeLaunchRunner(ctx context.Context, vm *impdevv1alpha1.ImpVM) {
+	if vm.Spec.RunnerConfigSecret == "" {
+		return
+	}
+	log := logf.FromContext(ctx)
+	sock, ok := r.Driver.(interface {
+		VSOCKPath(vm *impdevv1alpha1.ImpVM) string
+	})
+	if !ok {
+		log.Error(nil, "driver does not expose a guest VSOCK; cannot launch runner",
+			"secret", vm.Spec.RunnerConfigSecret)
+		return
+	}
+	launch := &runnerlaunch.Launcher{
+		Client: r.Client,
+		Sock:   sock.VSOCKPath(vm),
+	}
+	go func() {
+		res := launch.Run(context.Background(), vm)
+		if res.Err != nil {
+			log.Error(res.Err, "runner launch failed", "vm", vm.Name, "secret", vm.Spec.RunnerConfigSecret)
+			if r.Recorder != nil {
+				r.Recorder.Event(vm, corev1.EventTypeWarning, "RunnerLaunchFailed", res.Err.Error())
+			}
+		}
+	}()
 }
 
 // ensureVTEPAndFDB registers vm's VTEP entry (under a child span) and syncs the
@@ -249,6 +286,11 @@ func (r *ImpVMReconciler) ensureVTEPAndFDB(ctx context.Context, vm *impdevv1alph
 
 func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+
+	// The runner Secret reference may be patched after the VM reaches Running.
+	// Retry the handoff from the Running reconcile path as well as the initial
+	// start path; the launcher is idempotent because the Secret is one-time.
+	r.maybeLaunchRunner(ctx, vm)
 
 	// Suspend requested: transition to Suspending so the VM is snapshotted and
 	// its memory freed. The Suspending handler does the actual work.

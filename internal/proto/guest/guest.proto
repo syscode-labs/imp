@@ -13,6 +13,9 @@ service GuestAgent {
 message ExecRequest {
   repeated string command = 1;
   int32 timeout_seconds = 2;
+  // Environment variables for the command. Applied on top of the guest
+  // agent's own environment (command wins). Never logged.
+  map<string, string> env = 3;
 }
 
 message ExecResponse {

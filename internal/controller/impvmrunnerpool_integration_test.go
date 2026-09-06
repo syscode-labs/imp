@@ -11,6 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/runner"
 )
 
 func i32(v int32) *int32 { return &v }
@@ -78,7 +79,13 @@ var _ = Describe("ImpVMRunnerPool scaling integration", func() {
 		Expect(k8sClient.Create(ctx, pool)).To(Succeed())
 		DeferCleanup(func() { _ = k8sClient.Delete(ctx, pool) })
 
-		r := &ImpVMRunnerPoolReconciler{Client: k8sClient, Scheme: k8sClient.Scheme()}
+		r := &ImpVMRunnerPoolReconciler{
+			Client: k8sClient,
+			Scheme: k8sClient.Scheme(),
+			DriverFactory: func(_ context.Context, _ client.Client, _ *impv1alpha1.ImpVMRunnerPool) (runnerQueueDepthReader, error) {
+				return &fakeJITDriver{jit: &runner.JITConfig{EncodedConfig: "test", RunnerName: "test"}}, nil
+			},
+		}
 		_, err := r.Reconcile(ctx, reconcile.Request{
 			NamespacedName: types.NamespacedName{Name: pool.Name, Namespace: pool.Namespace},
 		})
