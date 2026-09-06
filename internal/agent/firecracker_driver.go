@@ -168,6 +168,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 
 	// 2. Build ext4 rootfs from OCI image (cached by digest).
 	var buildOpts []rootfs.BuildOption
+	buildOpts = append(buildOpts, rootfs.WithDiskSizeGiB(class.Spec.DiskGiB))
 	if gaEnabled {
 		buildOpts = append(buildOpts, rootfs.WithGuestAgent(d.guestAgentPath()))
 	}

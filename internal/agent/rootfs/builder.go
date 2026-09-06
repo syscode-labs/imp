@@ -127,7 +127,7 @@ func (b *Builder) buildFromImage(ctx context.Context, img v1.Image, opts ...Buil
 		return "", fmt.Errorf("write init: %w", err)
 	}
 
-	// Calculate the payload size and leave enough room for ext4 metadata.
+	// Calculate the minimum size needed for the payload and ext4 metadata.
 	size, err := dirSize(tmpDir)
 	if err != nil {
 		return "", fmt.Errorf("dir size: %w", err)
@@ -137,12 +137,23 @@ func (b *Builder) buildFromImage(ctx context.Context, img v1.Image, opts ...Buil
 	if headroomMiB < 256 {
 		headroomMiB = 256
 	}
-	sizeMiB += headroomMiB
+	minimumMiB := sizeMiB + headroomMiB
+	imageMiB := minimumMiB
+	for _, opt := range opts {
+		if sized, ok := opt.(interface{ DiskSizeMiB() int64 }); ok {
+			configuredMiB := sized.DiskSizeMiB()
+			if configuredMiB < minimumMiB {
+				return "", fmt.Errorf("rootfs requires at least %d MiB, configured disk is %d MiB", minimumMiB, configuredMiB)
+			}
+			imageMiB = configuredMiB
+			break
+		}
+	}
 
 	// Write to a temp file first, then atomically rename to the cache path.
 	// This prevents a partially-written file from poisoning the cache.
 	tmpExt4 := dest + ".tmp"
-	if err := buildExt4(ctx, tmpDir, tmpExt4, sizeMiB); err != nil {
+	if err := buildExt4(ctx, tmpDir, tmpExt4, imageMiB); err != nil {
 		os.Remove(tmpExt4) //nolint:errcheck
 		return "", fmt.Errorf("build ext4: %w", err)
 	}
