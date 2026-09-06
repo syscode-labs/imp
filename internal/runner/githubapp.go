@@ -155,7 +155,7 @@ func (s *githubAppSource) mint(ctx context.Context) (string, error) {
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	switch {
-	case resp.StatusCode == http.StatusOK:
+	case resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated:
 		var out struct {
 			Token     string    `json:"token"`
 			ExpiresAt time.Time `json:"expires_at"`
