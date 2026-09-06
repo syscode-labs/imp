@@ -48,6 +48,7 @@ jobs:
           file: Dockerfile.agent
           platforms: linux/amd64
           push: true
+          no-cache: true
           tags: ghcr.io/syscode-labs/imp-agent:sha-${{ steps.target.outputs.sha }}
       - env:
           SHA: ${{ steps.target.outputs.sha }}
