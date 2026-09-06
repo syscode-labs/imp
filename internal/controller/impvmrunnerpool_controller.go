@@ -69,7 +69,7 @@ const (
 // +kubebuilder:rbac:groups=imp.dev,resources=impvmrunnerpools/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=imp.dev,resources=impvmtemplates,verbs=get;list;watch
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;create;delete
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;create;delete
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;delete
 
 func (r *ImpVMRunnerPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)

@@ -28,6 +28,8 @@ rules:
   - create
   - delete
   - get
+  - list
+  - watch
 - apiGroups:
   - cilium.io
   resources:
