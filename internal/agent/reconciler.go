@@ -637,15 +637,8 @@ func (r *ImpVMReconciler) handleResuming(ctx context.Context, vm *impdevv1alpha1
 	return ctrl.Result{}, nil
 }
 
-// finishSucceeded clears spec.nodeName (triggers operator finalizer) + sets phase=Succeeded.
+// finishSucceeded marks the VM terminal; the operator deletes ephemeral terminal VMs.
 func (r *ImpVMReconciler) finishSucceeded(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
-	// Spec patch first — spec.nodeName is a spec field, not a status field.
-	specBase := vm.DeepCopy()
-	vm.Spec.NodeName = ""
-	if err := r.Patch(ctx, vm, client.MergeFrom(specBase)); err != nil {
-		return ctrl.Result{}, err
-	}
-	// Status patch — take base AFTER spec patch so resourceVersion is current.
 	base := vm.DeepCopy()
 	vm.Status.Phase = impdevv1alpha1.VMPhaseSucceeded
 	vm.Status.StartedAt = nil
