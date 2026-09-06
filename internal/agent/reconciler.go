@@ -674,13 +674,8 @@ func vmLifecycleOrDefault(vm *impdevv1alpha1.ImpVM) impdevv1alpha1.VMLifecycle {
 	return vm.Spec.Lifecycle
 }
 
-// clearOwnership clears spec.nodeName + status ip/pid after Terminating stop.
+// clearOwnership clears status IP/PID after Terminating stop.
 func (r *ImpVMReconciler) clearOwnership(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
-	specBase := vm.DeepCopy()
-	vm.Spec.NodeName = ""
-	if err := r.Patch(ctx, vm, client.MergeFrom(specBase)); err != nil {
-		return ctrl.Result{}, err
-	}
 	base := vm.DeepCopy()
 	vm.Status.IP = ""
 	vm.Status.RuntimePID = 0
