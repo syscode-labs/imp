@@ -170,7 +170,12 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	var buildOpts []rootfs.BuildOption
 	buildOpts = append(buildOpts, rootfs.WithDiskSizeGiB(class.Spec.DiskGiB))
 	if gaEnabled {
-		buildOpts = append(buildOpts, rootfs.WithGuestAgent(d.guestAgentPath()))
+		_, runnerPoolVM := vm.Labels[impdevv1alpha1.LabelRunnerPool]
+		if runnerPoolVM || vm.Spec.RunnerConfigSecret != "" {
+			buildOpts = append(buildOpts, rootfs.WithRunnerGuestAgent(d.guestAgentPath()))
+		} else {
+			buildOpts = append(buildOpts, rootfs.WithGuestAgent(d.guestAgentPath()))
+		}
 	}
 	if env := resolveVMEnv(vm.Spec.Env); len(env) > 0 {
 		buildOpts = append(buildOpts, rootfs.WithEnv(env))
@@ -250,8 +255,10 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 		}
 	}
 
-	// 6. Build the VMM command.
-	cmd := exec.CommandContext(ctx, d.BinPath, "--api-sock", sockPath) //nolint:gosec // G204: BinPath validated in NewFirecrackerDriver
+	// 6. Build the VMM command. The reconcile context ends when Start returns,
+	// but the VMM must live until Stop explicitly terminates it.
+	vmmCtx := context.WithoutCancel(ctx)
+	cmd := exec.CommandContext(vmmCtx, d.BinPath, "--api-sock", sockPath) //nolint:gosec // G204: BinPath validated in NewFirecrackerDriver
 
 	// Redirect the Firecracker process stdout to a serial log file so that
 	// the guest ttyS0 console (console=ttyS0 kernel arg) is persisted on disk.
@@ -264,12 +271,12 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	defer serialLogFile.Close() //nolint:errcheck // child inherits fd; parent closing its copy is safe
 
 	// 7. Create and start the machine.
-	m, err := firecracker.NewMachine(ctx, cfg, firecracker.WithProcessRunner(cmd))
+	m, err := firecracker.NewMachine(vmmCtx, cfg, firecracker.WithProcessRunner(cmd))
 	if err != nil {
 		return 0, fmt.Errorf("create machine: %w", err)
 	}
 	{
-		lCtx, lSpan := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.firecracker_launch",
+		lCtx, lSpan := otel.Tracer("imp.agent").Start(vmmCtx, "agent.impvm.firecracker_launch",
 			trace.WithAttributes(
 				attribute.String("vm.name", vm.Name),
 				attribute.String("vm.namespace", vm.Namespace),

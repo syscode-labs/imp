@@ -467,3 +467,27 @@ func TestWithEnv(t *testing.T) {
 		t.Fatalf("expected different env cache keys, got %q", opt.CacheKey())
 	}
 }
+
+func TestWithRunnerGuestAgentUsesRunnerInitAndDistinctCacheKey(t *testing.T) {
+	tmpDir := t.TempDir()
+	agentPath := filepath.Join(tmpDir, "source-agent")
+	if err := os.WriteFile(agentPath, []byte("guest-agent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	opt := WithRunnerGuestAgent(agentPath)
+	if got, want := opt.CacheKey(), "ga-runner-v2"; got != want {
+		t.Fatalf("CacheKey() = %q, want %q", got, want)
+	}
+	rootDir := filepath.Join(tmpDir, "root")
+	if err := opt.Apply(rootDir); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(rootDir, ".imp", "init"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != runnerInitScript {
+		t.Fatalf("runner init = %q, want %q", got, runnerInitScript)
+	}
+}

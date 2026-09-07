@@ -12,8 +12,14 @@ const (
 	// GuestAgentContainerPath is where the guest agent binary lives inside the imp-agent container.
 	GuestAgentContainerPath = "/opt/imp/guest-agent"
 
+	virtualFilesystemMounts = "mkdir -p /proc /sys /dev/pts /run\nmount -t proc proc /proc\nmount -t sysfs sysfs /sys\nmount -t devpts devpts /dev/pts\nmount -t tmpfs tmpfs /run\n"
+
 	// initScript is written as /.imp/init inside the VM rootfs.
-	initScript = "#!/bin/sh\n[ -f /.imp/env ] && . /.imp/env\n/.imp/guest-agent &\nexec /sbin/init \"$@\"\n"
+	initScript = "#!/bin/sh\n" + virtualFilesystemMounts + "[ -f /.imp/env ] && . /.imp/env\n/.imp/guest-agent &\nexec /sbin/init \"$@\"\n"
+
+	// runnerInitScript keeps the guest agent as PID 1. The runner is started
+	// later through the guest Exec API after its one-time JIT config arrives.
+	runnerInitScript = "#!/bin/sh\n" + virtualFilesystemMounts + "[ -f /.imp/env ] && . /.imp/env\nexec /.imp/guest-agent\n"
 )
 
 // BuildOption is applied to the extracted rootfs directory before building ext4.
@@ -47,8 +53,19 @@ func WithDiskSizeGiB(diskGiB int32) BuildOption {
 // WithGuestAgent injects the guest agent binary and init wrapper into the rootfs tmpDir.
 // guestAgentSrc is the host path to the guest agent binary.
 func WithGuestAgent(guestAgentSrc string) BuildOption {
+	return withGuestAgent(guestAgentSrc, "ga-v2", initScript)
+}
+
+// WithRunnerGuestAgent injects the guest agent as PID 1 for JIT runner VMs.
+// Its distinct cache key prevents reuse of rootfs images that start the OCI
+// entrypoint before the runner's one-time config has been delivered.
+func WithRunnerGuestAgent(guestAgentSrc string) BuildOption {
+	return withGuestAgent(guestAgentSrc, "ga-runner-v2", runnerInitScript)
+}
+
+func withGuestAgent(guestAgentSrc, cacheKey, script string) BuildOption {
 	return buildOption{
-		key: "ga",
+		key: cacheKey,
 		apply: func(tmpDir string) error {
 			impDir := filepath.Join(tmpDir, ".imp")
 			if err := os.MkdirAll(impDir, 0o755); err != nil { //nolint:gosec // G301: rootfs dir must be world-executable for VM init
@@ -57,7 +74,7 @@ func WithGuestAgent(guestAgentSrc string) BuildOption {
 			if err := copyFile(guestAgentSrc, filepath.Join(impDir, "guest-agent"), 0o755); err != nil {
 				return fmt.Errorf("inject guest-agent: %w", err)
 			}
-			if err := os.WriteFile(filepath.Join(impDir, "init"), []byte(initScript), 0o755); err != nil { //nolint:gosec // G306: init script must be executable
+			if err := os.WriteFile(filepath.Join(impDir, "init"), []byte(script), 0o755); err != nil { //nolint:gosec // G306: init script must be executable
 				return fmt.Errorf("inject init: %w", err)
 			}
 			return nil
