@@ -680,9 +680,11 @@ func vmLifecycleOrDefault(vm *impdevv1alpha1.ImpVM) impdevv1alpha1.VMLifecycle {
 	return vm.Spec.Lifecycle
 }
 
-// clearOwnership clears status IP/PID after Terminating stop.
+// clearOwnership clears the agent acknowledgement and runtime state after a
+// successful Terminating stop and local cleanup.
 func (r *ImpVMReconciler) clearOwnership(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
 	base := vm.DeepCopy()
+	vm.Status.NodeName = ""
 	vm.Status.IP = ""
 	vm.Status.RuntimePID = 0
 	if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {

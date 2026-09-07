@@ -139,6 +139,7 @@ func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 			return ctrl.Result{}, err
 		}
 		vmCopy := vm.DeepCopy()
+		vm.Status.NodeName = nodeName
 		vm.Status.Phase = impdevv1alpha1.VMPhaseScheduled
 		setScheduled(vm, nodeName)
 		if vm.Status.ScheduledAt == nil {
@@ -261,6 +262,7 @@ func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.Imp
 			// Status patch — take vmCopy after spec patch so resourceVersion is current.
 			vmCopy := vm.DeepCopy()
 			setNodeUnhealthy(vm, reason)
+			vm.Status.NodeName = ""
 			vm.Status.Phase = impdevv1alpha1.VMPhasePending
 			setUnscheduled(vm)
 			clearSuspendState(vm)
@@ -285,6 +287,7 @@ func (r *ImpVMReconciler) syncStatus(ctx context.Context, vm *impdevv1alpha1.Imp
 				}
 				vmCopy := vm.DeepCopy()
 				setNodeUnhealthy(vm, reason)
+				vm.Status.NodeName = ""
 				vm.Status.Phase = impdevv1alpha1.VMPhasePending
 				setUnscheduled(vm)
 				clearSuspendState(vm)
@@ -354,14 +357,16 @@ func (r *ImpVMReconciler) handleDeletion(ctx context.Context, vm *impdevv1alpha1
 		return ctrl.Result{}, nil
 	}
 
-	// Agent already cleaned up (cleared spec.nodeName + set Succeeded)
-	if vm.Spec.NodeName == "" {
+	// An unscheduled VM never had an agent responsible for cleanup. A scheduled
+	// VM with an empty status.nodeName has instead been acknowledged by its agent,
+	// but only after the operator first requested termination below.
+	if vm.Status.NodeName == "" && vm.Spec.NodeName == "" {
 		patch := client.MergeFrom(vm.DeepCopy())
 		controllerutil.RemoveFinalizer(vm, finalizerImp)
 		return ctrl.Result{}, r.Patch(ctx, vm, patch)
 	}
 
-	// Check for termination timeout
+	// Check for termination timeout.
 	deadline := vm.DeletionTimestamp.Add(terminationTimeout)
 	if time.Now().After(deadline) {
 		r.Recorder.Event(vm, corev1.EventTypeWarning, EventReasonTerminationTimeout,
@@ -371,9 +376,22 @@ func (r *ImpVMReconciler) handleDeletion(ctx context.Context, vm *impdevv1alpha1
 		return ctrl.Result{}, r.Patch(ctx, vm, patch)
 	}
 
-	// Signal agent by setting phase=Terminating
-	if vm.Status.Phase != impdevv1alpha1.VMPhaseTerminating {
+	// A Terminating VM with no acknowledgement node has been cleaned up by the
+	// agent. A non-Terminating VM with the same empty value is an older object
+	// whose status was never initialized, so seed it before signaling the agent.
+	if vm.Status.NodeName == "" && vm.Status.Phase == impdevv1alpha1.VMPhaseTerminating {
+		patch := client.MergeFrom(vm.DeepCopy())
+		controllerutil.RemoveFinalizer(vm, finalizerImp)
+		return ctrl.Result{}, r.Patch(ctx, vm, patch)
+	}
+
+	// Signal the assigned agent and retain its acknowledgement node until it has
+	// stopped the runtime and completed local cleanup.
+	if vm.Status.NodeName == "" || vm.Status.Phase != impdevv1alpha1.VMPhaseTerminating {
 		vmCopy := vm.DeepCopy()
+		if vm.Status.NodeName == "" {
+			vm.Status.NodeName = vm.Spec.NodeName
+		}
 		vm.Status.Phase = impdevv1alpha1.VMPhaseTerminating
 		if err := r.Status().Patch(ctx, vm, client.MergeFrom(vmCopy)); err != nil {
 			return ctrl.Result{}, err
