@@ -45,3 +45,9 @@ rules:
   resources:
     - events
   verbs: [create, patch]
+# The agent's controller-runtime cached client needs list/watch to initialize its
+# Secret informer; it reads then consumes the runner config Secret.
+- apiGroups: [""]
+  resources:
+    - secrets
+  verbs: [get, list, watch, delete]

@@ -75,6 +75,12 @@ tests:
             apiGroups: [""]
             resources: [events]
             verbs: [create, patch]
+      - contains:
+          path: rules
+          content:
+            apiGroups: [""]
+            resources: [secrets]
+            verbs: [get, list, watch, delete]
 
   - it: binds agent ClusterRole to agent ServiceAccount
     template: templates/agent/clusterrolebinding.yaml
