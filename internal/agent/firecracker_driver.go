@@ -168,6 +168,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 
 	// 2. Build ext4 rootfs from OCI image (cached by digest).
 	var buildOpts []rootfs.BuildOption
+	buildOpts = append(buildOpts, rootfs.WithDiskSizeGiB(class.Spec.DiskGiB))
 	if gaEnabled {
 		buildOpts = append(buildOpts, rootfs.WithGuestAgent(d.guestAgentPath()))
 	}
@@ -461,6 +462,12 @@ func (d *FirecrackerDriver) Inspect(_ context.Context, vm *impdevv1alpha1.ImpVM)
 // socketPath returns the Unix socket path for the given VM.
 func (d *FirecrackerDriver) socketPath(vm *impdevv1alpha1.ImpVM) string {
 	return filepath.Join(d.SocketDir, vm.Namespace+"-"+vm.Name+".sock")
+}
+
+// VSOCKPath returns the path of the VM's VSOCK unix socket proxy. It is the
+// dial target for the guest agent (used by probes and the runner launcher).
+func (d *FirecrackerDriver) VSOCKPath(vm *impdevv1alpha1.ImpVM) string {
+	return vsockPathFromSocket(d.socketPath(vm))
 }
 
 // buildConfig constructs a firecracker.Config for the given VM class and rootfs.

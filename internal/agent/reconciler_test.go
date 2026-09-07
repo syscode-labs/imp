@@ -232,7 +232,7 @@ var _ = Describe("ImpVM Agent: suspend / resume", func() {
 var _ = Describe("ImpVM Agent: ephemeral exit → Succeeded", func() {
 	ctx := context.Background()
 
-	It("sets phase=Succeeded and clears spec.nodeName when ephemeral VM process exits", func() {
+	It("sets phase=Succeeded and retains spec.nodeName when ephemeral VM process exits", func() {
 		driver := NewStubDriver()
 
 		vm := &impdevv1alpha1.ImpVM{
@@ -268,7 +268,7 @@ var _ = Describe("ImpVM Agent: ephemeral exit → Succeeded", func() {
 		updated := &impdevv1alpha1.ImpVM{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc2-ephemeral", Namespace: "default"}, updated)).To(Succeed())
 		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseSucceeded))
-		Expect(updated.Spec.NodeName).To(BeEmpty())
+		Expect(updated.Spec.NodeName).To(Equal(testNode))
 	})
 
 	It("treats empty lifecycle as ephemeral default and marks Succeeded", func() {
@@ -305,7 +305,7 @@ var _ = Describe("ImpVM Agent: ephemeral exit → Succeeded", func() {
 		updated := &impdevv1alpha1.ImpVM{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc2-default-ephemeral", Namespace: "default"}, updated)).To(Succeed())
 		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseSucceeded))
-		Expect(updated.Spec.NodeName).To(BeEmpty())
+		Expect(updated.Spec.NodeName).To(Equal(testNode))
 	})
 })
 
@@ -350,10 +350,10 @@ var _ = Describe("ImpVM Agent: persistent exit → Failed", func() {
 	})
 })
 
-var _ = Describe("ImpVM Agent: Terminating → clears nodeName", func() {
+var _ = Describe("ImpVM Agent: Terminating → acknowledges stop", func() {
 	ctx := context.Background()
 
-	It("calls Stop, clears spec.nodeName, and clears status.ip + status.runtimePID", func() {
+	It("calls Stop, retains spec.nodeName, and clears status.nodeName, IP, and runtimePID", func() {
 		driver := NewStubDriver()
 
 		vm := &impdevv1alpha1.ImpVM{
@@ -370,6 +370,7 @@ var _ = Describe("ImpVM Agent: Terminating → clears nodeName", func() {
 		Expect(err).NotTo(HaveOccurred())
 		base := vm.DeepCopy()
 		vm.Status.Phase = impdevv1alpha1.VMPhaseTerminating
+		vm.Status.NodeName = testNode
 		vm.Status.RuntimePID = pid
 		vm.Status.IP = "192.168.100.3"
 		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
@@ -381,7 +382,8 @@ var _ = Describe("ImpVM Agent: Terminating → clears nodeName", func() {
 
 		updated := &impdevv1alpha1.ImpVM{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "tc4-terminating", Namespace: "default"}, updated)).To(Succeed())
-		Expect(updated.Spec.NodeName).To(BeEmpty())
+		Expect(updated.Spec.NodeName).To(Equal(testNode))
+		Expect(updated.Status.NodeName).To(BeEmpty())
 		Expect(updated.Status.IP).To(BeEmpty())
 		Expect(updated.Status.RuntimePID).To(BeZero())
 	})

@@ -1,6 +1,16 @@
 package runner
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
+
+const (
+	JITConfigSecretKey         = "jitconfig"
+	JITConfigVersionAnnotation = "imp.dev/runner-config-version"
+	JITConfigRunnerAnnotation  = "imp.dev/runner-name"
+	JITConfigVersionV1         = "v1"
+)
 
 // JITConfig is a one-time runner registration token issued by the platform.
 // The runner binary uses this to register itself and pick up exactly one job.
@@ -9,6 +19,28 @@ type JITConfig struct {
 	EncodedConfig string
 	// RunnerName is the name assigned by the platform.
 	RunnerName string
+}
+
+// MarshalSecretValue returns the version-1 Secret payload. The raw encoding is
+// retained so old agents can consume Secrets minted by a new operator during a
+// rolling upgrade.
+func (c JITConfig) MarshalSecretValue() ([]byte, error) {
+	if c.EncodedConfig == "" {
+		return nil, fmt.Errorf("JIT config is empty")
+	}
+	return []byte(c.EncodedConfig), nil
+}
+
+// JITConfigFromSecretValue decodes the typed JIT contract from a Secret. A
+// missing version means version 1 for compatibility with existing Secrets.
+func JITConfigFromSecretValue(version string, payload []byte, runnerName string) (JITConfig, error) {
+	if version != "" && version != JITConfigVersionV1 {
+		return JITConfig{}, fmt.Errorf("unsupported JIT config version %q", version)
+	}
+	if len(payload) == 0 {
+		return JITConfig{}, fmt.Errorf("JIT config is empty")
+	}
+	return JITConfig{EncodedConfig: string(payload), RunnerName: runnerName}, nil
 }
 
 // PlatformDriver abstracts CI platform interactions.

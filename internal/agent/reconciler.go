@@ -29,6 +29,7 @@ import (
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	"github.com/syscode-labs/imp/internal/agent/network"
+	"github.com/syscode-labs/imp/internal/agent/runnerlaunch"
 	"github.com/syscode-labs/imp/internal/tracing"
 )
 
@@ -36,8 +37,9 @@ import (
 // It filters to objects where spec.nodeName == NodeName — all others are ignored.
 type ImpVMReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	NodeName string
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
+	NodeName  string
 	// NodeIP is the node's InternalIP used for VTEP registration and VXLAN setup.
 	// Sourced from NODE_IP env var (downward API fieldRef status.hostIP).
 	NodeIP  string
@@ -84,6 +86,7 @@ func (r *ImpVMReconciler) suspendDirFor(vm *impdevv1alpha1.ImpVM) string {
 // +kubebuilder:rbac:groups=imp.dev,resources=impnetworks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;create;delete
 // +kubebuilder:rbac:groups=imp.dev,resources=impnetworkattachments,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;delete
 
 func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := logf.FromContext(ctx).WithValues("node", r.NodeName)
@@ -216,8 +219,51 @@ func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha
 	// Register VTEP entry so the operator and other nodes know where this VM lives.
 	r.ensureVTEPAndFDB(ctx, vm, state.IP)
 
+	// Runner pool VMs: hand the one-time runner config to the guest and
+	// launch the runner. Fire-and-forget; exit handling stays with the
+	// normal process-exit path (ephemeral → Succeeded).
+	r.maybeLaunchRunner(ctx, vm)
+
 	log.Info("VM started", "pid", pid, "ip", state.IP)
 	return ctrl.Result{}, nil
+}
+
+// maybeLaunchRunner starts the runner handoff goroutine when the VM carries
+// a runner config Secret reference. Best-effort: failures are recorded as
+// events; the VM's own exit path drives its lifecycle.
+func (r *ImpVMReconciler) maybeLaunchRunner(ctx context.Context, vm *impdevv1alpha1.ImpVM) {
+	if vm.Spec.RunnerConfigSecret == "" {
+		return
+	}
+	log := logf.FromContext(ctx)
+	vsock, ok := r.Driver.(interface {
+		GetVSockPath(string) (string, bool)
+	})
+	if !ok {
+		log.Error(nil, "driver does not expose a guest VSOCK lookup; cannot launch runner",
+			"secret", vm.Spec.RunnerConfigSecret)
+		return
+	}
+	sockPath, found := vsock.GetVSockPath(vm.Namespace + "/" + vm.Name)
+	if !found {
+		log.Error(nil, "guest VSOCK is not available; cannot launch runner",
+			"secret", vm.Spec.RunnerConfigSecret)
+		return
+	}
+	launch := &runnerlaunch.Launcher{
+		Client: r.Client,
+		Reader: r.APIReader,
+		Sock:   sockPath,
+	}
+	go func() {
+		res := launch.Run(context.Background(), vm)
+		if res.Err != nil {
+			log.Error(res.Err, "runner launch failed", "vm", vm.Name, "secret", vm.Spec.RunnerConfigSecret)
+			if r.Recorder != nil {
+				r.Recorder.Event(vm, corev1.EventTypeWarning, "RunnerLaunchFailed", res.Err.Error())
+			}
+		}
+	}()
 }
 
 // ensureVTEPAndFDB registers vm's VTEP entry (under a child span) and syncs the
@@ -249,6 +295,11 @@ func (r *ImpVMReconciler) ensureVTEPAndFDB(ctx context.Context, vm *impdevv1alph
 
 func (r *ImpVMReconciler) handleRunning(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+
+	// The runner Secret reference may be patched after the VM reaches Running.
+	// Retry the handoff from the Running reconcile path as well as the initial
+	// start path; the launcher is idempotent because the Secret is one-time.
+	r.maybeLaunchRunner(ctx, vm)
 
 	// Suspend requested: transition to Suspending so the VM is snapshotted and
 	// its memory freed. The Suspending handler does the actual work.
@@ -595,15 +646,8 @@ func (r *ImpVMReconciler) handleResuming(ctx context.Context, vm *impdevv1alpha1
 	return ctrl.Result{}, nil
 }
 
-// finishSucceeded clears spec.nodeName (triggers operator finalizer) + sets phase=Succeeded.
+// finishSucceeded marks the VM terminal; the operator deletes ephemeral terminal VMs.
 func (r *ImpVMReconciler) finishSucceeded(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
-	// Spec patch first — spec.nodeName is a spec field, not a status field.
-	specBase := vm.DeepCopy()
-	vm.Spec.NodeName = ""
-	if err := r.Patch(ctx, vm, client.MergeFrom(specBase)); err != nil {
-		return ctrl.Result{}, err
-	}
-	// Status patch — take base AFTER spec patch so resourceVersion is current.
 	base := vm.DeepCopy()
 	vm.Status.Phase = impdevv1alpha1.VMPhaseSucceeded
 	vm.Status.StartedAt = nil
@@ -639,14 +683,11 @@ func vmLifecycleOrDefault(vm *impdevv1alpha1.ImpVM) impdevv1alpha1.VMLifecycle {
 	return vm.Spec.Lifecycle
 }
 
-// clearOwnership clears spec.nodeName + status ip/pid after Terminating stop.
+// clearOwnership clears the agent acknowledgement and runtime state after a
+// successful Terminating stop and local cleanup.
 func (r *ImpVMReconciler) clearOwnership(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
-	specBase := vm.DeepCopy()
-	vm.Spec.NodeName = ""
-	if err := r.Patch(ctx, vm, client.MergeFrom(specBase)); err != nil {
-		return ctrl.Result{}, err
-	}
 	base := vm.DeepCopy()
+	vm.Status.NodeName = ""
 	vm.Status.IP = ""
 	vm.Status.RuntimePID = 0
 	if err := r.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {

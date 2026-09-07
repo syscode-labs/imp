@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 const (
@@ -29,6 +30,19 @@ type buildOption struct {
 
 func (o buildOption) Apply(tmpDir string) error { return o.apply(tmpDir) }
 func (o buildOption) CacheKey() string          { return o.key }
+
+type diskSizeOption struct {
+	diskMiB int64
+}
+
+func (o diskSizeOption) Apply(string) error { return nil }
+func (o diskSizeOption) CacheKey() string   { return "disk-" + strconv.FormatInt(o.diskMiB, 10) }
+func (o diskSizeOption) DiskSizeMiB() int64 { return o.diskMiB }
+
+// WithDiskSizeGiB sets the fixed size of the rootfs image.
+func WithDiskSizeGiB(diskGiB int32) BuildOption {
+	return diskSizeOption{diskMiB: int64(diskGiB) * 1024}
+}
 
 // WithGuestAgent injects the guest agent binary and init wrapper into the rootfs tmpDir.
 // guestAgentSrc is the host path to the guest agent binary.

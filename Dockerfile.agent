@@ -10,10 +10,8 @@ COPY cmd/runtime/ cmd/runtime/
 COPY internal/ internal/
 ARG TARGETARCH
 RUN --mount=type=cache,id=agent-gomod,target=/root/go/pkg/mod \
-    --mount=type=cache,id=agent-gobuild,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o agent ./cmd/agent
 RUN --mount=type=cache,id=agent-gomod,target=/root/go/pkg/mod \
-    --mount=type=cache,id=agent-gobuild,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH} go build -o runtime ./cmd/runtime
 
 FROM golang:1.26-alpine AS guest-agent-builder
@@ -30,7 +28,7 @@ RUN --mount=type=cache,id=guest-gomod,target=/root/go/pkg/mod \
 
 FROM alpine:3.21 AS runtime
 WORKDIR /
-RUN apk add --no-cache e2fsprogs
+RUN apk add --no-cache e2fsprogs iptables
 COPY --from=agent-builder /workspace/agent /agent
 COPY --from=agent-builder /workspace/runtime /runtime
 COPY --from=guest-agent-builder /workspace/guest-agent /opt/imp/guest-agent

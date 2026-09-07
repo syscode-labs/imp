@@ -108,6 +108,15 @@ type ImpVMSpec struct {
 	// +optional
 	RunnerLayer string `json:"runnerLayer,omitempty"`
 
+	// RunnerConfigSecret names a Secret in the VM namespace carrying the
+	// platform's one-time runner registration payload (key: "jitconfig").
+	// When set, the node agent launches /usr/local/bin/runner in the guest
+	// after boot, passing the payload via the guest agent; the Secret is
+	// deleted after handoff. Set by the ImpVMRunnerPool controller; do not
+	// set manually.
+	// +optional
+	RunnerConfigSecret string `json:"runnerConfigSecret,omitempty"`
+
 	// CiliumLayer is an optional OCI image whose filesystem layers are composited
 	// on top of the base image (after RunnerLayer if also set) before building
 	// the ext4 rootfs. Used to inject the cilium-agent binary for Cilium mesh

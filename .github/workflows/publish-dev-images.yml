@@ -41,6 +41,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - id: operator
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.operator
+          platforms: linux/amd64
+          push: true
+          no-cache: true
+          tags: ghcr.io/syscode-labs/imp-operator:sha-${{ steps.target.outputs.sha }}
       - id: agent
         uses: docker/build-push-action@v7
         with:
@@ -48,12 +57,14 @@ jobs:
           file: Dockerfile.agent
           platforms: linux/amd64
           push: true
+          no-cache: true
           tags: ghcr.io/syscode-labs/imp-agent:sha-${{ steps.target.outputs.sha }}
       - env:
           SHA: ${{ steps.target.outputs.sha }}
+          OPERATOR_DIGEST: ${{ steps.operator.outputs.digest }}
           AGENT_DIGEST: ${{ steps.agent.outputs.digest }}
         run: |
-          jq -n --arg commit_sha "$SHA" --arg agent "ghcr.io/syscode-labs/imp-agent@$AGENT_DIGEST" '{commit_sha:$commit_sha,agent:$agent}' > image-digests.json
+          jq -n --arg commit_sha "$SHA" --arg operator "ghcr.io/syscode-labs/imp-operator@$OPERATOR_DIGEST" --arg agent "ghcr.io/syscode-labs/imp-agent@$AGENT_DIGEST" '{commit_sha:$commit_sha,operator:$operator,agent:$agent}' > image-digests.json
           cat image-digests.json
       - uses: actions/upload-artifact@v4
         with:

@@ -148,10 +148,14 @@ var _ = BeforeSuite(func() {
 	By("installing imp-sandbox chart")
 	sandboxImageRepo := getenvOrDefault("IMP_E2E_SANDBOX_IMAGE_REPOSITORY", "local/imp-sandbox")
 	sandboxImageTag := getenvOrDefault("IMP_E2E_SANDBOX_IMAGE_TAG", "e2e")
+	gatewayImageRepo := getenvOrDefault("IMP_E2E_GATEWAY_IMAGE_REPOSITORY", "local/imp-sandbox-gateway")
+	gatewayImageTag := getenvOrDefault("IMP_E2E_GATEWAY_IMAGE_TAG", "e2e")
 	sandboxCmd := exec.Command("helm", "install", "imp-sandbox", "charts/imp-sandbox",
 		"--namespace", namespace,
 		"--set", "sandbox.image.repository="+sandboxImageRepo,
 		"--set", "sandbox.image.tag="+sandboxImageTag,
+		"--set", "gateway.image.repository="+gatewayImageRepo,
+		"--set", "gateway.image.tag="+gatewayImageTag,
 		"--wait", "--timeout", "5m")
 	_, err = utils.RunWithTimeout(6*time.Minute, sandboxCmd)
 	Expect(err).NotTo(HaveOccurred(), "helm install imp-sandbox failed")
