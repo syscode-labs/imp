@@ -1,6 +1,8 @@
 name: Imp Runner Smoke
 
 on:
+  push:
+    branches: [feat/imp-sandbox-api-v2]
   workflow_dispatch:
 
 jobs:
