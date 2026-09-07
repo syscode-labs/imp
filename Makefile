@@ -118,11 +118,16 @@ test-e2e: setup-test-e2e load-test-images manifests generate fmt vet ## Run the 
 .PHONY: load-test-images
 load-test-images: ## Build and load local e2e images into the Kind cluster (mirrors CI steps).
 	docker build -f Dockerfile.operator -t local/imp-operator:e2e .
-	docker build -f Dockerfile.agent -t local/imp-agent:e2e .
+	$(MAKE) verify-agent-image
 	docker build -f Dockerfile.sandbox -t local/imp-sandbox:e2e .
 	$(KIND) load docker-image local/imp-operator:e2e --name $(KIND_CLUSTER)
 	$(KIND) load docker-image local/imp-agent:e2e --name $(KIND_CLUSTER)
 	$(KIND) load docker-image local/imp-sandbox:e2e --name $(KIND_CLUSTER)
+
+.PHONY: verify-agent-image
+verify-agent-image: ## Build the agent image and verify its runtime iptables dependency.
+	docker build -f Dockerfile.agent -t local/imp-agent:e2e .
+	docker run --rm --entrypoint /bin/sh local/imp-agent:e2e -ec 'test -x "$$(command -v iptables)"'
 
 .PHONY: cleanup-test-e2e
 cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
