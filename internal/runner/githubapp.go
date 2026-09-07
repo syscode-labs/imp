@@ -31,6 +31,15 @@ type GitHubAppCredentials struct {
 	Installation  int64
 }
 
+// GitHubConfig is the operator-owned contract for GitHub authentication and
+// runner placement. Static credentials are used only to construct the driver;
+// they are never included in the JIT payload sent to a guest.
+type GitHubConfig struct {
+	Authentication GitHubAppCredentials
+	Scope          string
+	RunnerGroup    string
+}
+
 // githubAppSource mints installation tokens on demand. It mirrors the
 // ghinstallation transport model: mutex-guarded check-then-mint with re-mint
 // (never refresh) when the cached token is within renewWindow of expiry or was

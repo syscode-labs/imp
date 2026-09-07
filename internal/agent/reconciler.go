@@ -37,8 +37,9 @@ import (
 // It filters to objects where spec.nodeName == NodeName — all others are ignored.
 type ImpVMReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	NodeName string
+	APIReader client.Reader
+	Scheme    *runtime.Scheme
+	NodeName  string
 	// NodeIP is the node's InternalIP used for VTEP registration and VXLAN setup.
 	// Sourced from NODE_IP env var (downward API fieldRef status.hostIP).
 	NodeIP  string
@@ -85,6 +86,7 @@ func (r *ImpVMReconciler) suspendDirFor(vm *impdevv1alpha1.ImpVM) string {
 // +kubebuilder:rbac:groups=imp.dev,resources=impnetworks/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,verbs=get;create;delete
 // +kubebuilder:rbac:groups=imp.dev,resources=impnetworkattachments,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;delete
 
 func (r *ImpVMReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	log := logf.FromContext(ctx).WithValues("node", r.NodeName)
@@ -250,6 +252,7 @@ func (r *ImpVMReconciler) maybeLaunchRunner(ctx context.Context, vm *impdevv1alp
 	}
 	launch := &runnerlaunch.Launcher{
 		Client: r.Client,
+		Reader: r.APIReader,
 		Sock:   sockPath,
 	}
 	go func() {

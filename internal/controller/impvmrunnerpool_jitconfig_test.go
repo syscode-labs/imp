@@ -92,8 +92,9 @@ func TestCreateRunnerVMMintsJITConfigSecret(t *testing.T) {
 	var sec corev1.Secret
 	require.NoError(t, r.Get(context.Background(),
 		types.NamespacedName{Namespace: "ns", Name: vm.Spec.RunnerConfigSecret}, &sec))
-	require.Equal(t, []byte("ENCODED"), sec.Data["jitconfig"])
-	require.Equal(t, "pool-abc12", sec.Annotations["imp.dev/runner-name"])
+	require.Equal(t, []byte("ENCODED"), sec.Data[runner.JITConfigSecretKey])
+	require.Equal(t, "pool-abc12", sec.Annotations[runner.JITConfigRunnerAnnotation])
+	require.Equal(t, runner.JITConfigVersionV1, sec.Annotations[runner.JITConfigVersionAnnotation])
 	require.True(t, metav1.IsControlledBy(&sec, &vm))
 }
 

@@ -26,14 +26,12 @@ import (
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 	agentvsock "github.com/syscode-labs/imp/internal/agent/vsock"
 	pb "github.com/syscode-labs/imp/internal/proto/guest"
+	"github.com/syscode-labs/imp/internal/runner"
 )
 
 const (
 	// GuestVSOCKPort is the guest agent gRPC port inside the VM.
 	GuestVSOCKPort = 10000
-
-	// JITConfigSecretKey is the Secret data key holding the encoded JIT config.
-	JITConfigSecretKey = "jitconfig"
 
 	// jitEnvVar is the environment variable the runner wrapper consumes.
 	jitEnvVar = "IMP_GITHUB_JITCONFIG"
@@ -67,7 +65,8 @@ type Result struct {
 // Launcher hands runner config payloads to guests. Create one per VM launch.
 type Launcher struct {
 	Client client.Client
-	Sock   string // path to the VM's VSOCK unix socket proxy
+	Reader client.Reader // uncached reader; avoids a cluster-wide Secret informer
+	Sock   string        // path to the VM's VSOCK unix socket proxy
 	Log    *slog.Logger
 }
 
@@ -87,7 +86,14 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	// Read the payload. Missing Secret after an agent restart means the
 	// handoff already happened; treat as done.
 	var secret corev1.Secret
-	err := l.Client.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: secretName}, &secret)
+	reader := l.Reader
+	if reader == nil {
+		reader = l.Client
+	}
+	if reader == nil || l.Client == nil {
+		return Result{Err: fmt.Errorf("runner launcher requires Kubernetes reader and client")}
+	}
+	err := reader.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: secretName}, &secret)
 	switch {
 	case apierrors.IsNotFound(err):
 		log.Info("runner config Secret already deleted; handoff previously completed", "secret", secretName)
@@ -95,9 +101,13 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	case err != nil:
 		return Result{Err: fmt.Errorf("get runner config Secret %s: %w", secretName, err)}
 	}
-	payload := string(secret.Data[JITConfigSecretKey])
-	if payload == "" {
-		return Result{Err: fmt.Errorf("runner config Secret %s has no %s key", secretName, JITConfigSecretKey)}
+	config, err := runner.JITConfigFromSecretValue(
+		secret.Annotations[runner.JITConfigVersionAnnotation],
+		secret.Data[runner.JITConfigSecretKey],
+		secret.Annotations[runner.JITConfigRunnerAnnotation],
+	)
+	if err != nil {
+		return Result{Err: fmt.Errorf("decode runner config Secret %s: %w", secretName, err)}
 	}
 
 	// Dial the guest agent, retrying while the guest finishes booting.
@@ -113,7 +123,7 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	defer cancel()
 	resp, err := guest.Exec(hCtx, &pb.ExecRequest{
 		Command: []string{runnerBin},
-		Env:     map[string]string{jitEnvVar: payload},
+		Env:     map[string]string{jitEnvVar: config.EncodedConfig},
 	})
 	if err != nil {
 		return Result{Err: fmt.Errorf("launch runner in guest: %w", err)}

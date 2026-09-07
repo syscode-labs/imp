@@ -361,15 +361,22 @@ func (r *ImpVMRunnerPoolReconciler) mintRunnerConfig(
 		return fmt.Errorf("mint runner JIT config: %w", err)
 	}
 
+	payload, err := jit.MarshalSecretValue()
+	if err != nil {
+		return fmt.Errorf("serialize runner JIT config: %w", err)
+	}
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        fmt.Sprintf("%s-jitconfig-%d", vm.Name, time.Now().UnixNano()),
-			Namespace:   vm.Namespace,
-			Labels:      map[string]string{impv1alpha1.LabelRunnerPool: pool.Name},
-			Annotations: map[string]string{"imp.dev/runner-name": jit.RunnerName},
+			Name:      fmt.Sprintf("%s-jitconfig-%d", vm.Name, time.Now().UnixNano()),
+			Namespace: vm.Namespace,
+			Labels:    map[string]string{impv1alpha1.LabelRunnerPool: pool.Name},
+			Annotations: map[string]string{
+				runner.JITConfigRunnerAnnotation:  jit.RunnerName,
+				runner.JITConfigVersionAnnotation: runner.JITConfigVersionV1,
+			},
 		},
 		Data: map[string][]byte{
-			"jitconfig": []byte(jit.EncodedConfig),
+			runner.JITConfigSecretKey: payload,
 		},
 	}
 	if err := ctrl.SetControllerReference(vm, secret, r.Scheme); err != nil {
@@ -416,7 +423,11 @@ func defaultRunnerDriverFactory(
 			if err != nil {
 				return nil, fmt.Errorf("credentials secret %s/%s: %w", pool.Namespace, creds.Name, err)
 			}
-			return runner.NewGitHubAppDriver(appCreds, scope, pool.Spec.Platform.RunnerGroup, nil)
+			return runner.NewGitHubAppDriver(runner.GitHubConfig{
+				Authentication: appCreds,
+				Scope:          scope,
+				RunnerGroup:    pool.Spec.Platform.RunnerGroup,
+			}, nil)
 		}
 		log := logf.FromContext(ctx)
 		if pool.Spec.Platform.TokenSource == "pat" {

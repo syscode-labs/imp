@@ -62,13 +62,13 @@ func NewForgejoDriver(token, serverURL, scope string, hmacSecret []byte) (*GitHu
 // GitHub App installation. The source mints installation tokens on demand
 // (re-minted near expiry or after a 401; never refreshed) and signs each App
 // JWT from the private key held in creds.
-func NewGitHubAppDriver(creds GitHubAppCredentials, scope, runnerGroup string, hmacSecret []byte) (*GitHubDriver, error) {
-	src, err := newGitHubAppSource(creds)
+func NewGitHubAppDriver(config GitHubConfig, hmacSecret []byte) (*GitHubDriver, error) {
+	src, err := newGitHubAppSource(config.Authentication)
 	if err != nil {
 		return nil, err
 	}
 	client := github.NewClient(&http.Client{Transport: src})
-	return newGitHubDriverWithClient(client, scope, runnerGroup, hmacSecret)
+	return newGitHubDriverWithClient(client, config.Scope, config.RunnerGroup, hmacSecret)
 }
 
 // RoundTrip implements http.RoundTripper: it supplies a valid installation

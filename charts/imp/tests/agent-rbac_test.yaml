@@ -80,7 +80,7 @@ tests:
           content:
             apiGroups: [""]
             resources: [secrets]
-            verbs: [get, list, watch, delete]
+            verbs: [get, delete]
 
   - it: binds agent ClusterRole to agent ServiceAccount
     template: templates/agent/clusterrolebinding.yaml
