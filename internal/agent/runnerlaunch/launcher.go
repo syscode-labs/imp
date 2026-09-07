@@ -16,9 +16,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -28,6 +30,8 @@ import (
 	pb "github.com/syscode-labs/imp/internal/proto/guest"
 	"github.com/syscode-labs/imp/internal/runner"
 )
+
+var launches sync.Map
 
 const (
 	// GuestVSOCKPort is the guest agent gRPC port inside the VM.
@@ -82,6 +86,11 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	if secretName == "" {
 		return Result{}
 	}
+	launchKey := vm.Namespace + "/" + vm.Name
+	if _, loaded := launches.LoadOrStore(launchKey, struct{}{}); loaded {
+		return Result{}
+	}
+	defer launches.Delete(launchKey)
 
 	// Read the payload. Missing Secret after an agent restart means the
 	// handoff already happened; treat as done.
@@ -122,8 +131,9 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	hCtx, cancel := context.WithTimeout(ctx, handoffTimeout)
 	defer cancel()
 	resp, err := guest.Exec(hCtx, &pb.ExecRequest{
-		Command: []string{runnerBin},
-		Env:     map[string]string{jitEnvVar: config.EncodedConfig},
+		Command:        []string{runnerBin},
+		Env:            map[string]string{jitEnvVar: config.EncodedConfig},
+		TimeoutSeconds: int32(handoffTimeout / time.Second),
 	})
 	if err != nil {
 		return Result{Err: fmt.Errorf("launch runner in guest: %w", err)}
@@ -145,26 +155,28 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	return Result{HandoffDone: true, ExitCode: resp.ExitCode}
 }
 
-// dialWithRetry waits for the guest agent to accept VSOCK connections.
+// dialWithRetry waits for the lazy gRPC client to establish a real HTTP/2
+// connection. Creating a grpc.ClientConn alone does not call the VSOCK dialer.
 func (l *Launcher) dialWithRetry(ctx context.Context) (*grpc.ClientConn, error) {
-	deadline := time.Now().Add(bootDialTimeout)
-	var lastErr error
+	dialCtx, cancel := context.WithTimeout(ctx, bootDialTimeout)
+	defer cancel()
+
+	conn, err := agentvsock.Dial(dialCtx, l.Sock, GuestVSOCKPort)
+	if err != nil {
+		return nil, err
+	}
+	conn.Connect()
 	for {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("guest agent not ready within %s: %w", bootDialTimeout, lastErr)
-		}
-		conn, err := agentvsock.Dial(ctx, l.Sock, GuestVSOCKPort)
-		if err == nil {
+		state := conn.GetState()
+		if state == connectivity.Ready {
 			return conn, nil
 		}
-		lastErr = err
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(2 * time.Second):
+		if !conn.WaitForStateChange(dialCtx, state) {
+			_ = conn.Close()
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			return nil, fmt.Errorf("guest agent not ready within %s: %w", bootDialTimeout, dialCtx.Err())
 		}
 	}
 }
