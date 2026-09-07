@@ -146,16 +146,17 @@ func main() {
 	}
 
 	if err := (&agent.ImpVMReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		NodeName: nodeName,
-		NodeIP:   nodeIP,
-		Driver:   driver,
-		Metrics:  mc,
-		Net:      prodNet,
-		Alloc:    nil,
-		SZ:       sz,
-		Recorder: mgr.GetEventRecorderFor("imp-agent"), //nolint:staticcheck // controller-runtime returns legacy recorder type expected by reconciler
+		Client:    mgr.GetClient(),
+		APIReader: mgr.GetAPIReader(),
+		Scheme:    mgr.GetScheme(),
+		NodeName:  nodeName,
+		NodeIP:    nodeIP,
+		Driver:    driver,
+		Metrics:   mc,
+		Net:       prodNet,
+		Alloc:     nil,
+		SZ:        sz,
+		Recorder:  mgr.GetEventRecorderFor("imp-agent"), //nolint:staticcheck // controller-runtime returns legacy recorder type expected by reconciler
 	}).SetupWithManager(mgr); err != nil {
 		log.Error(err, "Unable to set up ImpVMReconciler")
 		os.Exit(1)

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -13,12 +14,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/runner"
 )
 
 func newRunnerPoolTestScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	s := runtime.NewScheme()
 	_ = impv1alpha1.AddToScheme(s)
+	_ = corev1.AddToScheme(s)
 	return s
 }
 
@@ -53,7 +56,9 @@ func TestRunnerPoolReconciler_createsMinIdleVMs(t *testing.T) {
 	scheme := newRunnerPoolTestScheme(t)
 	c := fake.NewClientBuilder().WithScheme(scheme).
 		WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
-	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme}
+	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme, DriverFactory: func(_ context.Context, _ client.Client, _ *impv1alpha1.ImpVMRunnerPool) (runnerQueueDepthReader, error) {
+		return &stubRunnerQueueDepthReader{}, nil
+	}}
 
 	_, err := r.Reconcile(context.Background(), reconcile.Request{
 		NamespacedName: types.NamespacedName{Name: "ci-pool", Namespace: "ci"},
@@ -103,7 +108,9 @@ func TestRunnerPoolReconciler_deletesTerminalVMs(t *testing.T) {
 	scheme := newRunnerPoolTestScheme(t)
 	c := fake.NewClientBuilder().WithScheme(scheme).
 		WithObjects(pool, tpl, doneVM).WithStatusSubresource(pool).Build()
-	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme}
+	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme, DriverFactory: func(_ context.Context, _ client.Client, _ *impv1alpha1.ImpVMRunnerPool) (runnerQueueDepthReader, error) {
+		return &stubRunnerQueueDepthReader{}, nil
+	}}
 
 	_, err := r.Reconcile(context.Background(), reconcile.Request{
 		NamespacedName: types.NamespacedName{Name: "ci-pool", Namespace: "ci"},
@@ -145,7 +152,9 @@ func TestRunnerPoolReconciler_respectsMaxConcurrent(t *testing.T) {
 	scheme := newRunnerPoolTestScheme(t)
 	c := fake.NewClientBuilder().WithScheme(scheme).
 		WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
-	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme}
+	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme, DriverFactory: func(_ context.Context, _ client.Client, _ *impv1alpha1.ImpVMRunnerPool) (runnerQueueDepthReader, error) {
+		return &stubRunnerQueueDepthReader{}, nil
+	}}
 
 	_, err := r.Reconcile(context.Background(), reconcile.Request{
 		NamespacedName: types.NamespacedName{Name: "ci-pool", Namespace: "ci"},
@@ -192,7 +201,9 @@ func TestRunnerPoolReconciler_propagatesCompositeLayers(t *testing.T) {
 	scheme := newRunnerPoolTestScheme(t)
 	c := fake.NewClientBuilder().WithScheme(scheme).
 		WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
-	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme}
+	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme, DriverFactory: func(_ context.Context, _ client.Client, _ *impv1alpha1.ImpVMRunnerPool) (runnerQueueDepthReader, error) {
+		return &stubRunnerQueueDepthReader{}, nil
+	}}
 
 	_, err := r.Reconcile(context.Background(), reconcile.Request{
 		NamespacedName: types.NamespacedName{Name: "ci-pool", Namespace: "ci"},
@@ -247,7 +258,9 @@ func TestRunnerPoolReconciler_scalingWebhookUsesStepLimit(t *testing.T) {
 	scheme := newRunnerPoolTestScheme(t)
 	c := fake.NewClientBuilder().WithScheme(scheme).
 		WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
-	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme}
+	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme, DriverFactory: func(_ context.Context, _ client.Client, _ *impv1alpha1.ImpVMRunnerPool) (runnerQueueDepthReader, error) {
+		return &stubRunnerQueueDepthReader{}, nil
+	}}
 
 	result, err := r.Reconcile(context.Background(), reconcile.Request{
 		NamespacedName: types.NamespacedName{Name: "ci-pool", Namespace: "ci"},
@@ -328,6 +341,10 @@ type stubRunnerQueueDepthReader struct {
 
 func (s *stubRunnerQueueDepthReader) QueueDepth(_ context.Context) (int, error) {
 	return s.queueDepth, s.err
+}
+
+func (s *stubRunnerQueueDepthReader) GetJITConfig(_ context.Context) (*runner.JITConfig, error) {
+	return &runner.JITConfig{EncodedConfig: "test", RunnerName: "test"}, nil
 }
 
 func ptrInt32(v int32) *int32 { return &v }

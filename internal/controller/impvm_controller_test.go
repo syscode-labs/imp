@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
@@ -65,6 +66,35 @@ var _ = Describe("ImpVM Scheduler", func() {
 		updated := &impdevv1alpha1.ImpVM{}
 		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "sched-no-nodes", Namespace: "default"}, updated)).To(Succeed())
 		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhasePending))
+	})
+
+	It("records the scheduled node in status.nodeName", func() {
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{Name: "sched-node", Labels: map[string]string{labelImpEnabled: "true"}},
+			Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+				Type: corev1.NodeReady, Status: corev1.ConditionTrue,
+			}}},
+		}
+		Expect(k8sClient.Create(ctx, node)).To(Succeed())
+		DeferCleanup(func() {
+			Expect(k8sClient.Delete(ctx, node)).To(Or(Succeed(), MatchError(ContainSubstring("not found"))))
+		})
+
+		vm := &impdevv1alpha1.ImpVM{ObjectMeta: metav1.ObjectMeta{Name: "sched-status-node", Namespace: "default"}}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { Expect(k8sClient.Delete(ctx, vm)).To(Or(Succeed(), MatchError(ContainSubstring("not found")))) })
+		req := reconcile.Request{NamespacedName: types.NamespacedName{Name: vm.Name, Namespace: vm.Namespace}}
+
+		_, err := newReconciler().Reconcile(ctx, req) // add finalizer
+		Expect(err).NotTo(HaveOccurred())
+		_, err = newReconciler().Reconcile(ctx, req) // schedule
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, req.NamespacedName, updated)).To(Succeed())
+		Expect(updated.Spec.NodeName).To(Equal(node.Name))
+		Expect(updated.Status.NodeName).To(Equal(node.Name))
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseScheduled))
 	})
 })
 
@@ -212,7 +242,7 @@ var _ = Describe("ImpVM SyncStatus", func() {
 var _ = Describe("ImpVM Deletion", func() {
 	ctx := context.Background()
 
-	It("removes finalizer immediately when spec.nodeName is empty on deletion", func() {
+	It("removes finalizer immediately when an unscheduled VM is deleted", func() {
 		vm := &impdevv1alpha1.ImpVM{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "del-unscheduled",
@@ -231,6 +261,41 @@ var _ = Describe("ImpVM Deletion", func() {
 		updated := &impdevv1alpha1.ImpVM{}
 		err = k8sClient.Get(ctx, types.NamespacedName{Name: "del-unscheduled", Namespace: "default"}, updated)
 		Expect(errors.IsNotFound(err)).To(BeTrue())
+	})
+
+	It("seeds status.nodeName before Terminating on a deleting assigned VM with uninitialized status", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       "del-seed-ack",
+				Namespace:  "default",
+				Finalizers: []string{"imp/finalizer"},
+			},
+			Spec: impdevv1alpha1.ImpVMSpec{NodeName: "agent-node"},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		Expect(k8sClient.Delete(ctx, vm)).To(Succeed())
+
+		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "del-seed-ack", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "del-seed-ack", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Spec.NodeName).To(Equal("agent-node"))
+		Expect(updated.Status.NodeName).To(Equal("agent-node"))
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseTerminating))
+		Expect(updated.Finalizers).To(ContainElement(finalizerImp))
+
+		base := updated.DeepCopy()
+		updated.Status.NodeName = ""
+		Expect(k8sClient.Status().Patch(ctx, updated, client.MergeFrom(base))).To(Succeed())
+
+		_, err = newReconciler().Reconcile(ctx, reconcile.Request{
+			NamespacedName: types.NamespacedName{Name: "del-seed-ack", Namespace: "default"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(errors.IsNotFound(k8sClient.Get(ctx, types.NamespacedName{Name: "del-seed-ack", Namespace: "default"}, &impdevv1alpha1.ImpVM{}))).To(BeTrue())
 	})
 })
 

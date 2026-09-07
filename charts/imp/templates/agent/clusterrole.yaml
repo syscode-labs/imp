@@ -45,3 +45,9 @@ rules:
   resources:
     - events
   verbs: [create, patch]
+# The agent reads one explicitly named runner config Secret through an uncached
+# reader, then deletes it after handoff. It must never list or watch Secrets.
+- apiGroups: [""]
+  resources:
+    - secrets
+  verbs: [get, delete]

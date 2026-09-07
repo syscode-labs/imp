@@ -1,0 +1,17 @@
+name: Imp Runner Smoke
+
+on:
+  push:
+    branches: [feat/imp-sandbox-api-v2]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on:
+      group: omni-runner
+    steps:
+      - name: Report runner identity
+        run: |
+          echo "runner=$RUNNER_NAME"
+          uname -a
+          date -u
