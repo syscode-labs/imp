@@ -45,9 +45,7 @@ const (
 	AnnotationResetRetries = "imp/reset-retries"
 )
 
-var terminationTimeout = 2 * time.Minute
-
-// ImpVMReconciler reconciles ImpVM objects.
+// ImpVMReconciler reconciles ImpVM objects and drives their lifecycle.
 type ImpVMReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
@@ -361,16 +359,6 @@ func (r *ImpVMReconciler) handleDeletion(ctx context.Context, vm *impdevv1alpha1
 	// VM with an empty status.nodeName has instead been acknowledged by its agent,
 	// but only after the operator first requested termination below.
 	if vm.Status.NodeName == "" && vm.Spec.NodeName == "" {
-		patch := client.MergeFrom(vm.DeepCopy())
-		controllerutil.RemoveFinalizer(vm, finalizerImp)
-		return ctrl.Result{}, r.Patch(ctx, vm, patch)
-	}
-
-	// Check for termination timeout.
-	deadline := vm.DeletionTimestamp.Add(terminationTimeout)
-	if time.Now().After(deadline) {
-		r.Recorder.Event(vm, corev1.EventTypeWarning, EventReasonTerminationTimeout,
-			"Finalizer force-removed after 2min termination timeout")
 		patch := client.MergeFrom(vm.DeepCopy())
 		controllerutil.RemoveFinalizer(vm, finalizerImp)
 		return ctrl.Result{}, r.Patch(ctx, vm, patch)

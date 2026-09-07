@@ -565,11 +565,7 @@ var _ = Describe("ImpVM handleDeletion with nodeName", func() {
 		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseTerminating))
 	})
 
-	It("force-removes finalizer after termination timeout", func() {
-		origTimeout := terminationTimeout
-		terminationTimeout = 0 // trigger immediately
-		DeferCleanup(func() { terminationTimeout = origTimeout })
-
+	It("keeps finalizer until the agent acknowledges termination", func() {
 		vm := &impdevv1alpha1.ImpVM{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "del-timeout",
@@ -577,22 +573,23 @@ var _ = Describe("ImpVM handleDeletion with nodeName", func() {
 				Finalizers: []string{finalizerImp},
 			},
 			Spec: impdevv1alpha1.ImpVMSpec{NodeName: "some-node"},
+			Status: impdevv1alpha1.ImpVMStatus{
+				NodeName: "some-node",
+				Phase:    impdevv1alpha1.VMPhaseTerminating,
+			},
 		}
 		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, vm)).To(Succeed())
 
-		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+		result, err := newReconciler().Reconcile(ctx, reconcile.Request{
 			NamespacedName: types.NamespacedName{Name: "del-timeout", Namespace: "default"},
 		})
 		Expect(err).NotTo(HaveOccurred())
+		Expect(result.RequeueAfter).To(Equal(5 * time.Second))
 
-		// Object should be gone (finalizer removed → GC).
 		updated := &impdevv1alpha1.ImpVM{}
-		err = k8sClient.Get(ctx, types.NamespacedName{Name: "del-timeout", Namespace: "default"}, updated)
-		if err == nil {
-			// If still present, finalizer must have been removed.
-			Expect(updated.Finalizers).NotTo(ContainElement(finalizerImp))
-		}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "del-timeout", Namespace: "default"}, updated)).To(Succeed())
+		Expect(updated.Finalizers).To(ContainElement(finalizerImp))
 	})
 })
 
