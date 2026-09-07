@@ -21,11 +21,12 @@ import (
 // Forgejo exposes the same runner API as GitHub Actions; use NewForgejoDriver
 // to point it at a Forgejo instance.
 type GitHubDriver struct {
-	client     *github.Client
-	org        string // non-empty for org-level scope
-	owner      string // non-empty for repo-level scope
-	repo       string // non-empty for repo-level scope
-	hmacSecret []byte
+	client      *github.Client
+	org         string // non-empty for org-level scope
+	owner       string // non-empty for repo-level scope
+	repo        string // non-empty for repo-level scope
+	runnerGroup string
+	hmacSecret  []byte
 }
 
 // NewGitHubDriver creates a driver for github.com.
@@ -37,7 +38,7 @@ func NewGitHubDriver(token, scope string, hmacSecret []byte) (*GitHubDriver, err
 	// are applied via the ctx parameter passed to each method call.
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	client := github.NewClient(oauth2.NewClient(context.Background(), ts))
-	return newGitHubDriverWithClient(client, scope, hmacSecret)
+	return newGitHubDriverWithClient(client, scope, "", hmacSecret)
 }
 
 // NewForgejoDriver creates a driver for a Forgejo instance.
@@ -54,20 +55,20 @@ func NewForgejoDriver(token, serverURL, scope string, hmacSecret []byte) (*GitHu
 	if err != nil {
 		return nil, fmt.Errorf("forgejo client: %w", err)
 	}
-	return newGitHubDriverWithClient(client, scope, hmacSecret)
+	return newGitHubDriverWithClient(client, scope, "", hmacSecret)
 }
 
 // NewGitHubAppDriver creates a driver for github.com authenticated as a
 // GitHub App installation. The source mints installation tokens on demand
 // (re-minted near expiry or after a 401; never refreshed) and signs each App
 // JWT from the private key held in creds.
-func NewGitHubAppDriver(creds GitHubAppCredentials, scope string, hmacSecret []byte) (*GitHubDriver, error) {
+func NewGitHubAppDriver(creds GitHubAppCredentials, scope, runnerGroup string, hmacSecret []byte) (*GitHubDriver, error) {
 	src, err := newGitHubAppSource(creds)
 	if err != nil {
 		return nil, err
 	}
 	client := github.NewClient(&http.Client{Transport: src})
-	return newGitHubDriverWithClient(client, scope, hmacSecret)
+	return newGitHubDriverWithClient(client, scope, runnerGroup, hmacSecret)
 }
 
 // RoundTrip implements http.RoundTripper: it supplies a valid installation
@@ -100,8 +101,8 @@ func (s *githubAppSource) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-func newGitHubDriverWithClient(client *github.Client, scope string, hmacSecret []byte) (*GitHubDriver, error) {
-	d := &GitHubDriver{client: client, hmacSecret: hmacSecret}
+func newGitHubDriverWithClient(client *github.Client, scope, runnerGroup string, hmacSecret []byte) (*GitHubDriver, error) {
+	d := &GitHubDriver{client: client, runnerGroup: runnerGroup, hmacSecret: hmacSecret}
 	switch {
 	case strings.HasPrefix(scope, "org:"):
 		d.org = strings.TrimPrefix(scope, "org:")
@@ -118,13 +119,16 @@ func newGitHubDriverWithClient(client *github.Client, scope string, hmacSecret [
 }
 
 func (d *GitHubDriver) GetJITConfig(ctx context.Context) (*JITConfig, error) {
+	groupID, err := d.runnerGroupID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	req := &github.GenerateJITConfigRequest{
 		Name:          fmt.Sprintf("imp-runner-%d", time.Now().UnixNano()),
-		RunnerGroupID: 1,
+		RunnerGroupID: groupID,
 		Labels:        []string{"self-hosted"},
 	}
 	var cfg *github.JITRunnerConfig
-	var err error
 	if d.org != "" {
 		cfg, _, err = d.client.Actions.GenerateOrgJITConfig(ctx, d.org, req)
 	} else {
@@ -137,6 +141,35 @@ func (d *GitHubDriver) GetJITConfig(ctx context.Context) (*JITConfig, error) {
 		EncodedConfig: cfg.GetEncodedJITConfig(),
 		RunnerName:    cfg.Runner.GetName(),
 	}, nil
+}
+
+func (d *GitHubDriver) runnerGroupID(ctx context.Context) (int64, error) {
+	if d.runnerGroup == "" {
+		return 1, nil
+	}
+	if d.org == "" {
+		return 0, fmt.Errorf("runner group %q requires organization scope", d.runnerGroup)
+	}
+	path := fmt.Sprintf("orgs/%s/actions/runner-groups?per_page=100", d.org)
+	req, err := d.client.NewRequest(http.MethodGet, path, nil)
+	if err != nil {
+		return 0, fmt.Errorf("runner group request: %w", err)
+	}
+	var response struct {
+		RunnerGroups []struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+		} `json:"runner_groups"`
+	}
+	if _, err := d.client.Do(ctx, req, &response); err != nil {
+		return 0, fmt.Errorf("list runner groups: %w", err)
+	}
+	for _, group := range response.RunnerGroups {
+		if group.Name == d.runnerGroup {
+			return group.ID, nil
+		}
+	}
+	return 0, fmt.Errorf("runner group %q not found in organization %q", d.runnerGroup, d.org)
 }
 
 func (d *GitHubDriver) QueueDepth(ctx context.Context) (int, error) {

@@ -114,6 +114,10 @@ spec:
                     description: CredentialsSecret names a Secret containing the registration
                       token or PAT.
                     type: string
+                  runnerGroup:
+                    description: RunnerGroup selects the organization runner group
+                      by name for GitHub Actions.
+                    type: string
                   scope:
                     description: Scope configures the registration scope (org or repo).
                     properties:

@@ -12,7 +12,7 @@ import (
 // --- GitHubDriver tests ---
 
 func TestGitHubDriver_scopeParsing_org(t *testing.T) {
-	d, err := newGitHubDriverWithClient(nil, "org:my-org", nil)
+	d, err := newGitHubDriverWithClient(nil, "org:my-org", "", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestGitHubDriver_scopeParsing_org(t *testing.T) {
 }
 
 func TestGitHubDriver_scopeParsing_repo(t *testing.T) {
-	d, err := newGitHubDriverWithClient(nil, "repo:owner/myrepo", nil)
+	d, err := newGitHubDriverWithClient(nil, "repo:owner/myrepo", "", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -32,14 +32,14 @@ func TestGitHubDriver_scopeParsing_repo(t *testing.T) {
 }
 
 func TestGitHubDriver_scopeParsing_invalid(t *testing.T) {
-	_, err := newGitHubDriverWithClient(nil, "invalid-scope", nil)
+	_, err := newGitHubDriverWithClient(nil, "invalid-scope", "", nil)
 	if err == nil {
 		t.Error("expected error for invalid scope")
 	}
 }
 
 func TestGitHubDriver_scopeParsing_repoMissingSlash(t *testing.T) {
-	_, err := newGitHubDriverWithClient(nil, "repo:noslash", nil)
+	_, err := newGitHubDriverWithClient(nil, "repo:noslash", "", nil)
 	if err == nil {
 		t.Error("expected error for repo scope without slash")
 	}

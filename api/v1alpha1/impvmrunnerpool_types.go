@@ -58,6 +58,10 @@ type RunnerPlatformSpec struct {
 	// +optional
 	Scope *RunnerScopeSpec `json:"scope,omitempty"`
 
+	// RunnerGroup selects the organization runner group by name for GitHub Actions.
+	// +optional
+	RunnerGroup string `json:"runnerGroup,omitempty"`
+
 	// CredentialsSecret names a Secret containing the registration token or PAT.
 	CredentialsSecret string `json:"credentialsSecret"`
 

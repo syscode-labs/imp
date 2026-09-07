@@ -416,7 +416,7 @@ func defaultRunnerDriverFactory(
 			if err != nil {
 				return nil, fmt.Errorf("credentials secret %s/%s: %w", pool.Namespace, creds.Name, err)
 			}
-			return runner.NewGitHubAppDriver(appCreds, scope, nil)
+			return runner.NewGitHubAppDriver(appCreds, scope, pool.Spec.Platform.RunnerGroup, nil)
 		}
 		log := logf.FromContext(ctx)
 		if pool.Spec.Platform.TokenSource == "pat" {
