@@ -4,17 +4,6 @@ on:
   schedule:
     # 04:00 UTC daily (staggered after the 02:00/03:00 nightly smoke/cilium jobs)
     - cron: "0 4 * * *"
-  pull_request:
-    branches: [main]
-    paths:
-      - "internal/agent/scaletozero*.go"
-      - "internal/agent/network/**"
-      - "internal/agent/reconciler.go"
-      - "internal/capability/**"
-      - "charts/imp/templates/agent/**"
-      - "test/e2e/scaletozero_datapath_test.go"
-      - "test/e2e/kind-datapath.yaml"
-      - ".github/workflows/nightly-e2e-datapath.yml"
   workflow_dispatch:
 
 concurrency:
@@ -27,11 +16,10 @@ env:
 jobs:
   e2e-datapath:
     name: E2E Datapath (Kind, real agent)
-    # Boots a real Firecracker agent via nested KVM -- slower and less proven
-    # than the Kind smoke job, so it runs nightly + on PRs touching the
-    # datapath's own fragile paths, not on every push. See docs (e2e runner
-    # runbook) for provenance: proven on ubuntu-latest (run 29019535180); wake
-    # hook + FDB sync validated end-to-end in imp#35 (2026-07-29).
+    # Boots a real Firecracker agent via nested KVM. Keep this experimental
+    # ScaleToZero signal non-gating until the agent can read TAP statistics from
+    # the runtime network namespace (imp#73). See docs (e2e runner runbook) for
+    # provenance.
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
