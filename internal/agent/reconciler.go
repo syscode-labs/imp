@@ -234,17 +234,23 @@ func (r *ImpVMReconciler) maybeLaunchRunner(ctx context.Context, vm *impdevv1alp
 		return
 	}
 	log := logf.FromContext(ctx)
-	sock, ok := r.Driver.(interface {
-		VSOCKPath(vm *impdevv1alpha1.ImpVM) string
+	vsock, ok := r.Driver.(interface {
+		GetVSockPath(string) (string, bool)
 	})
 	if !ok {
-		log.Error(nil, "driver does not expose a guest VSOCK; cannot launch runner",
+		log.Error(nil, "driver does not expose a guest VSOCK lookup; cannot launch runner",
+			"secret", vm.Spec.RunnerConfigSecret)
+		return
+	}
+	sockPath, found := vsock.GetVSockPath(vm.Namespace + "/" + vm.Name)
+	if !found {
+		log.Error(nil, "guest VSOCK is not available; cannot launch runner",
 			"secret", vm.Spec.RunnerConfigSecret)
 		return
 	}
 	launch := &runnerlaunch.Launcher{
 		Client: r.Client,
-		Sock:   sock.VSOCKPath(vm),
+		Sock:   sockPath,
 	}
 	go func() {
 		res := launch.Run(context.Background(), vm)
