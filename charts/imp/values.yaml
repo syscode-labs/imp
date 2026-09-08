@@ -108,6 +108,7 @@ runtime:
       memory: 128Mi
   nodeSelector:
     imp/enabled: "true"
+  tolerations: []
   updateStrategy:
     type: OnDelete
   socketPath: /run/imp/runtime.sock
@@ -152,6 +153,7 @@ kvm:
     # Probe the same opted-in nodes that receive agents and ImpVMs.
     nodeSelector:
       imp/enabled: "true"
+    tolerations: []
     minVerifiedNodes: 1
     timeoutSeconds: 120
     backoffLimit: 6

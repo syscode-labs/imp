@@ -86,6 +86,24 @@ tests:
           value:
             imp/enabled: "true"
 
+  - it: applies configured runner-node tolerations
+    template: templates/agent/preflight-job.yaml
+    set:
+      kvm.preflight.enabled: true
+      kvm.preflight.tolerations:
+        - key: imp.dev/runner
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+    asserts:
+      - contains:
+          path: spec.template.spec.tolerations
+          content:
+            key: imp.dev/runner
+            operator: Equal
+            value: "true"
+            effect: NoSchedule
+
   - it: forces distinct nodes via required pod anti-affinity
     template: templates/agent/preflight-job.yaml
     set:
