@@ -10,8 +10,11 @@ jobs:
     runs-on:
       group: omni-runner
     steps:
-      - name: Report runner identity
+      - name: Report correlation identifiers
         run: |
-          echo "runner=$RUNNER_NAME"
-          uname -a
-          date -u
+          printf '%s\n' \
+            "github_repository=$GITHUB_REPOSITORY" \
+            "github_run_id=$GITHUB_RUN_ID" \
+            "github_run_attempt=$GITHUB_RUN_ATTEMPT" \
+            "github_job=$GITHUB_JOB" \
+            "runner_name=$RUNNER_NAME"
