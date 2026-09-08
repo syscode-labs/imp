@@ -131,8 +131,11 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	hCtx, cancel := context.WithTimeout(ctx, handoffTimeout)
 	defer cancel()
 	resp, err := guest.Exec(hCtx, &pb.ExecRequest{
-		Command:        []string{runnerBin},
-		Env:            map[string]string{jitEnvVar: config.EncodedConfig},
+		Command: []string{runnerBin},
+		Env: map[string]string{
+			jitEnvVar:                config.EncodedConfig,
+			"RUNNER_ALLOW_RUNASROOT": "1",
+		},
 		TimeoutSeconds: int32(handoffTimeout / time.Second),
 	})
 	if err != nil {

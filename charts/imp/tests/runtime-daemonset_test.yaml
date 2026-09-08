@@ -28,3 +28,20 @@ tests:
           content:
             name: IMP_RUNTIME_SOCKET
             value: /run/imp/runtime.sock
+
+  - it: applies configured runner-node tolerations
+    set:
+      agent.env.kernelPath: /usr/local/share/imp/vmlinux
+      runtime.tolerations:
+        - key: imp.dev/runner
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+    asserts:
+      - contains:
+          path: spec.template.spec.tolerations
+          content:
+            key: imp.dev/runner
+            operator: Equal
+            value: "true"
+            effect: NoSchedule

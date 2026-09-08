@@ -25,6 +25,10 @@ spec:
       priorityClassName: {{ .Values.runtime.priorityClassName }}
       nodeSelector:
         {{- toYaml .Values.runtime.nodeSelector | nindent 8 }}
+      {{- with .Values.runtime.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
       - name: runtime
         image: {{ include "imp.runtime.image" . }}
