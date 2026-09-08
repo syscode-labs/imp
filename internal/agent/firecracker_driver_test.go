@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"google.golang.org/grpc"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -93,6 +96,7 @@ func TestResolveVMEnv(t *testing.T) {
 		{Name: "FROM", ValueFrom: &corev1.EnvVarSource{}},
 		{Name: "", Value: "skip"},
 		{Name: "GREETING", Value: "hello"},
+		{Name: "IMP_GITHUB_JITCONFIG", Value: "must-not-be-baked"},
 	})
 	if got["PORT"] != "9090" {
 		t.Fatalf("PORT=%q, want %q", got["PORT"], "9090")
@@ -105,6 +109,50 @@ func TestResolveVMEnv(t *testing.T) {
 	}
 	if _, ok := got[""]; ok {
 		t.Fatalf("expected empty env name to be ignored")
+	}
+	if _, ok := got["IMP_GITHUB_JITCONFIG"]; ok {
+		t.Fatal("JIT config must be delivered through guest Exec, never rootfs env")
+	}
+}
+
+func TestFirecrackerDriver_rootfsBuildOptions_ExcludeJITMaterial(t *testing.T) {
+	agentPath := filepath.Join(t.TempDir(), "guest-agent")
+	if err := os.WriteFile(agentPath, []byte("guest-agent"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d := &FirecrackerDriver{GuestAgentPath: agentPath}
+	vm := &impdevv1alpha1.ImpVM{
+		ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{impdevv1alpha1.LabelRunnerPool: "pool"}},
+		Spec: impdevv1alpha1.ImpVMSpec{
+			RunnerConfigSecret: "jitconfig-secret",
+			Env: []corev1.EnvVar{
+				{Name: "SAFE", Value: "value"},
+				{Name: "IMP_GITHUB_JITCONFIG", Value: "sensitive-jit-payload"},
+			},
+		},
+	}
+	opts := d.rootfsBuildOptions(vm, &impdevv1alpha1.ImpVMClass{Spec: impdevv1alpha1.ImpVMClassSpec{DiskGiB: 1}}, true)
+
+	keys := make([]string, 0, len(opts))
+	root := t.TempDir()
+	for _, opt := range opts {
+		keys = append(keys, opt.CacheKey())
+		if err := opt.Apply(root); err != nil {
+			t.Fatalf("apply rootfs option: %v", err)
+		}
+	}
+	if strings.Contains(strings.Join(keys, ","), "jitconfig-secret") || strings.Contains(strings.Join(keys, ","), "sensitive-jit-payload") {
+		t.Fatalf("rootfs cache keys contain JIT material: %v", keys)
+	}
+	env, err := os.ReadFile(filepath.Join(root, ".imp", "env"))
+	if err != nil {
+		t.Fatalf("read baked env: %v", err)
+	}
+	if strings.Contains(string(env), "IMP_GITHUB_JITCONFIG") || strings.Contains(string(env), "sensitive-jit-payload") {
+		t.Fatalf("baked env contains JIT material: %q", env)
+	}
+	if !strings.Contains(string(env), "SAFE=\"value\"") {
+		t.Fatalf("baked env lost ordinary VM env: %q", env)
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	impdevv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
+	"github.com/syscode-labs/imp/internal/agent/runnerlaunch"
 )
 
 const testNode = "test-node"
@@ -28,6 +29,10 @@ func newReconciler(driver VMDriver) *ImpVMReconciler {
 		Driver:   driver,
 	}
 }
+
+type vsockStubDriver struct{ *StubDriver }
+
+func (*vsockStubDriver) GetVSockPath(string) (string, bool) { return "/tmp/test.vsock", true }
 
 var _ = Describe("ImpVM Agent: Scheduled → Running", func() {
 	ctx := context.Background()
@@ -57,6 +62,55 @@ var _ = Describe("ImpVM Agent: Scheduled → Running", func() {
 		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseRunning))
 		Expect(updated.Status.IP).NotTo(BeEmpty())
 		Expect(updated.Status.RuntimePID).To(BeNumerically(">", 0))
+	})
+})
+
+var _ = Describe("ImpVM Agent: runner JIT handoff", func() {
+	ctx := context.Background()
+
+	It("marks the VM Failed when the VSOCK handoff fails", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "tc-runner-handoff-failure", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpVMSpec{NodeName: testNode, RunnerConfigSecret: "jitconfig"},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, vm) })
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		r := newReconciler(&vsockStubDriver{StubDriver: NewStubDriver()})
+		r.runnerLaunch = func(context.Context, *impdevv1alpha1.ImpVM) runnerlaunch.Result {
+			return runnerlaunch.Result{Err: errors.New("vsock handoff failed")}
+		}
+		r.maybeLaunchRunner(ctx, vm)
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(vm), updated)).To(Succeed())
+			g.Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseFailed))
+		}).Should(Succeed())
+	})
+
+	It("does not overwrite a terminal status with a late handoff failure", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "tc-runner-handoff-late-failure", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpVMSpec{NodeName: testNode, RunnerConfigSecret: "jitconfig"},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, vm) })
+
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseSucceeded
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		r := newReconciler(NewStubDriver())
+		_, err := r.finishRunnerLaunchFailed(ctx, vm.DeepCopy())
+		Expect(err).NotTo(HaveOccurred())
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(vm), updated)).To(Succeed())
+		Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseSucceeded))
 	})
 })
 

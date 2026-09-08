@@ -167,19 +167,7 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	gaEnabled := d.guestAgentEnabled(vm, &class)
 
 	// 2. Build ext4 rootfs from OCI image (cached by digest).
-	var buildOpts []rootfs.BuildOption
-	buildOpts = append(buildOpts, rootfs.WithDiskSizeGiB(class.Spec.DiskGiB))
-	if gaEnabled {
-		_, runnerPoolVM := vm.Labels[impdevv1alpha1.LabelRunnerPool]
-		if runnerPoolVM || vm.Spec.RunnerConfigSecret != "" {
-			buildOpts = append(buildOpts, rootfs.WithRunnerGuestAgent(d.guestAgentPath()))
-		} else {
-			buildOpts = append(buildOpts, rootfs.WithGuestAgent(d.guestAgentPath()))
-		}
-	}
-	if env := resolveVMEnv(vm.Spec.Env); len(env) > 0 {
-		buildOpts = append(buildOpts, rootfs.WithEnv(env))
-	}
+	buildOpts := d.rootfsBuildOptions(vm, &class, gaEnabled)
 	var rootfsPath string
 	{
 		rCtx, rSpan := otel.Tracer("imp.agent").Start(ctx, "agent.impvm.rootfs_build",
@@ -330,13 +318,34 @@ func (d *FirecrackerDriver) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM)
 	return int64(pid), nil
 }
 
+func (d *FirecrackerDriver) rootfsBuildOptions(
+	vm *impdevv1alpha1.ImpVM,
+	class *impdevv1alpha1.ImpVMClass,
+	gaEnabled bool,
+) []rootfs.BuildOption {
+	buildOpts := []rootfs.BuildOption{rootfs.WithDiskSizeGiB(class.Spec.DiskGiB)}
+	if gaEnabled {
+		_, runnerPoolVM := vm.Labels[impdevv1alpha1.LabelRunnerPool]
+		if runnerPoolVM || vm.Spec.RunnerConfigSecret != "" {
+			buildOpts = append(buildOpts, rootfs.WithRunnerGuestAgent(d.guestAgentPath()))
+		} else {
+			buildOpts = append(buildOpts, rootfs.WithGuestAgent(d.guestAgentPath()))
+		}
+	}
+	if env := resolveVMEnv(vm.Spec.Env); len(env) > 0 {
+		buildOpts = append(buildOpts, rootfs.WithEnv(env))
+	}
+	return buildOpts
+}
+
 func resolveVMEnv(vars []corev1.EnvVar) map[string]string {
 	if len(vars) == 0 {
 		return nil
 	}
 	env := make(map[string]string, len(vars))
 	for _, v := range vars {
-		if v.Name == "" || v.ValueFrom != nil {
+		// JIT payloads are one-time guest Exec data. Never bake them into rootfs.
+		if v.Name == "" || v.ValueFrom != nil || v.Name == "IMP_GITHUB_JITCONFIG" {
 			continue
 		}
 		env[v.Name] = v.Value

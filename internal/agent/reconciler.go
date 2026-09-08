@@ -64,6 +64,9 @@ type ImpVMReconciler struct {
 	// SZ is optional. When non-nil it enables scale-to-zero: ScaleToZero VMs
 	// auto-suspend on traffic idle and auto-resume on the first inbound packet.
 	SZ *ScaleToZero
+	// runnerLaunch is test-only injection for the asynchronous guest handoff.
+	// Production reconciliation uses runnerlaunch.Launcher directly.
+	runnerLaunch func(context.Context, *impdevv1alpha1.ImpVM) runnerlaunch.Result
 }
 
 // suspendBaseDir returns the configured suspend snapshot base directory,
@@ -229,8 +232,8 @@ func (r *ImpVMReconciler) handleScheduled(ctx context.Context, vm *impdevv1alpha
 }
 
 // maybeLaunchRunner starts the runner handoff goroutine when the VM carries
-// a runner config Secret reference. Best-effort: failures are recorded as
-// events; the VM's own exit path drives its lifecycle.
+// a runner config Secret reference. A terminal handoff failure marks the VM
+// Failed so the pool can replace a runner that can never accept work.
 func (r *ImpVMReconciler) maybeLaunchRunner(ctx context.Context, vm *impdevv1alpha1.ImpVM) {
 	if vm.Spec.RunnerConfigSecret == "" {
 		return
@@ -242,12 +245,18 @@ func (r *ImpVMReconciler) maybeLaunchRunner(ctx context.Context, vm *impdevv1alp
 	if !ok {
 		log.Error(nil, "driver does not expose a guest VSOCK lookup; cannot launch runner",
 			"secret", vm.Spec.RunnerConfigSecret)
+		if _, err := r.finishRunnerLaunchFailed(context.Background(), vm); err != nil {
+			log.Error(err, "failed to mark VM after missing guest VSOCK", "vm", vm.Name)
+		}
 		return
 	}
 	sockPath, found := vsock.GetVSockPath(vm.Namespace + "/" + vm.Name)
 	if !found {
 		log.Error(nil, "guest VSOCK is not available; cannot launch runner",
 			"secret", vm.Spec.RunnerConfigSecret)
+		if _, err := r.finishRunnerLaunchFailed(context.Background(), vm); err != nil {
+			log.Error(err, "failed to mark VM after unavailable guest VSOCK", "vm", vm.Name)
+		}
 		return
 	}
 	launch := &runnerlaunch.Launcher{
@@ -256,14 +265,46 @@ func (r *ImpVMReconciler) maybeLaunchRunner(ctx context.Context, vm *impdevv1alp
 		Sock:   sockPath,
 	}
 	go func() {
-		res := launch.Run(context.Background(), vm)
+		launchRunner := r.runnerLaunch
+		if launchRunner == nil {
+			launchRunner = launch.Run
+		}
+		res := launchRunner(context.Background(), vm)
 		if res.Err != nil {
 			log.Error(res.Err, "runner launch failed", "vm", vm.Name, "secret", vm.Spec.RunnerConfigSecret)
+			if _, err := r.finishRunnerLaunchFailed(context.Background(), vm); err != nil {
+				log.Error(err, "failed to mark VM after runner handoff failure", "vm", vm.Name)
+			}
 			if r.Recorder != nil {
 				r.Recorder.Event(vm, corev1.EventTypeWarning, "RunnerLaunchFailed", res.Err.Error())
 			}
 		}
 	}()
+}
+
+// finishRunnerLaunchFailed makes a failed guest handoff terminal. A JIT runner
+// cannot start without its one-time payload, so leaving it Running would keep a
+// VM that can never accept work. The handoff runs asynchronously, so fetch a
+// fresh object rather than patching the reconciler's potentially stale copy.
+func (r *ImpVMReconciler) finishRunnerLaunchFailed(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
+	key := client.ObjectKeyFromObject(vm)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &impdevv1alpha1.ImpVM{}
+		if err := r.Get(ctx, key, latest); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		switch latest.Status.Phase {
+		case impdevv1alpha1.VMPhaseFailed,
+			impdevv1alpha1.VMPhaseSucceeded,
+			impdevv1alpha1.VMPhaseTerminating:
+			return nil
+		}
+		base := latest.DeepCopy()
+		latest.Status.Phase = impdevv1alpha1.VMPhaseFailed
+		latest.Status.StartedAt = nil
+		return r.Status().Patch(ctx, latest, client.MergeFrom(base))
+	})
+	return ctrl.Result{}, err
 }
 
 // ensureVTEPAndFDB registers vm's VTEP entry (under a child span) and syncs the
