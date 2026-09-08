@@ -98,6 +98,26 @@ func TestCreateRunnerVMMintsJITConfigSecret(t *testing.T) {
 	require.True(t, metav1.IsControlledBy(&sec, &vm))
 }
 
+func TestCreateRunnerVMMintsOneJITConfigPerVM(t *testing.T) {
+	pool, tpl := runnerPoolFixture()
+	drv := &fakeJITDriver{jit: &runner.JITConfig{EncodedConfig: "ENCODED", RunnerName: "pool-runner"}}
+	r := jitReconciler(t, drv, pool, tpl)
+
+	require.NoError(t, r.createRunnerVM(context.Background(), pool, tpl))
+	require.NoError(t, r.createRunnerVM(context.Background(), pool, tpl))
+	require.Equal(t, 2, drv.mint)
+
+	var vms impv1alpha1.ImpVMList
+	require.NoError(t, r.List(context.Background(), &vms))
+	require.Len(t, vms.Items, 2)
+	secrets := map[string]struct{}{}
+	for _, vm := range vms.Items {
+		require.NotEmpty(t, vm.Spec.RunnerConfigSecret)
+		secrets[vm.Spec.RunnerConfigSecret] = struct{}{}
+	}
+	require.Len(t, secrets, 2)
+}
+
 func TestCreateRunnerVMMintErrorReturnsError(t *testing.T) {
 	pool, tpl := runnerPoolFixture()
 	drv := &fakeJITDriver{err: context.DeadlineExceeded}
