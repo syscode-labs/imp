@@ -328,13 +328,13 @@ func (r *ImpVMRunnerPoolReconciler) createRunnerVM(ctx context.Context, pool *im
 	if err := r.Create(ctx, vm); err != nil {
 		return err
 	}
-	// Mint the one-time runner registration payload and store it in a Secret the
-	// node agent hands to the guest (see internal/agent/runnerlaunch). Created
-	// after the VM so the owner reference resolves; a mint failure orphans no VM
-	// because the next reconcile deletes terminal/failed members and this VM
-	// boots only to serve one job — without a payload it is useless. Minting
-	// after Create also means the reconcile loop's backoff covers GitHub 429s.
-	return r.mintRunnerConfig(ctx, pool, vm)
+	if err := r.mintRunnerConfig(ctx, pool, vm); err != nil {
+		// GitHub minting and Kubernetes persistence are non-atomic. Never leave a
+		// VM that may boot without a one-time handoff, and never blind-remint it.
+		_ = r.Delete(ctx, vm)
+		return err
+	}
+	return nil
 }
 
 // mintRunnerConfig exchanges the pool credential for a one-time JIT config
@@ -344,6 +344,20 @@ func (r *ImpVMRunnerPoolReconciler) mintRunnerConfig(
 	pool *impv1alpha1.ImpVMRunnerPool,
 	vm *impv1alpha1.ImpVM,
 ) error {
+	if vm.Spec.RunnerConfigSecret != "" {
+		return r.validateRunnerSecret(ctx, vm, vm.Spec.RunnerConfigSecret)
+	}
+	secretName := runnerSecretName(vm)
+	var existing corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: secretName}, &existing); err == nil {
+		if err := validateRunnerSecretOwner(&existing, vm); err != nil {
+			return err
+		}
+		return r.patchRunnerSecretReference(ctx, vm, secretName)
+	} else if !apierrors.IsNotFound(err) {
+		return err
+	}
+
 	factory := r.DriverFactory
 	if factory == nil {
 		factory = defaultRunnerDriverFactory
@@ -360,14 +374,13 @@ func (r *ImpVMRunnerPoolReconciler) mintRunnerConfig(
 	if err != nil {
 		return fmt.Errorf("mint runner JIT config: %w", err)
 	}
-
 	payload, err := jit.MarshalSecretValue()
 	if err != nil {
 		return fmt.Errorf("serialize runner JIT config: %w", err)
 	}
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-jitconfig-%d", vm.Name, time.Now().UnixNano()),
+			Name:      secretName,
 			Namespace: vm.Namespace,
 			Labels:    map[string]string{impv1alpha1.LabelRunnerPool: pool.Name},
 			Annotations: map[string]string{
@@ -375,20 +388,59 @@ func (r *ImpVMRunnerPoolReconciler) mintRunnerConfig(
 				runner.JITConfigVersionAnnotation: runner.JITConfigVersionV1,
 			},
 		},
-		Data: map[string][]byte{
-			runner.JITConfigSecretKey: payload,
-		},
+		Data: map[string][]byte{runner.JITConfigSecretKey: payload},
 	}
 	if err := ctrl.SetControllerReference(vm, secret, r.Scheme); err != nil {
 		return err
 	}
 	if err := r.Create(ctx, secret); err != nil {
-		return err
+		if apierrors.IsAlreadyExists(err) {
+			var recovered corev1.Secret
+			if getErr := r.Get(ctx, client.ObjectKeyFromObject(secret), &recovered); getErr != nil {
+				return getErr
+			}
+			if ownerErr := validateRunnerSecretOwner(&recovered, vm); ownerErr != nil {
+				return ownerErr
+			}
+			return r.patchRunnerSecretReference(ctx, vm, secretName)
+		}
+		return fmt.Errorf("create runner JIT Secret: %w", err)
 	}
+	return r.patchRunnerSecretReference(ctx, vm, secretName)
+}
 
+func runnerSecretName(vm *impv1alpha1.ImpVM) string {
+	identity := string(vm.UID)
+	if identity == "" {
+		identity = vm.Name
+	}
+	return "impvm-" + strings.ToLower(strings.ReplaceAll(identity, "_", "-")) + "-jit"
+}
+
+func validateRunnerSecretOwner(secret *corev1.Secret, vm *impv1alpha1.ImpVM) error {
+	for _, ref := range secret.OwnerReferences {
+		if ref.Kind == "ImpVM" && ref.Name == vm.Name && ref.UID == vm.UID && ref.Controller != nil && *ref.Controller {
+			return nil
+		}
+	}
+	return fmt.Errorf("runner JIT Secret owner does not match VM identity")
+}
+
+func (r *ImpVMRunnerPoolReconciler) validateRunnerSecret(ctx context.Context, vm *impv1alpha1.ImpVM, name string) error {
+	var secret corev1.Secret
+	if err := r.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: name}, &secret); err != nil {
+		return fmt.Errorf("runner JIT Secret missing for VM: %w", err)
+	}
+	return validateRunnerSecretOwner(&secret, vm)
+}
+
+func (r *ImpVMRunnerPoolReconciler) patchRunnerSecretReference(ctx context.Context, vm *impv1alpha1.ImpVM, name string) error {
 	base := vm.DeepCopy()
-	vm.Spec.RunnerConfigSecret = secret.Name
-	return r.Patch(ctx, vm, client.MergeFrom(base))
+	vm.Spec.RunnerConfigSecret = name
+	if err := r.Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+		return fmt.Errorf("patch runner JIT Secret reference: %w", err)
+	}
+	return nil
 }
 
 func (r *ImpVMRunnerPoolReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -415,42 +467,32 @@ func defaultRunnerDriverFactory(
 	if err != nil {
 		return nil, err
 	}
+	auth, err := runner.ResolvePlatformAuth(pool.Spec.Platform.Type, pool.Spec.Platform.TokenSource, scope, pool.Spec.Platform.RunnerGroup, creds.Data)
+	if err != nil {
+		return nil, err
+	}
 
-	switch pool.Spec.Platform.Type {
+	switch auth.Provider {
 	case "github-actions":
-		if pool.Spec.Platform.TokenSource == "github_app" {
-			appCreds, err := githubAppCredsFromSecret(creds.Data)
+		if auth.Source == "github_app" {
+			appCreds, err := githubAppCredsFromSecret(auth.Credentials)
 			if err != nil {
-				return nil, fmt.Errorf("credentials secret %s/%s: %w", pool.Namespace, creds.Name, err)
+				return nil, err
 			}
 			return runner.NewGitHubAppDriver(runner.GitHubConfig{
 				Authentication: appCreds,
-				Scope:          scope,
-				RunnerGroup:    pool.Spec.Platform.RunnerGroup,
+				Scope:          auth.Scope,
+				RunnerGroup:    auth.RunnerGroup,
 			}, nil)
 		}
 		log := logf.FromContext(ctx)
-		if pool.Spec.Platform.TokenSource == "pat" {
-			log.Info("runner pool uses deprecated PAT token source; migrate to tokenSource: github_app",
-				"pool", pool.Name, "namespace", pool.Namespace)
-		}
-		token := pickSecretValue(creds.Data, "token")
-		if token == "" {
-			return nil, fmt.Errorf("credentials secret %s/%s has no token value", pool.Namespace, creds.Name)
-		}
-		return runner.NewGitHubDriver(token, scope, nil)
+		log.Info("runner pool uses deprecated PAT token source; migrate to tokenSource: github_app",
+			"pool", pool.Name, "namespace", pool.Namespace)
+		return runner.NewGitHubDriverWithGroup(string(auth.Credentials["token"]), auth.Scope, auth.RunnerGroup, nil)
 	case "forgejo":
-		token := pickSecretValue(creds.Data, "token")
-		if token == "" {
-			return nil, fmt.Errorf("credentials secret %s/%s has no token value", pool.Namespace, creds.Name)
-		}
-		return runner.NewForgejoDriver(token, pool.Spec.Platform.ServerURL, scope, nil)
+		return runner.NewForgejoDriver(string(auth.Credentials["token"]), pool.Spec.Platform.ServerURL, auth.Scope, nil)
 	case "gitlab":
-		token := pickSecretValue(creds.Data, "token")
-		if token == "" {
-			return nil, fmt.Errorf("credentials secret %s/%s has no token value", pool.Namespace, creds.Name)
-		}
-		return runner.NewGitLabDriver(token, pool.Spec.Platform.ServerURL, scope, nil)
+		return runner.NewGitLabDriver(string(auth.Credentials["token"]), pool.Spec.Platform.ServerURL, auth.Scope, nil)
 	default:
 		return nil, fmt.Errorf("unsupported platform type %q", pool.Spec.Platform.Type)
 	}
@@ -480,36 +522,20 @@ func platformScope(pool *impv1alpha1.ImpVMRunnerPool) (string, error) {
 	return "", fmt.Errorf("invalid platform.scope for type %q", pool.Spec.Platform.Type)
 }
 
-func pickSecretValue(m map[string][]byte, preferredKey string) string {
-	if len(m) == 0 {
-		return ""
-	}
-	if v, ok := m[preferredKey]; ok && len(v) > 0 {
-		return string(v)
-	}
-	for _, v := range m {
-		if len(v) > 0 {
-			return string(v)
-		}
-	}
-	return ""
-}
-
-// githubAppCredsFromSecret extracts the three-field GitHub App secret surface.
 func githubAppCredsFromSecret(data map[string][]byte) (runner.GitHubAppCredentials, error) {
-	pemStr := pickSecretValue(data, "github-app-private-key")
-	if pemStr == "" {
-		return runner.GitHubAppCredentials{}, fmt.Errorf("missing github-app-private-key (PEM)")
-	}
-	appID, err := strconv.ParseInt(strings.TrimSpace(pickSecretValue(data, "github-app-id")), 10, 64)
+	appID, err := runner.ParseNumericCredential(data, "github-app-id")
 	if err != nil {
-		return runner.GitHubAppCredentials{}, fmt.Errorf("github-app-id: %w", err)
+		return runner.GitHubAppCredentials{}, err
 	}
-	instID, err := strconv.ParseInt(strings.TrimSpace(pickSecretValue(data, "github-app-installation-id")), 10, 64)
+	instID, err := runner.ParseNumericCredential(data, "github-app-installation-id")
 	if err != nil {
-		return runner.GitHubAppCredentials{}, fmt.Errorf("github-app-installation-id: %w", err)
+		return runner.GitHubAppCredentials{}, err
 	}
-	return runner.GitHubAppCredentials{PrivateKeyPEM: pemStr, AppID: appID, Installation: instID}, nil
+	pemBytes := data["github-app-private-key"]
+	if len(pemBytes) == 0 {
+		return runner.GitHubAppCredentials{}, &runner.AuthResolutionError{Reason: "required GitHub App credential key is missing"}
+	}
+	return runner.GitHubAppCredentials{PrivateKeyPEM: string(pemBytes), AppID: appID, Installation: instID}, nil
 }
 
 func runnerDemandFromAnnotation(pool *impv1alpha1.ImpVMRunnerPool, enabled bool) int32 {

@@ -125,11 +125,8 @@ func TestCreateRunnerVMMintErrorReturnsError(t *testing.T) {
 
 	err := r.createRunnerVM(context.Background(), pool, tpl)
 	require.Error(t, err)
-	// The VM was created before the mint failed; it must carry no runner
-	// config (agent would otherwise wait forever) and the pool's normal
-	// terminal-member cleanup handles deletion.
+	// An ambiguous/failed mint must not leave a bootable VM without a handoff.
 	var vms impv1alpha1.ImpVMList
 	require.NoError(t, r.List(context.Background(), &vms))
-	require.Len(t, vms.Items, 1)
-	require.Empty(t, vms.Items[0].Spec.RunnerConfigSecret)
+	require.Empty(t, vms.Items)
 }

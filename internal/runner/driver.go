@@ -14,6 +14,13 @@ const (
 
 // JITConfig is a one-time runner registration token issued by the platform.
 // The runner binary uses this to register itself and pick up exactly one job.
+// JITResponseError indicates a successful API response that cannot produce a usable runner.
+type JITResponseError struct {
+	Reason string
+}
+
+func (e *JITResponseError) Error() string { return "runner JIT response rejected: " + e.Reason }
+
 type JITConfig struct {
 	// EncodedConfig is passed directly to the runner binary at startup.
 	EncodedConfig string
