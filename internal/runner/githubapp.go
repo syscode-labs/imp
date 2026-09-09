@@ -56,6 +56,9 @@ type githubAppSource struct {
 	// now is swappable for tests.
 	now func() time.Time
 
+	// tokenURL is swappable for deterministic tests; production uses GitHub.
+	tokenURL string
+
 	// mintOverride, when non-nil, replaces the HTTP mint call in tests.
 	mintOverride func(ctx context.Context) (token string, exp time.Time, err error)
 }
@@ -149,7 +152,10 @@ func (s *githubAppSource) mint(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	url := fmt.Sprintf("https://api.github.com/app/installations/%d/access_tokens", s.creds.Installation)
+	url := s.tokenURL
+	if url == "" {
+		url = fmt.Sprintf("https://api.github.com/app/installations/%d/access_tokens", s.creds.Installation)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(nil))
 	if err != nil {
 		return "", err

@@ -33,12 +33,17 @@ type GitHubDriver struct {
 // token is a PAT with actions:write scope.
 // scope must be "org:<org>" or "repo:<owner>/<repo>".
 func NewGitHubDriver(token, scope string, hmacSecret []byte) (*GitHubDriver, error) {
-	// context.Background() is used here intentionally: the token source is created
-	// once at startup and holds a static PAT (no refresh flow). Per-request contexts
-	// are applied via the ctx parameter passed to each method call.
+	return NewGitHubDriverWithGroup(token, scope, "", hmacSecret)
+}
+
+// NewGitHubDriverWithGroup preserves the named runner-group contract for PATs.
+func NewGitHubDriverWithGroup(token, scope, runnerGroup string, hmacSecret []byte) (*GitHubDriver, error) {
+	if token == "" {
+		return nil, &AuthResolutionError{Reason: "named credential key token is missing"}
+	}
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	client := github.NewClient(oauth2.NewClient(context.Background(), ts))
-	return newGitHubDriverWithClient(client, scope, "", hmacSecret)
+	return newGitHubDriverWithClient(client, scope, runnerGroup, hmacSecret)
 }
 
 // NewForgejoDriver creates a driver for a Forgejo instance.
@@ -136,6 +141,9 @@ func (d *GitHubDriver) GetJITConfig(ctx context.Context) (*JITConfig, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("GetJITConfig: %w", err)
+	}
+	if cfg == nil || cfg.GetEncodedJITConfig() == "" || cfg.Runner == nil || cfg.Runner.GetName() == "" {
+		return nil, &JITResponseError{Reason: "empty JIT response"}
 	}
 	return &JITConfig{
 		EncodedConfig: cfg.GetEncodedJITConfig(),
