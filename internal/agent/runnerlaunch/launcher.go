@@ -16,6 +16,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +32,45 @@ import (
 	pb "github.com/syscode-labs/imp/internal/proto/guest"
 	"github.com/syscode-labs/imp/internal/runner"
 )
+
+var (
+	jitConfigArgPattern  = regexp.MustCompile(`(?i)(--jitconfig(?:=|\s+))("[^"]*"|'[^']*'|\S+)`)
+	credentialPattern    = regexp.MustCompile(`(?i)(\b(?:authorization\s*:\s*(?:bearer|basic)|bearer|basic)\s+)[^\s]+|\b(?:token|password|passwd|secret|api[_-]?key|access[_-]?token|client[_-]?secret)\s*[:=]\s*[^\s]+|\b(?:gh[pousr]_|github_pat_|glpat-|xox[baprs]-)[A-Za-z0-9._-]+`)
+	credentialURLPattern = regexp.MustCompile(`(?i)https?://[^\s/@]+:[^\s/@]+@[^\s]+`)
+)
+
+const maxRunnerStderrLogBytes = 1024
+
+// sanitizeRunnerStderr keeps enough guest diagnostics to identify startup
+// failures without copying one-time credentials into controller logs.
+func sanitizeRunnerStderr(stderr, jitPayload string) string {
+	stderr = strings.TrimSpace(stderr)
+	if stderr == "" {
+		return ""
+	}
+	if jitPayload != "" {
+		stderr = strings.ReplaceAll(stderr, jitPayload, "<redacted>")
+	}
+	stderr = jitConfigArgPattern.ReplaceAllString(stderr, `${1}<redacted>`)
+	stderr = credentialURLPattern.ReplaceAllString(stderr, `<redacted-url>`)
+	stderr = credentialPattern.ReplaceAllString(stderr, `<redacted>`)
+	if len(stderr) <= maxRunnerStderrLogBytes {
+		return stderr
+	}
+	// Keep the bound byte-based while avoiding a partial UTF-8 code point.
+	limit := maxRunnerStderrLogBytes - 3
+	for limit > 0 && (stderr[limit]&0xc0) == 0x80 {
+		limit--
+	}
+	return stderr[:limit] + "..."
+}
+
+func runnerFailureStderr(exitCode int32, stderr, jitPayload string) string {
+	if exitCode == 0 {
+		return ""
+	}
+	return sanitizeRunnerStderr(stderr, jitPayload)
+}
 
 var launches sync.Map
 
@@ -150,6 +191,11 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 			"secret", secretName, "err", delErr)
 	}
 
+	if resp.ExitCode != 0 {
+		if stderr := runnerFailureStderr(resp.ExitCode, resp.Stderr, config.EncodedConfig); stderr != "" {
+			log.Warn("runner emitted stderr", "stderr", stderr)
+		}
+	}
 	log.Info("runner exited", "exit_code", resp.ExitCode, "secret", secretName)
 	if resp.ExitCode != 0 {
 		return Result{HandoffDone: true, ExitCode: resp.ExitCode,
