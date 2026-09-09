@@ -579,6 +579,15 @@ spec:
                     - cool-down
                     type: string
                 type: object
+              runnerConfigSecret:
+                description: |-
+                  RunnerConfigSecret names a Secret in the VM namespace carrying the
+                  platform's one-time runner registration payload (key: "jitconfig").
+                  When set, the node agent launches /usr/local/bin/runner in the guest
+                  after boot, passing the payload via the guest agent; the Secret is
+                  deleted after handoff. Set by the ImpVMRunnerPool controller; do not
+                  set manually.
+                type: string
               runnerLayer:
                 description: |-
                   RunnerLayer is an optional OCI image whose filesystem layers are composited
@@ -781,6 +790,22 @@ spec:
                   has been restarted.
                 format: int32
                 type: integer
+              runnerExitCode:
+                description: RunnerExitCode is the non-secret exit result returned
+                  by the guest runner.
+                format: int32
+                type: integer
+              runnerFailureReason:
+                description: RunnerFailureReason is a bounded, non-secret handoff
+                  failure summary.
+                maxLength: 256
+                type: string
+              runnerHandoffAccepted:
+                description: |-
+                  RunnerHandoffAccepted records that the one-time runner payload was handed
+                  to the guest Exec boundary. It is also the durable ambiguity marker: an
+                  agent restart must not replay a payload after this is set.
+                type: boolean
               runningAt:
                 description: RunningAt is the time the VM first reached Running phase.
                 format: date-time

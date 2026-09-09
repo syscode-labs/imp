@@ -5,26 +5,35 @@ metadata:
   annotations:
     "helm.sh/resource-policy": keep
     controller-gen.kubebuilder.io/version: v0.20.1
-  name: impsandboxes.sandbox.imp.dev
+  name: impnetworkattachments.imp.dev
 spec:
-  group: sandbox.imp.dev
+  group: imp.dev
   names:
     categories:
     - imp
-    kind: ImpSandbox
-    listKind: ImpSandboxList
-    plural: impsandboxes
+    kind: ImpNetworkAttachment
+    listKind: ImpNetworkAttachmentList
+    plural: impnetworkattachments
     shortNames:
-    - isbx
-    singular: impsandbox
+    - impnetattach
+    singular: impnetworkattachment
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .status.effectiveTenancy
-      name: Tenancy
+    - jsonPath: .spec.vmRef.name
+      name: VM
       type: string
-    - jsonPath: .status.conditions[?(@.type=='Ready')].status
-      name: Ready
+    - jsonPath: .spec.attachmentRef
+      name: Attachment
+      type: string
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.node
+      name: Node
+      type: string
+    - jsonPath: .status.assignedIP
+      name: IP
       type: string
     - jsonPath: .metadata.creationTimestamp
       name: Age
@@ -33,9 +42,10 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          ImpSandbox is an AI-agent sandbox backed by an Imp microVM. It expands into
-          owned ImpVM/ImpNetwork resources in its own namespace and is managed by the
-          optional imp-sandbox add-on.
+          ImpNetworkAttachment attaches one ImpVM to an administrator-allowlisted
+          physical network or VLAN. Creating this resource requires permissions
+          distinct from ImpVM/ImpNetwork roles. Isolated ImpNetwork networking remains
+          the default for all workloads without this explicit grant.
         properties:
           apiVersion:
             description: |-
@@ -55,69 +65,69 @@ spec:
           metadata:
             type: object
           spec:
-            description: ImpSandboxSpec defines the desired state of an ImpSandbox.
+            description: |-
+              ImpNetworkAttachmentSpec defines the request to attach one ImpVM to one
+              administrator-allowlisted LAN/VLAN attachment definition.
             properties:
-              classRef:
-                description: ClassRef references an ImpVMClass directly. Mutually
-                  exclusive with TemplateRef.
-                properties:
-                  name:
-                    type: string
-                required:
-                - name
-                type: object
-              expireAfter:
+              attachmentRef:
                 description: |-
-                  ExpireAfter caps sandbox wall-clock runtime from first Running
-                  transition. 0 or unset disables automatic expiration. Minimum enabled
-                  value is 60s. Resolution precedence mirrors ImpVM: sandbox-level value
-                  wins over template defaults.
+                  AttachmentRef names a LAN attachment definition from
+                  ClusterImpConfig.spec.networking.lanAttachments. The definition carries
+                  the VLAN ID, subnet, and DHCP policy; host interfaces are never chosen
+                  by users.
+                maxLength: 253
+                minLength: 1
                 type: string
-              image:
+              dhcp:
                 description: |-
-                  Image is the OCI image used as the VM rootfs when ClassRef is set
-                  directly without a template.
+                  DHCP declares that the guest will obtain its address via DHCP on the
+                  attached network. Allowed only when the referenced definition sets
+                  allowDHCP=true. Mutually exclusive with IP.
+                properties:
+                  enabled:
+                    description: Enabled turns on the DHCP request for this attachment.
+                    type: boolean
+                required:
+                - enabled
+                type: object
+              ip:
+                description: |-
+                  IP is a static address inside the definition subnet that the guest will
+                  configure itself. Required when DHCP is not requested.
+                pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
                 type: string
-              networkRef:
-                description: |-
-                  NetworkRef references an existing ImpNetwork to attach the sandbox to.
-                  When unset, the controller creates a dedicated ImpNetwork per sandbox.
-                properties:
-                  name:
-                    type: string
-                required:
-                - name
-                type: object
-              nodeSelector:
-                additionalProperties:
-                  type: string
-                description: NodeSelector constrains scheduling of the underlying
-                  VM.
-                type: object
-              templateRef:
-                description: |-
-                  TemplateRef references an ImpVMTemplate used as the sandbox image source.
-                  Mutually exclusive with ClassRef.
-                properties:
-                  name:
-                    type: string
-                required:
-                - name
-                type: object
-              tenancy:
-                default: standard
-                description: Tenancy selects the isolation tier.
+              mode:
+                default: access
+                description: Mode selects the attachment mode. Only "access" is supported.
                 enum:
-                - standard
-                - hard
+                - access
                 type: string
+              vmRef:
+                description: |-
+                  VMRef references the ImpVM in the same namespace whose guest joins the
+                  allowlisted network.
+                properties:
+                  name:
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - attachmentRef
+            - vmRef
             type: object
           status:
-            description: ImpSandboxStatus reflects the observed state of an ImpSandbox.
+            description: |-
+              ImpNetworkAttachmentStatus records authorization and audit state.
+              Audit fields are written by the system only; treat them as immutable once set.
             properties:
+              assignedIP:
+                description: |-
+                  AssignedIP is the address observed on the guest interface: the requested
+                  static IP or the DHCP lease reported by the guest agent.
+                type: string
               conditions:
-                description: Conditions represent the latest available observations
-                  of the sandbox.
+                description: Conditions follow the standard k8s condition convention.
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.
@@ -173,30 +183,30 @@ spec:
                   - type
                   type: object
                 type: array
-              effectiveTenancy:
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              macAddress:
                 description: |-
-                  EffectiveTenancy records the tenancy actually enforced after floor
-                  resolution. May differ from spec.tenancy when a cluster floor applies.
+                  MACAddress is the deterministic MAC assigned to the VM's attached
+                  interface.
                 type: string
-              networkName:
-                description: NetworkName is the name of the attached or generated
-                  ImpNetwork.
+              node:
+                description: Node is the node running the referenced ImpVM at authorization
+                  time.
                 type: string
-              sessionSecretRef:
+              phase:
+                description: Phase is the high-level state of this attachment request.
+                enum:
+                - Pending
+                - Authorized
+                - Denied
+                - Failed
+                type: string
+              requester:
                 description: |-
-                  SessionSecretRef points to the Secret holding this sandbox's session
-                  token for data-plane access (gateway gRPC). The token is deterministic
-                  HMAC(clusterKey, sandboxUID): the Secret is the delivery mechanism for
-                  SDKs, not the source of truth — rotating the cluster key invalidates
-                  all sessions at once.
-                properties:
-                  name:
-                    type: string
-                required:
-                - name
-                type: object
-              vmName:
-                description: VMName is the name of the generated ImpVM.
+                  Requester is the authenticated username recorded at creation time.
+                  Mirrored from the imp.dev/requester annotation by admission.
                 type: string
             type: object
         type: object
