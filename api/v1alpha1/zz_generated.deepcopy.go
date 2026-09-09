@@ -1272,6 +1272,11 @@ func (in *ImpVMStatus) DeepCopyInto(out *ImpVMStatus) {
 		in, out := &in.ExhaustedAt, &out.ExhaustedAt
 		*out = (*in).DeepCopy()
 	}
+	if in.RunnerExitCode != nil {
+		in, out := &in.RunnerExitCode, &out.RunnerExitCode
+		*out = new(int32)
+		**out = **in
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]v1.Condition, len(*in))
