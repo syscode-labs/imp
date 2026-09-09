@@ -355,9 +355,17 @@ func TestBuildComposite_WithExtraLayer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("composite.Digest: %v", err)
 	}
+	baseDigest, err := pulledBase.Digest()
+	if err != nil {
+		t.Fatalf("base.Digest: %v", err)
+	}
+	extraDigest, err := pulledExtra.Digest()
+	if err != nil {
+		t.Fatalf("extra.Digest: %v", err)
+	}
 
-	// Pre-populate cache for the composite digest.
-	cachedPath := b.cachePath(compositeDigest.Hex)
+	// Pre-populate cache for the composite input identity.
+	cachedPath := b.cachePath(compositeDigest.Hex + "-" + compositeCacheKey([]string{baseDigest.Hex, extraDigest.Hex}))
 	if err := os.MkdirAll(b.CacheDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -476,8 +484,8 @@ func TestWithRunnerGuestAgentUsesRunnerInitAndDistinctCacheKey(t *testing.T) {
 	}
 
 	opt := WithRunnerGuestAgent(agentPath)
-	if got, want := opt.CacheKey(), "ga-runner-v2"; got != want {
-		t.Fatalf("CacheKey() = %q, want %q", got, want)
+	if !strings.HasPrefix(opt.CacheKey(), "ga-runner-v2-") {
+		t.Fatalf("CacheKey() = %q, want runner version and content digest", opt.CacheKey())
 	}
 	rootDir := filepath.Join(tmpDir, "root")
 	if err := opt.Apply(rootDir); err != nil {
@@ -489,5 +497,32 @@ func TestWithRunnerGuestAgentUsesRunnerInitAndDistinctCacheKey(t *testing.T) {
 	}
 	if string(got) != runnerInitScript {
 		t.Fatalf("runner init = %q, want %q", got, runnerInitScript)
+	}
+}
+
+func TestWithRunnerGuestAgentCacheKeyChangesWithContent(t *testing.T) {
+	dir := t.TempDir()
+	first := filepath.Join(dir, "guest-agent-v1")
+	second := filepath.Join(dir, "guest-agent-v2")
+	if err := os.WriteFile(first, []byte("guest-agent-v1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte("guest-agent-v2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, other := WithRunnerGuestAgent(first).CacheKey(), WithRunnerGuestAgent(second).CacheKey(); got == other {
+		t.Fatalf("different guest-agent inputs share cache key %q", got)
+	}
+}
+
+func TestCompositeCacheKeyChangesWithLayerDigestAndReusesUnchangedInputs(t *testing.T) {
+	first := compositeCacheKey([]string{"base", "runner-v1"})
+	second := compositeCacheKey([]string{"base", "runner-v2"})
+	if first == second {
+		t.Fatalf("different runner layer inputs share cache key %q", first)
+	}
+	if got := compositeCacheKey([]string{"base", "runner-v1"}); got != first {
+		t.Fatalf("unchanged composite inputs did not reuse cache key: got %q, want %q", got, first)
 	}
 }

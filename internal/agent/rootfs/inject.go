@@ -1,6 +1,8 @@
 package rootfs
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -64,6 +66,16 @@ func WithRunnerGuestAgent(guestAgentSrc string) BuildOption {
 }
 
 func withGuestAgent(guestAgentSrc, cacheKey, script string) BuildOption {
+	content, err := os.ReadFile(guestAgentSrc) //nolint:gosec // G304: caller controls source path
+	if err != nil {
+		// Apply will report the source error. Keep a path-derived key here so an
+		// unreadable source cannot accidentally share a known-good cache entry.
+		pathDigest := sha256.Sum256([]byte(guestAgentSrc))
+		cacheKey += "-unreadable-" + hex.EncodeToString(pathDigest[:])
+	} else {
+		contentDigest := sha256.Sum256(content)
+		cacheKey += "-" + hex.EncodeToString(contentDigest[:])
+	}
 	return buildOption{
 		key: cacheKey,
 		apply: func(tmpDir string) error {
