@@ -46,7 +46,11 @@ func boundedFailureReason(reason, payload string) string {
 	if len(reason) <= maxRunnerFailureReasonBytes {
 		return reason
 	}
-	return reason[:maxRunnerFailureReasonBytes-3] + "..."
+	limit := maxRunnerFailureReasonBytes - 3
+	for limit > 0 && (reason[limit]&0xc0) == 0x80 {
+		limit--
+	}
+	return reason[:limit] + "..."
 }
 
 // sanitizeRunnerStderr keeps enough guest diagnostics to identify startup
@@ -162,6 +166,7 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	}
 	err := reader.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: secretName}, &secret)
 	if err != nil {
+		l.recordFailure(ctx, vm, err.Error(), "")
 		// NotFound is intentionally not interpreted as a completed handoff: it
 		// may be a cleanup race or an agent restart in an unknown state.
 		return Result{Err: fmt.Errorf("get runner config Secret %s: %w", secretName, err)}
@@ -183,6 +188,7 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	// Dial the guest agent, retrying while the guest finishes booting.
 	conn, err := l.dialWithRetry(ctx)
 	if err != nil {
+		l.recordFailure(ctx, vm, err.Error(), config.EncodedConfig)
 		return Result{Err: fmt.Errorf("dial guest agent: %w", err)}
 	}
 	defer conn.Close() //nolint:errcheck
