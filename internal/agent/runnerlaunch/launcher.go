@@ -181,18 +181,24 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 		return Result{Err: fmt.Errorf("decode runner config Secret %s: %w", secretName, err)}
 	}
 
-	if err := l.recordAccepted(ctx, vm); err != nil {
-		return Result{Err: fmt.Errorf("record runner handoff acceptance: %w", err)}
-	}
-
 	// Dial the guest agent, retrying while the guest finishes booting.
 	conn, err := l.dialWithRetry(ctx)
 	if err != nil {
+		// The guest has not received the payload yet, so a later reconciliation
+		// may safely retry the handoff.
 		l.recordFailure(ctx, vm, err.Error(), config.EncodedConfig)
 		return Result{Err: fmt.Errorf("dial guest agent: %w", err)}
 	}
 	defer conn.Close() //nolint:errcheck
 	guest := pb.NewGuestAgentClient(conn)
+
+	// Record acceptance only after the guest boundary is reachable and
+	// immediately before Exec. A dial failure must remain retryable, while a
+	// restart after this marker is necessarily ambiguous because Exec is unary:
+	// its error may arrive after the guest has started the process.
+	if err := l.recordAccepted(ctx, vm); err != nil {
+		return Result{Err: fmt.Errorf("record runner handoff acceptance: %w", err)}
+	}
 
 	// Hand off. Env keeps the payload out of argv (not visible in guest ps).
 	hCtx, cancel := context.WithTimeout(ctx, handoffTimeout)
@@ -207,6 +213,13 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	})
 	if err != nil {
 		l.recordFailure(ctx, vm, err.Error(), config.EncodedConfig)
+		// Acceptance makes the handoff non-replayable even when the unary RPC
+		// returns an ambiguous transport error. Delete the payload here too so
+		// the credential cannot remain available until Secret expiry.
+		if delErr := l.Client.Delete(ctx, &secret); delErr != nil && !apierrors.IsNotFound(delErr) {
+			log.Error("failed to delete runner config Secret after ambiguous handoff",
+				"secret", secretName, "err", delErr)
+		}
 		return Result{Err: fmt.Errorf("launch runner in guest: %w", err)}
 	}
 
