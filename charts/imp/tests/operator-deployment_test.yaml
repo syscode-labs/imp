@@ -45,6 +45,23 @@ tests:
           path: spec.template.spec.containers[0].image
           value: ghcr.io/syscode-labs/imp-operator@sha256:191c0093b387ce7e3f323e3b21c15de1b8f61464db63a586253c0893763b14aa
 
+  - it: applies configured runner-node toleration
+    template: templates/operator/deployment.yaml
+    set:
+      operator.tolerations:
+        - key: imp.dev/runner
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+    asserts:
+      - contains:
+          path: spec.template.spec.tolerations
+          content:
+            key: imp.dev/runner
+            operator: Equal
+            value: "true"
+            effect: NoSchedule
+
   - it: mounts webhook TLS secret
     template: templates/operator/deployment.yaml
     set:
