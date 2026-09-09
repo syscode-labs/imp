@@ -9,6 +9,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	impv1alpha1 "github.com/syscode-labs/imp/api/v1alpha1"
 )
 
 func TestDialWithRetryWaitsForRealConnection(t *testing.T) {
@@ -61,5 +68,38 @@ func TestSanitizeRunnerStderrSuccessDoesNotLog(t *testing.T) {
 	}
 	if got := runnerFailureStderr(1, "", ""); got != "" {
 		t.Fatalf("empty failure stderr = %q, want empty", got)
+	}
+}
+
+func TestRunnerOutcomeIsNonSecretAndRestartSafe(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	vm := &impv1alpha1.ImpVM{
+		ObjectMeta: metav1.ObjectMeta{Name: "vm", Namespace: "ns", UID: "vm-uid"},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(vm).Build()
+	launcher := &Launcher{Client: c}
+	if err := launcher.recordAccepted(context.Background(), vm); err != nil {
+		t.Fatalf("recordAccepted: %v", err)
+	}
+	if !vm.Status.RunnerHandoffAccepted {
+		t.Fatal("handoff acceptance was not recorded")
+	}
+	launcher.recordFailure(context.Background(), vm, "runner failed token=secret-value", "secret-value")
+	if strings.Contains(vm.Status.RunnerFailureReason, "secret-value") || strings.Contains(vm.Status.RunnerFailureReason, "token=") {
+		t.Fatalf("failure reason leaked payload: %q", vm.Status.RunnerFailureReason)
+	}
+	code := int32(17)
+	if err := launcher.recordOutcome(context.Background(), vm, code, "runner exited"); err != nil {
+		t.Fatalf("recordOutcome: %v", err)
+	}
+	stored := &impv1alpha1.ImpVM{}
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(vm), stored); err != nil {
+		t.Fatalf("get stored VM: %v", err)
+	}
+	if stored.Status.RunnerExitCode == nil || *stored.Status.RunnerExitCode != code {
+		t.Fatalf("stored exit code = %v, want %d", stored.Status.RunnerExitCode, code)
 	}
 }

@@ -789,6 +789,22 @@ spec:
                   has been restarted.
                 format: int32
                 type: integer
+              runnerExitCode:
+                description: RunnerExitCode is the non-secret exit result returned
+                  by the guest runner.
+                format: int32
+                type: integer
+              runnerFailureReason:
+                description: RunnerFailureReason is a bounded, non-secret handoff
+                  failure summary.
+                maxLength: 256
+                type: string
+              runnerHandoffAccepted:
+                description: |-
+                  RunnerHandoffAccepted records that the one-time runner payload was handed
+                  to the guest Exec boundary. It is also the durable ambiguity marker: an
+                  agent restart must not replay a payload after this is set.
+                type: boolean
               runningAt:
                 description: RunningAt is the time the VM first reached Running phase.
                 format: date-time

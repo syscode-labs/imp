@@ -7,9 +7,8 @@
 // referenced by ImpVM.spec.runnerConfigSecret. After the VM reaches Running,
 // the agent dials the guest agent over VSOCK, sends an Exec for
 // /usr/local/bin/runner with IMP_GITHUB_JITCONFIG in the command environment,
-// and deletes the Secret — the payload is one-time and must not outlive
-// handoff. If the Secret is already gone (agent restart after a successful
-// handoff) the launcher is a no-op.
+// and deletes the Secret only after the runner exits. The payload is one-time
+// and must not be replayed after an ambiguous handoff.
 package runnerlaunch
 
 import (
@@ -40,6 +39,15 @@ var (
 )
 
 const maxRunnerStderrLogBytes = 1024
+const maxRunnerFailureReasonBytes = 256
+
+func boundedFailureReason(reason, payload string) string {
+	reason = sanitizeRunnerStderr(reason, payload)
+	if len(reason) <= maxRunnerFailureReasonBytes {
+		return reason
+	}
+	return reason[:maxRunnerFailureReasonBytes-3] + "..."
+}
 
 // sanitizeRunnerStderr keeps enough guest diagnostics to identify startup
 // failures without copying one-time credentials into controller logs.
@@ -127,14 +135,23 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	if secretName == "" {
 		return Result{}
 	}
-	launchKey := vm.Namespace + "/" + vm.Name
+	launchKey := vm.Namespace + "/" + vm.Name + "/" + string(vm.UID)
 	if _, loaded := launches.LoadOrStore(launchKey, struct{}{}); loaded {
 		return Result{}
 	}
 	defer launches.Delete(launchKey)
 
-	// Read the payload. Missing Secret after an agent restart means the
-	// handoff already happened; treat as done.
+	// The accepted marker is written before Exec because the unary RPC has no
+	// acknowledgement boundary: it returns only when the guest process exits.
+	// A restart after this write is therefore ambiguous and must not replay.
+	if vm.Status.RunnerExitCode != nil || vm.Status.RunnerHandoffAccepted {
+		if vm.Status.RunnerExitCode != nil {
+			return Result{HandoffDone: true, ExitCode: *vm.Status.RunnerExitCode}
+		}
+		return Result{Err: fmt.Errorf("runner handoff for VM UID %s is ambiguous; refusing replay", vm.UID)}
+	}
+
+	// Read the payload through the uncached APIReader by exact namespace/name.
 	var secret corev1.Secret
 	reader := l.Reader
 	if reader == nil {
@@ -144,11 +161,9 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 		return Result{Err: fmt.Errorf("runner launcher requires Kubernetes reader and client")}
 	}
 	err := reader.Get(ctx, client.ObjectKey{Namespace: vm.Namespace, Name: secretName}, &secret)
-	switch {
-	case apierrors.IsNotFound(err):
-		log.Info("runner config Secret already deleted; handoff previously completed", "secret", secretName)
-		return Result{HandoffDone: true}
-	case err != nil:
+	if err != nil {
+		// NotFound is intentionally not interpreted as a completed handoff: it
+		// may be a cleanup race or an agent restart in an unknown state.
 		return Result{Err: fmt.Errorf("get runner config Secret %s: %w", secretName, err)}
 	}
 	config, err := runner.JITConfigFromSecretValue(
@@ -157,7 +172,12 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 		secret.Annotations[runner.JITConfigRunnerAnnotation],
 	)
 	if err != nil {
+		l.recordFailure(ctx, vm, err.Error(), "")
 		return Result{Err: fmt.Errorf("decode runner config Secret %s: %w", secretName, err)}
+	}
+
+	if err := l.recordAccepted(ctx, vm); err != nil {
+		return Result{Err: fmt.Errorf("record runner handoff acceptance: %w", err)}
 	}
 
 	// Dial the guest agent, retrying while the guest finishes booting.
@@ -168,7 +188,7 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 	defer conn.Close() //nolint:errcheck
 	guest := pb.NewGuestAgentClient(conn)
 
-	// Hand off. env keeps the payload out of argv (not visible in guest ps).
+	// Hand off. Env keeps the payload out of argv (not visible in guest ps).
 	hCtx, cancel := context.WithTimeout(ctx, handoffTimeout)
 	defer cancel()
 	resp, err := guest.Exec(hCtx, &pb.ExecRequest{
@@ -180,15 +200,8 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 		TimeoutSeconds: int32(handoffTimeout / time.Second),
 	})
 	if err != nil {
+		l.recordFailure(ctx, vm, err.Error(), config.EncodedConfig)
 		return Result{Err: fmt.Errorf("launch runner in guest: %w", err)}
-	}
-
-	// One-time payload: delete immediately after successful delivery.
-	delErr := l.Client.Delete(ctx, &secret)
-	if delErr != nil && !apierrors.IsNotFound(delErr) {
-		// Non-fatal: expiry and pool cleanup will collect it, but surface it.
-		log.Error("failed to delete runner config Secret after handoff",
-			"secret", secretName, "err", delErr)
 	}
 
 	if resp.ExitCode != 0 {
@@ -196,12 +209,47 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 			log.Warn("runner emitted stderr", "stderr", stderr)
 		}
 	}
+	if err := l.recordOutcome(ctx, vm, resp.ExitCode, runnerFailureStderr(resp.ExitCode, resp.Stderr, config.EncodedConfig)); err != nil {
+		log.Error("failed to persist runner handoff outcome", "err", err)
+	}
+
+	// The Secret remains until unary Exec returns, which is the runner-exit
+	// boundary. Delete-NotFound is an idempotent cleanup success.
+	delErr := l.Client.Delete(ctx, &secret)
+	if delErr != nil && !apierrors.IsNotFound(delErr) {
+		log.Error("failed to delete runner config Secret after runner exit",
+			"secret", secretName, "err", delErr)
+	}
+
 	log.Info("runner exited", "exit_code", resp.ExitCode, "secret", secretName)
 	if resp.ExitCode != 0 {
 		return Result{HandoffDone: true, ExitCode: resp.ExitCode,
 			Err: fmt.Errorf("runner exited with code %d", resp.ExitCode)}
 	}
 	return Result{HandoffDone: true, ExitCode: resp.ExitCode}
+}
+
+func (l *Launcher) recordAccepted(ctx context.Context, vm *impv1alpha1.ImpVM) error {
+	base := vm.DeepCopy()
+	vm.Status.RunnerHandoffAccepted = true
+	return l.Client.Status().Patch(ctx, vm, client.MergeFrom(base))
+}
+
+func (l *Launcher) recordFailure(ctx context.Context, vm *impv1alpha1.ImpVM, reason, payload string) {
+	base := vm.DeepCopy()
+	vm.Status.RunnerFailureReason = boundedFailureReason(reason, payload)
+	if err := l.Client.Status().Patch(ctx, vm, client.MergeFrom(base)); err != nil {
+		if l.Log != nil {
+			l.Log.Error("failed to persist runner handoff failure", "err", err)
+		}
+	}
+}
+
+func (l *Launcher) recordOutcome(ctx context.Context, vm *impv1alpha1.ImpVM, exitCode int32, reason string) error {
+	base := vm.DeepCopy()
+	vm.Status.RunnerExitCode = &exitCode
+	vm.Status.RunnerFailureReason = boundedFailureReason(reason, "")
+	return l.Client.Status().Patch(ctx, vm, client.MergeFrom(base))
 }
 
 // dialWithRetry waits for the lazy gRPC client to establish a real HTTP/2
