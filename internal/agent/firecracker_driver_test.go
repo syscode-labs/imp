@@ -487,6 +487,9 @@ func TestFirecrackerDriver_BuildConfig_WithNetInfo(t *testing.T) {
 	if iface.StaticConfiguration.IPConfiguration.IPAddr.IP.String() != "192.168.100.2" {
 		t.Errorf("IP = %q, want 192.168.100.2", iface.StaticConfiguration.IPConfiguration.IPAddr.IP)
 	}
+	if got := iface.StaticConfiguration.IPConfiguration.Nameservers; len(got) != 1 || got[0] != "8.8.8.8" {
+		t.Errorf("Nameservers = %v, want [8.8.8.8]", got)
+	}
 }
 
 func TestFirecrackerDriver_BuildConfig_WithoutNetInfo(t *testing.T) {

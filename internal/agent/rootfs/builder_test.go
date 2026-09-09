@@ -500,6 +500,21 @@ func TestWithRunnerGuestAgentUsesRunnerInitAndDistinctCacheKey(t *testing.T) {
 	}
 }
 
+func TestRunnerInitCreatesResolverBeforeGuestAgent(t *testing.T) {
+	resolver := "ln -sf /proc/net/pnp /etc/resolv.conf\n"
+	resolverAt := strings.Index(runnerInitScript, resolver)
+	agentAt := strings.Index(runnerInitScript, "exec /.imp/guest-agent\n")
+	if resolverAt < 0 {
+		t.Fatalf("runner init does not create /etc/resolv.conf: %q", runnerInitScript)
+	}
+	if agentAt < 0 || resolverAt > agentAt {
+		t.Fatalf("resolver setup must precede guest-agent execution: %q", runnerInitScript)
+	}
+	if !strings.HasPrefix(runnerInitScript, "#!/bin/sh\n"+virtualFilesystemMounts) {
+		t.Fatalf("runner init changed existing virtual filesystem mounts: %q", runnerInitScript)
+	}
+}
+
 func TestWithRunnerGuestAgentCacheKeyChangesWithContent(t *testing.T) {
 	dir := t.TempDir()
 	first := filepath.Join(dir, "guest-agent-v1")
