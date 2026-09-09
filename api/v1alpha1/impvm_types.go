@@ -224,6 +224,21 @@ type ImpVMStatus struct {
 	// +optional
 	CiliumEndpointID int64 `json:"ciliumEndpointID,omitempty"`
 
+	// RunnerHandoffAccepted records that the one-time runner payload was handed
+	// to the guest Exec boundary. It is also the durable ambiguity marker: an
+	// agent restart must not replay a payload after this is set.
+	// +optional
+	RunnerHandoffAccepted bool `json:"runnerHandoffAccepted,omitempty"`
+
+	// RunnerExitCode is the non-secret exit result returned by the guest runner.
+	// +optional
+	RunnerExitCode *int32 `json:"runnerExitCode,omitempty"`
+
+	// RunnerFailureReason is a bounded, non-secret handoff failure summary.
+	// +optional
+	// +kubebuilder:validation:MaxLength=256
+	RunnerFailureReason string `json:"runnerFailureReason,omitempty"`
+
 	// Conditions follow the standard k8s condition convention.
 	// +optional
 	// +listType=map
