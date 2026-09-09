@@ -17,6 +17,13 @@ tests:
           path: spec.replicas
           value: 2
       - contains:
+          path: spec.template.spec.tolerations
+          content:
+            key: imp.dev/runner
+            operator: Equal
+            value: "true"
+            effect: NoSchedule
+      - contains:
           path: spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution
           content:
             topologyKey: kubernetes.io/hostname

@@ -36,6 +36,12 @@ operator:
       cpu: 500m
       memory: 512Mi
   nodeSelector: {}
+  # Operator pods must remain schedulable on dedicated Imp runner nodes.
+  tolerations:
+    - key: imp.dev/runner
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
   rbac:
     cniDetection: minimal
   extraEnv: []
