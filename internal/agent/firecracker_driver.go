@@ -494,6 +494,9 @@ func (d *FirecrackerDriver) buildConfig(
 	gaEnabled bool,
 ) firecracker.Config {
 	kernelArgs := d.KernelArgs
+	if netInfo != nil && !netInfo.DHCP {
+		kernelArgs += " ip=" + staticNetworkBootParam(netInfo)
+	}
 	if gaEnabled {
 		kernelArgs += " init=/.imp/init"
 	}
@@ -523,16 +526,6 @@ func (d *FirecrackerDriver) buildConfig(
 		}}
 		// LAN attachments with DHCP get no static IP configuration; the guest
 		// configures itself from the physical network.
-		if !netInfo.DHCP {
-			nic[0].StaticConfiguration.IPConfiguration = &firecracker.IPConfiguration{
-				IPAddr: gonet.IPNet{
-					IP:   gonet.ParseIP(netInfo.IP).To4(),
-					Mask: gonet.CIDRMask(netInfo.PrefixLen, 32),
-				},
-				Gateway:     gonet.ParseIP(netInfo.Gateway),
-				Nameservers: netInfo.DNS,
-			}
-		}
 		cfg.NetworkInterfaces = nic
 	}
 	if gaEnabled {
@@ -544,6 +537,19 @@ func (d *FirecrackerDriver) buildConfig(
 		}}
 	}
 	return cfg
+}
+
+// staticNetworkBootParam returns Linux's ten-field ip= value. Nameservers are
+// fields 8 and 9; retain the empty optional secondary field when only a
+// primary resolver is configured.
+func staticNetworkBootParam(info *network.NetworkInfo) string {
+	mask := gonet.CIDRMask(info.PrefixLen, 32)
+	netmask := fmt.Sprintf("%d.%d.%d.%d", mask[0], mask[1], mask[2], mask[3])
+	var dns [2]string
+	copy(dns[:], info.DNS)
+	return strings.Join([]string{
+		info.IP, "", info.Gateway, netmask, "", "", "off", dns[0], dns[1], "",
+	}, ":")
 }
 
 func vsockPathFromSocket(socketPath string) string {
