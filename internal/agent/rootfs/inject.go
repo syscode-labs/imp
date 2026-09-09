@@ -21,7 +21,10 @@ const (
 
 	// runnerInitScript keeps the guest agent as PID 1. The runner is started
 	// later through the guest Exec API after its one-time JIT config arrives.
-	runnerInitScript = "#!/bin/sh\n" + virtualFilesystemMounts + "[ -f /.imp/env ] && . /.imp/env\nexec /.imp/guest-agent\n"
+	// Firecracker's static IP configuration supplies nameservers through the
+	// kernel's /proc/net/pnp file; expose that file at the conventional resolver
+	// path before the guest agent can launch the runner.
+	runnerInitScript = "#!/bin/sh\n" + virtualFilesystemMounts + "ln -sf /proc/net/pnp /etc/resolv.conf\n[ -f /.imp/env ] && . /.imp/env\nexec /.imp/guest-agent\n"
 )
 
 // BuildOption is applied to the extracted rootfs directory before building ext4.
