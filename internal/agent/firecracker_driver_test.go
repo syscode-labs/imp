@@ -481,14 +481,45 @@ func TestFirecrackerDriver_BuildConfig_WithNetInfo(t *testing.T) {
 	if iface.StaticConfiguration.MacAddress != "02:aa:bb:cc:dd:ee" {
 		t.Errorf("MacAddress = %q, want %q", iface.StaticConfiguration.MacAddress, "02:aa:bb:cc:dd:ee")
 	}
-	if iface.StaticConfiguration.IPConfiguration == nil {
-		t.Fatal("IPConfiguration is nil")
+	if iface.StaticConfiguration.IPConfiguration != nil {
+		t.Fatal("IPConfiguration must be nil when static networking is encoded in KernelArgs")
 	}
-	if iface.StaticConfiguration.IPConfiguration.IPAddr.IP.String() != "192.168.100.2" {
-		t.Errorf("IP = %q, want 192.168.100.2", iface.StaticConfiguration.IPConfiguration.IPAddr.IP)
+	wantArgs := "console=ttyS0 reboot=k panic=1 pci=off ip=192.168.100.2::192.168.100.1:255.255.255.0:::off:8.8.8.8::"
+	if cfg.KernelArgs != wantArgs {
+		t.Errorf("KernelArgs = %q, want %q", cfg.KernelArgs, wantArgs)
 	}
-	if got := iface.StaticConfiguration.IPConfiguration.Nameservers; len(got) != 1 || got[0] != "8.8.8.8" {
-		t.Errorf("Nameservers = %v, want [8.8.8.8]", got)
+}
+
+func TestFirecrackerDriver_BuildConfig_StaticNetworkBootParam_SecondaryDNS(t *testing.T) {
+	got := staticNetworkBootParam(&network.NetworkInfo{
+		IP: "192.168.100.2", PrefixLen: 24, Gateway: "192.168.100.1",
+		DNS: []string{"8.8.8.8", "1.1.1.1"},
+	})
+	want := "192.168.100.2::192.168.100.1:255.255.255.0:::off:8.8.8.8:1.1.1.1:"
+	if got != want {
+		t.Errorf("staticNetworkBootParam = %q, want %q", got, want)
+	}
+}
+
+func TestFirecrackerDriver_BuildConfig_StaticNetworkBootParam_NoSecondaryDNS(t *testing.T) {
+	got := staticNetworkBootParam(&network.NetworkInfo{
+		IP: "192.168.100.2", PrefixLen: 24, Gateway: "192.168.100.1",
+		DNS: []string{"8.8.8.8"},
+	})
+	want := "192.168.100.2::192.168.100.1:255.255.255.0:::off:8.8.8.8::"
+	if got != want {
+		t.Errorf("staticNetworkBootParam = %q, want %q", got, want)
+	}
+}
+
+func TestFirecrackerDriver_BuildConfig_DHCPDoesNotAddStaticBootParam(t *testing.T) {
+	d := &FirecrackerDriver{KernelArgs: "console=ttyS0"}
+	class := &impdevv1alpha1.ImpVMClass{}
+	class.Spec.VCPU = 1
+	class.Spec.MemoryMiB = 256
+	cfg := d.buildConfig(class, "/cache/root.ext4", "/run/imp/s/vm.sock", &network.NetworkInfo{DHCP: true}, false)
+	if cfg.KernelArgs != "console=ttyS0" {
+		t.Errorf("KernelArgs = %q, want no static ip= parameter", cfg.KernelArgs)
 	}
 }
 
