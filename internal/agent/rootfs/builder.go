@@ -3,6 +3,8 @@ package rootfs
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,12 +64,23 @@ func (b *Builder) BuildComposite(ctx context.Context, baseImage string, extraLay
 		return "", err
 	}
 
+	baseDigest, err := img.Digest()
+	if err != nil {
+		return "", fmt.Errorf("digest base image: %w", err)
+	}
+	compositeInputs := []string{baseDigest.Hex}
+
 	// Overlay each extra layer image on top of the base.
 	for _, layerRef := range filtered {
 		extra, err := b.pullImage(ctx, layerRef)
 		if err != nil {
 			return "", fmt.Errorf("pull extra layer %q: %w", layerRef, err)
 		}
+		layerDigest, err := extra.Digest()
+		if err != nil {
+			return "", fmt.Errorf("digest extra layer %q: %w", layerRef, err)
+		}
+		compositeInputs = append(compositeInputs, layerDigest.Hex)
 		layers, err := extra.Layers()
 		if err != nil {
 			return "", fmt.Errorf("get layers from %q: %w", layerRef, err)
@@ -78,11 +91,15 @@ func (b *Builder) BuildComposite(ctx context.Context, baseImage string, extraLay
 		}
 	}
 
-	return b.buildFromImage(ctx, img, opts...)
+	return b.buildFromImageWithIdentity(ctx, img, compositeCacheKey(compositeInputs), opts...)
 }
 
 // buildFromImage builds an ext4 rootfs from an already-fetched v1.Image.
 func (b *Builder) buildFromImage(ctx context.Context, img v1.Image, opts ...BuildOption) (string, error) {
+	return b.buildFromImageWithIdentity(ctx, img, "", opts...)
+}
+
+func (b *Builder) buildFromImageWithIdentity(ctx context.Context, img v1.Image, identity string, opts ...BuildOption) (string, error) {
 	// Resolve manifest digest → cache key.
 	digest, err := img.Digest()
 	if err != nil {
@@ -91,6 +108,9 @@ func (b *Builder) buildFromImage(ctx context.Context, img v1.Image, opts ...Buil
 
 	// Check cache — return immediately if already built.
 	cacheKey := digest.Hex
+	if identity != "" {
+		cacheKey += "-" + identity
+	}
 	if suffix := optionsCacheKey(opts); suffix != "" {
 		cacheKey += "-" + suffix
 	}
@@ -164,6 +184,15 @@ func (b *Builder) buildFromImage(ctx context.Context, img v1.Image, opts ...Buil
 	}
 
 	return dest, nil
+}
+
+func compositeCacheKey(digests []string) string {
+	h := sha256.New()
+	for _, digest := range digests {
+		_, _ = h.Write([]byte(digest))
+		_, _ = h.Write([]byte{'\x00'})
+	}
+	return "composite-" + hex.EncodeToString(h.Sum(nil))
 }
 
 // cachePath returns the expected cache file path for a given manifest digest hex string.
