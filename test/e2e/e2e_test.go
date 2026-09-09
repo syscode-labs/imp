@@ -20,6 +20,7 @@ limitations under the License.
 package e2e
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os/exec"
@@ -131,11 +132,25 @@ spec:
 		)
 
 		AfterEach(func() {
-			_, _ = utils.Run(exec.Command("kubectl", "delete", "impvmrunnerpool", poolName, "-n", "default", "--ignore-not-found"))
-			_, _ = utils.Run(exec.Command("kubectl", "delete", "impvmtemplate", templateName, "-n", "default", "--ignore-not-found"))
+			for _, resource := range []string{"impvmrunnerpool", "impvmtemplate", "deployment", "service", "configmap"} {
+				name := poolName
+				if resource != "impvmrunnerpool" {
+					name = templateName
+				}
+				if resource == "deployment" || resource == "service" || resource == "configmap" {
+					name = "e2e-forgejo-mock"
+				}
+				_, _ = utils.Run(exec.Command("kubectl", "delete", resource, name, "-n", "default", "--ignore-not-found"))
+			}
+			_, _ = utils.Run(exec.Command("kubectl", "delete", "secret", "e2e-forgejo-credentials", "e2e-webhook-secret", "-n", "default", "--ignore-not-found"))
+			_, _ = utils.Run(exec.Command("kubectl", "delete", "secret", "-l", "imp.dev/runner-pool="+poolName, "-n", "default", "--ignore-not-found"))
 		})
 
 		It("scales from webhook demand when minIdle is zero", func() {
+			// The chart CRD on main predates the Stage 1 runner handoff field; apply the
+			// generated contract used by this candidate so the fixture observes it.
+			_, err := utils.Run(exec.Command("kubectl", "apply", "-f", "config/crd/bases/imp.dev_impvms.yaml"))
+			Expect(err).NotTo(HaveOccurred())
 			templateManifest := fmt.Sprintf(`
 apiVersion: imp.dev/v1alpha1
 kind: ImpVMTemplate
@@ -149,8 +164,92 @@ spec:
 `, templateName)
 			tplApply := exec.Command("kubectl", "apply", "-f", "-")
 			tplApply.Stdin = strings.NewReader(templateManifest)
-			_, err := utils.Run(tplApply)
+			_, err = utils.Run(tplApply)
 			Expect(err).NotTo(HaveOccurred())
+
+			mockManifest := `
+apiVersion: v1
+kind: Secret
+metadata:
+  name: e2e-forgejo-credentials
+  namespace: default
+stringData:
+  token: e2e-token
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: e2e-webhook-secret
+  namespace: default
+stringData:
+  secret: e2e-webhook-hmac
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: e2e-forgejo-mock
+  namespace: default
+data:
+  server.py: |
+    import json
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    class Handler(BaseHTTPRequestHandler):
+      mint_count = 0
+      def do_GET(self):
+        if self.headers.get("Authorization") not in ("token e2e-token", "Bearer e2e-token"): self.send_response(401); self.end_headers(); return
+        if self.path.startswith("/api/v1/api/v3/orgs/syscode-labs/actions/runner-groups"):
+          self.send_response(200); self.send_header("Content-Type", "application/json"); self.end_headers()
+          self.wfile.write(json.dumps({"runner_groups": [{"id": 42, "name": "e2e"}]}).encode()); return
+        self.send_response(404); self.end_headers()
+      def do_POST(self):
+        if self.headers.get("Authorization") not in ("token e2e-token", "Bearer e2e-token"): self.send_response(401); self.end_headers(); return
+        if self.path != "/api/v1/api/v3/orgs/syscode-labs/actions/runners/generate-jitconfig": self.send_response(404); self.end_headers(); return
+        Handler.mint_count += 1
+        body = {"encoded_jit_config": "e2e-jit-%d" % Handler.mint_count, "runner": {"name": "e2e-runner-%d" % Handler.mint_count}}
+        self.send_response(201); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(json.dumps(body).encode())
+      def log_message(self, *_): pass
+    HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: e2e-forgejo-mock
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: e2e-forgejo-mock}
+  template:
+    metadata:
+      labels: {app: e2e-forgejo-mock}
+    spec:
+      containers:
+      - name: mock
+        image: python:3.12-alpine
+        command: [python, /etc/mock/server.py]
+        volumeMounts: [{name: script, mountPath: /etc/mock}]
+      volumes:
+      - name: script
+        configMap: {name: e2e-forgejo-mock}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: e2e-forgejo-mock
+  namespace: default
+spec:
+  selector: {app: e2e-forgejo-mock}
+  ports: [{port: 80, targetPort: 8080}]
+`
+			mockApply := exec.Command("kubectl", "apply", "-f", "-")
+			mockApply.Stdin = strings.NewReader(mockManifest)
+			_, err = utils.Run(mockApply)
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func(g Gomega) {
+				out, getErr := utils.Run(exec.Command("kubectl", "get", "deployment", "e2e-forgejo-mock", "-n", "default", "-o", "jsonpath={.status.availableReplicas}"))
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(strings.TrimSpace(out)).To(Equal("1"))
+			}).Should(Succeed())
 
 			poolManifest := fmt.Sprintf(`
 apiVersion: imp.dev/v1alpha1
@@ -163,8 +262,11 @@ metadata:
 spec:
   templateName: %s
   platform:
-    type: github-actions
-    credentialsSecret: ignored-when-webhook-only
+    type: forgejo
+    serverURL: http://e2e-forgejo-mock.default.svc.cluster.local
+    scope:
+      org: syscode-labs
+    credentialsSecret: e2e-forgejo-credentials
   scaling:
     mode: webhook
     minIdle: 0
@@ -181,17 +283,16 @@ spec:
 			Expect(err).NotTo(HaveOccurred())
 
 			Eventually(func(g Gomega) {
-				getCmd := exec.Command("kubectl", "get", "impvms", "-n", "default",
-					"-l", "imp.dev/runner-pool="+poolName,
-					"-o", "jsonpath={.items[*].metadata.name}")
-				out, getErr := utils.Run(getCmd)
+				out, getErr := utils.Run(exec.Command("kubectl", "get", "impvms", "-n", "default", "-l", "imp.dev/runner-pool="+poolName, "-o", "json"))
 				g.Expect(getErr).NotTo(HaveOccurred())
-				trimmed := strings.TrimSpace(out)
-				if trimmed == "" {
-					g.Expect(0).To(Equal(2))
-					return
-				}
-				g.Expect(len(strings.Fields(trimmed))).To(Equal(2))
+				g.Expect(assertRunnerVMFixture(out)).To(Succeed())
+			}).Should(Succeed())
+			_, err = utils.Run(exec.Command("kubectl", "annotate", "impvmrunnerpool", poolName, "-n", "default", "imp.dev/e2e-reconcile=second", "--overwrite"))
+			Expect(err).NotTo(HaveOccurred())
+			Eventually(func(g Gomega) {
+				out, getErr := utils.Run(exec.Command("kubectl", "get", "impvms", "-n", "default", "-l", "imp.dev/runner-pool="+poolName, "-o", "json"))
+				g.Expect(getErr).NotTo(HaveOccurred())
+				g.Expect(assertRunnerVMFixture(out)).To(Succeed())
 			}).Should(Succeed())
 		})
 	})
@@ -438,3 +539,58 @@ spec:
 		})
 	})
 })
+
+func assertRunnerVMFixture(raw string) error {
+	var list struct {
+		Items []struct {
+			Metadata struct {
+				Name, UID         string
+				DeletionTimestamp *string `json:"deletionTimestamp"`
+			} `json:"metadata"`
+			Spec struct {
+				RunnerConfigSecret string `json:"runnerConfigSecret"`
+			} `json:"spec"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal([]byte(raw), &list); err != nil {
+		return err
+	}
+	if len(list.Items) != 2 {
+		return fmt.Errorf("got %d runner VMs, want 2", len(list.Items))
+	}
+	refs := map[string]bool{}
+	for _, vm := range list.Items {
+		if vm.Metadata.DeletionTimestamp != nil {
+			return fmt.Errorf("VM %s is deleting", vm.Metadata.Name)
+		}
+		if vm.Spec.RunnerConfigSecret == "" || refs[vm.Spec.RunnerConfigSecret] {
+			return fmt.Errorf("invalid or duplicate JIT Secret reference for %s", vm.Metadata.Name)
+		}
+		refs[vm.Spec.RunnerConfigSecret] = true
+		secretRaw, err := utils.Run(exec.Command("kubectl", "get", "secret", vm.Spec.RunnerConfigSecret, "-n", "default", "-o", "json"))
+		if err != nil {
+			return err
+		}
+		var secret struct {
+			Metadata struct {
+				OwnerReferences []struct {
+					Kind, Name, UID string
+					Controller      *bool
+				} `json:"ownerReferences"`
+			} `json:"metadata"`
+		}
+		if err := json.Unmarshal([]byte(secretRaw), &secret); err != nil {
+			return err
+		}
+		owned := false
+		for _, owner := range secret.Metadata.OwnerReferences {
+			if owner.Kind == "ImpVM" && owner.Name == vm.Metadata.Name && owner.UID == vm.Metadata.UID && owner.Controller != nil && *owner.Controller {
+				owned = true
+			}
+		}
+		if !owned {
+			return fmt.Errorf("JIT Secret %s is not owned by VM %s", vm.Spec.RunnerConfigSecret, vm.Metadata.Name)
+		}
+	}
+	return nil
+}

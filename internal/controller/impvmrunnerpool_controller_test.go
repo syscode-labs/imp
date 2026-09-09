@@ -334,16 +334,91 @@ func TestRunnerPoolReconciler_scalingPollingUsesQueueDepth(t *testing.T) {
 	}
 }
 
+func TestRunnerPoolReconciler_webhookOnlyMintsPerVMAndSkipsQueue(t *testing.T) {
+	pool := &impv1alpha1.ImpVMRunnerPool{
+		ObjectMeta: metav1.ObjectMeta{Name: "webhook-pool", Namespace: "ci", Annotations: map[string]string{AnnotationRunnerDemand: "2"}},
+		Spec: impv1alpha1.ImpVMRunnerPoolSpec{
+			TemplateName: "webhook-template",
+			Platform:     impv1alpha1.RunnerPlatformSpec{Type: "github-actions", CredentialsSecret: "unused"},
+			Scaling:      &impv1alpha1.RunnerScalingSpec{Mode: impv1alpha1.RunnerScalingModeWebhook, MinIdle: ptrInt32(0), MaxConcurrent: ptrInt32(5), ScaleUpStep: ptrInt32(2), CooldownSeconds: ptrInt32(30), Webhook: &impv1alpha1.RunnerWebhookSpec{Enabled: true, SecretRef: "webhook"}},
+		},
+	}
+	tpl := &impv1alpha1.ImpVMTemplate{ObjectMeta: metav1.ObjectMeta{Name: "webhook-template", Namespace: "ci"}, Spec: impv1alpha1.ImpVMTemplateSpec{ClassRef: impv1alpha1.ClusterObjectRef{Name: "standard"}, Image: "ubuntu:22.04"}}
+	driver := &stubRunnerQueueDepthReader{jitConfig: &runner.JITConfig{EncodedConfig: "encoded", RunnerName: "runner"}}
+	scheme := newRunnerPoolTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
+	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme, DriverFactory: func(context.Context, client.Client, *impv1alpha1.ImpVMRunnerPool) (runnerQueueDepthReader, error) {
+		return driver, nil
+	}}
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: pool.Name, Namespace: pool.Namespace}}); err != nil {
+		t.Fatal(err)
+	}
+	if driver.queueCalls != 0 {
+		t.Fatalf("webhook-only reconcile polled queue %d times", driver.queueCalls)
+	}
+	if driver.jitCalls != 2 {
+		t.Fatalf("minted %d JIT configs, want 2", driver.jitCalls)
+	}
+	var vms impv1alpha1.ImpVMList
+	if err := c.List(context.Background(), &vms, client.InNamespace("ci"), client.MatchingLabels{impv1alpha1.LabelRunnerPool: pool.Name}); err != nil {
+		t.Fatal(err)
+	}
+	if len(vms.Items) != 2 {
+		t.Fatalf("got %d VMs, want 2", len(vms.Items))
+	}
+	refs := map[string]bool{}
+	for i := range vms.Items {
+		vm := &vms.Items[i]
+		if vm.Spec.RunnerConfigSecret == "" || refs[vm.Spec.RunnerConfigSecret] {
+			t.Fatalf("invalid JIT Secret reference %q", vm.Spec.RunnerConfigSecret)
+		}
+		refs[vm.Spec.RunnerConfigSecret] = true
+		var secret corev1.Secret
+		if err := c.Get(context.Background(), types.NamespacedName{Namespace: vm.Namespace, Name: vm.Spec.RunnerConfigSecret}, &secret); err != nil {
+			t.Fatal(err)
+		}
+		if !metav1.IsControlledBy(&secret, vm) {
+			t.Fatalf("Secret %s is not owned by VM %s", secret.Name, vm.Name)
+		}
+	}
+}
+
+func TestRunnerPoolReconciler_defaultFactoryAuthFailureLeavesNoVM(t *testing.T) {
+	pool := &impv1alpha1.ImpVMRunnerPool{ObjectMeta: metav1.ObjectMeta{Name: "auth-failure", Namespace: "ci", Annotations: map[string]string{AnnotationRunnerDemand: "1"}}, Spec: impv1alpha1.ImpVMRunnerPoolSpec{TemplateName: "template", Platform: impv1alpha1.RunnerPlatformSpec{Type: "github-actions", TokenSource: "github_app", CredentialsSecret: "missing-credentials"}, Scaling: &impv1alpha1.RunnerScalingSpec{Mode: impv1alpha1.RunnerScalingModeWebhook, MinIdle: ptrInt32(0), MaxConcurrent: ptrInt32(1), ScaleUpStep: ptrInt32(1), CooldownSeconds: ptrInt32(30), Webhook: &impv1alpha1.RunnerWebhookSpec{Enabled: true, SecretRef: "webhook"}}}}
+	tpl := &impv1alpha1.ImpVMTemplate{ObjectMeta: metav1.ObjectMeta{Name: "template", Namespace: "ci"}, Spec: impv1alpha1.ImpVMTemplateSpec{ClassRef: impv1alpha1.ClusterObjectRef{Name: "standard"}, Image: "ubuntu:22.04"}}
+	scheme := newRunnerPoolTestScheme(t)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(pool, tpl).WithStatusSubresource(pool).Build()
+	r := &ImpVMRunnerPoolReconciler{Client: c, Scheme: scheme}
+	if _, err := r.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: pool.Name, Namespace: pool.Namespace}}); err == nil {
+		t.Fatal("expected default factory authentication failure")
+	}
+	var vms impv1alpha1.ImpVMList
+	if err := c.List(context.Background(), &vms, client.InNamespace(pool.Namespace), client.MatchingLabels{impv1alpha1.LabelRunnerPool: pool.Name}); err != nil {
+		t.Fatal(err)
+	}
+	if len(vms.Items) != 0 {
+		t.Fatalf("retained %d VM(s) after auth failure", len(vms.Items))
+	}
+}
+
 type stubRunnerQueueDepthReader struct {
 	queueDepth int
 	err        error
+	queueCalls int
+	jitCalls   int
+	jitConfig  *runner.JITConfig
 }
 
 func (s *stubRunnerQueueDepthReader) QueueDepth(_ context.Context) (int, error) {
+	s.queueCalls++
 	return s.queueDepth, s.err
 }
 
 func (s *stubRunnerQueueDepthReader) GetJITConfig(_ context.Context) (*runner.JITConfig, error) {
+	s.jitCalls++
+	if s.jitConfig != nil {
+		return s.jitConfig, nil
+	}
 	return &runner.JITConfig{EncodedConfig: "test", RunnerName: "test"}, nil
 }
 
