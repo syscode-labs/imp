@@ -79,7 +79,7 @@ func TestRunnerOutcomeIsNonSecretAndRestartSafe(t *testing.T) {
 	vm := &impv1alpha1.ImpVM{
 		ObjectMeta: metav1.ObjectMeta{Name: "vm", Namespace: "ns", UID: "vm-uid"},
 	}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(vm).Build()
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(vm).WithStatusSubresource(vm).Build()
 	launcher := &Launcher{Client: c}
 	if err := launcher.recordAccepted(context.Background(), vm); err != nil {
 		t.Fatalf("recordAccepted: %v", err)
@@ -99,7 +99,27 @@ func TestRunnerOutcomeIsNonSecretAndRestartSafe(t *testing.T) {
 	if err := c.Get(context.Background(), client.ObjectKeyFromObject(vm), stored); err != nil {
 		t.Fatalf("get stored VM: %v", err)
 	}
+	if !stored.Status.RunnerHandoffAccepted {
+		t.Fatal("stored VM lost the durable handoff marker")
+	}
 	if stored.Status.RunnerExitCode == nil || *stored.Status.RunnerExitCode != code {
 		t.Fatalf("stored exit code = %v, want %d", stored.Status.RunnerExitCode, code)
+	}
+}
+
+func TestRunnerHandoffMarkerRefusesReplay(t *testing.T) {
+	scheme := runtime.NewScheme()
+	if err := impv1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
+	vm := &impv1alpha1.ImpVM{
+		ObjectMeta: metav1.ObjectMeta{Name: "vm", Namespace: "ns", UID: "vm-uid"},
+		Spec:       impv1alpha1.ImpVMSpec{RunnerConfigSecret: "jitconfig"},
+		Status:     impv1alpha1.ImpVMStatus{RunnerHandoffAccepted: true},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(vm).WithStatusSubresource(vm).Build()
+	result := (&Launcher{Client: c}).Run(context.Background(), vm)
+	if result.Err == nil || !strings.Contains(result.Err.Error(), "refusing replay") {
+		t.Fatalf("Run() error = %v, want durable replay refusal", result.Err)
 	}
 }
