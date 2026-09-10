@@ -9,6 +9,7 @@ jobs:
   smoke:
     runs-on:
       group: omni-runner
+      labels: [self-hosted, imp]
     steps:
       - name: Report correlation identifiers
         run: |
