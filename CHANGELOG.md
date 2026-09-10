@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.10.0](https://github.com/syscode-labs/imp/compare/v0.9.0...v0.10.0) (2026-09-10)
+
+
+### Features
+
+* **agent:** make runner handoff non-persisting ([0cf7a03](https://github.com/syscode-labs/imp/commit/0cf7a0367a7b8ed646b2ab33d26d654a579045ef))
+* **runners:** redesign lifecycle ownership ([162ff92](https://github.com/syscode-labs/imp/commit/162ff924485174fc013236d788397e64831dadf0))
+* **runners:** redesign lifecycle ownership ([b86ab24](https://github.com/syscode-labs/imp/commit/b86ab24ff584d5116376e6b890f40da081922a59))
+
+
+### Bug Fixes
+
+* **agent:** close ambiguous runner handoffs safely ([9773051](https://github.com/syscode-labs/imp/commit/9773051ee1378cea1b471f4a112e2ed0cfc7b898))
+* **agent:** harden non-persisting runner handoff ([85e16fc](https://github.com/syscode-labs/imp/commit/85e16fca9a2b056538468cf01b732661ec401344))
+* **chart:** ship runner handoff CRD fields ([55400af](https://github.com/syscode-labs/imp/commit/55400af2d2c1164f050c70a8b2a63879026b9637))
+* **chart:** ship runner handoff CRD fields ([755c984](https://github.com/syscode-labs/imp/commit/755c9843e7c013b4bc6d60f8216869c79e4b4e20))
+* **chart:** tolerate dedicated runner nodes ([65e1b6c](https://github.com/syscode-labs/imp/commit/65e1b6cb5822ca11cf85997b55d47f89e041069f))
+* **chart:** tolerate operator on runner nodes ([ca0e86a](https://github.com/syscode-labs/imp/commit/ca0e86a1d2490ac0d2c08a2a5151534c8b805224))
+* **chart:** tolerate operator on runner nodes ([552be0d](https://github.com/syscode-labs/imp/commit/552be0d09bea7eca702679bf0c6544e1bdb73d33))
+* **ci:** emit runner smoke correlation identifiers ([690289d](https://github.com/syscode-labs/imp/commit/690289d29bc2407ca9ec5d5e36716497e2fe8490))
+* **ci:** emit runner smoke correlation identifiers ([ee4addd](https://github.com/syscode-labs/imp/commit/ee4addd5793218645346ca55f6c0b3ad3ae930c3))
+* **ci:** load sandbox images in datapath E2E ([5cca751](https://github.com/syscode-labs/imp/commit/5cca7515a25ebe0c1b826a791c29c59e44947659))
+* **e2e:** restore webhook demand fixture ([4b6ea05](https://github.com/syscode-labs/imp/commit/4b6ea054c34f49577f4aa95f67693ef1db7cc353))
+* **e2e:** restore webhook demand fixture ([c93796c](https://github.com/syscode-labs/imp/commit/c93796c7e8120583ef5bab2663a1855750e74a4f))
+* **e2e:** use the loaded sandbox gateway image ([f4b35ae](https://github.com/syscode-labs/imp/commit/f4b35aef715ef272a1fbe7d6111e451bfc85429e))
+* replace completed one-time runners ([#92](https://github.com/syscode-labs/imp/issues/92)) ([6a37831](https://github.com/syscode-labs/imp/commit/6a378311249cbbd85e5b616dbc1e9e192aa884ad))
+* **rootfs:** key composites by effective inputs ([#81](https://github.com/syscode-labs/imp/issues/81)) ([c1e412c](https://github.com/syscode-labs/imp/commit/c1e412caab361b21afced4401022a151ee284ed8))
+* **runner:** apply pool labels to GitHub JIT registrations ([959b417](https://github.com/syscode-labs/imp/commit/959b4176f0af857dd65ed55eb9dea6daa9fc02b5))
+* **runner:** apply pool labels to GitHub JIT registrations ([7338df5](https://github.com/syscode-labs/imp/commit/7338df554c2d75e474f70e2e437ddb06190dd0d6))
+* **runner:** harden stage one lifecycle ([2839e1e](https://github.com/syscode-labs/imp/commit/2839e1e03d67a906def5d4592858732027880556))
+* **runner:** harden stage one lifecycle ([5994ede](https://github.com/syscode-labs/imp/commit/5994ede90873854582a288fb81d44ffe79100d14))
+* **runner:** log sanitized guest stderr on failure ([a0578fd](https://github.com/syscode-labs/imp/commit/a0578fd2c69f918b6aaaeaf778cd3120577c3542))
+* **runners:** expose firecracker nameservers to guests ([#82](https://github.com/syscode-labs/imp/issues/82)) ([b06da90](https://github.com/syscode-labs/imp/commit/b06da90a4c5559611d1b706375bd963192f8af70))
+* **runners:** fail VMs after JIT handoff errors ([#77](https://github.com/syscode-labs/imp/issues/77)) ([ab7b553](https://github.com/syscode-labs/imp/commit/ab7b5532810b29207fe914841467bdf69b09ff02))
+* **runners:** initialize JIT guests safely ([342f3b4](https://github.com/syscode-labs/imp/commit/342f3b4308c0a44fc72c120741b7c12efa98c701))
+* **runners:** preserve DNS in static network boot args ([be193a7](https://github.com/syscode-labs/imp/commit/be193a77af360144f5b0cbf354a80ac720822163))
+* **runners:** support dedicated tainted runner nodes ([c4fc6ce](https://github.com/syscode-labs/imp/commit/c4fc6ce8ffe875e6eb88f0c5fe410f9721de0d42))
+* **runners:** wait for guest VSOCK readiness ([aadc905](https://github.com/syscode-labs/imp/commit/aadc905167046d24156ce55b04529c98fe895d36))
+* **runners:** wait for guest VSOCK readiness ([dbbfd7a](https://github.com/syscode-labs/imp/commit/dbbfd7a3091653964bb71e74b4ac458a89951185))
+
 ## [0.9.0](https://github.com/syscode-labs/imp/compare/v0.8.0...v0.9.0) (2026-08-29)
 
 
