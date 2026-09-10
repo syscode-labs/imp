@@ -280,7 +280,7 @@ func (r *ImpVMReconciler) maybeLaunchRunner(ctx context.Context, vm *impdevv1alp
 			}
 			return
 		}
-		if res.HandoffDone {
+		if res.HandoffDone && res.ExitCode == 0 {
 			if _, err := r.finishRunnerLaunchSucceeded(context.Background(), vm); err != nil {
 				log.Error(err, "failed to mark VM after runner exit", "vm", vm.Name)
 			}
