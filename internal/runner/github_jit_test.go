@@ -27,7 +27,7 @@ func TestGitHubDriverJITResolvesGroupAndSetsUniqueRunner(t *testing.T) {
 			t.Errorf("decode request: %v", err)
 		}
 		names = append(names, req.Name)
-		if req.RunnerGroupID != 42 || len(req.Labels) != 1 || req.Labels[0] != "self-hosted" {
+		if req.RunnerGroupID != 42 || strings.Join(req.Labels, ",") != "self-hosted,imp" {
 			t.Errorf("request = %#v", req)
 		}
 		w.WriteHeader(http.StatusCreated)
@@ -37,7 +37,7 @@ func TestGitHubDriverJITResolvesGroupAndSetsUniqueRunner(t *testing.T) {
 	client := github.NewClient(http.DefaultClient)
 	base, _ := client.BaseURL.Parse(srv.URL + "/")
 	client.BaseURL = base
-	d, err := newGitHubDriverWithClient(client, "org:syscode-labs", "omni-runner", nil)
+	d, err := newGitHubDriverWithClient(client, "org:syscode-labs", "omni-runner", []string{"imp", "self-hosted", "imp", " "}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
