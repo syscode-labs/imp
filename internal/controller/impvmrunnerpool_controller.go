@@ -483,12 +483,13 @@ func defaultRunnerDriverFactory(
 				Authentication: appCreds,
 				Scope:          auth.Scope,
 				RunnerGroup:    auth.RunnerGroup,
+				Labels:         pool.Spec.Labels,
 			}, nil)
 		}
 		log := logf.FromContext(ctx)
 		log.Info("runner pool uses deprecated PAT token source; migrate to tokenSource: github_app",
 			"pool", pool.Name, "namespace", pool.Namespace)
-		return runner.NewGitHubDriverWithGroup(string(auth.Credentials["token"]), auth.Scope, auth.RunnerGroup, nil)
+		return runner.NewGitHubDriverWithGroupAndLabels(string(auth.Credentials["token"]), auth.Scope, auth.RunnerGroup, pool.Spec.Labels, nil)
 	case "forgejo":
 		return runner.NewForgejoDriver(string(auth.Credentials["token"]), pool.Spec.Platform.ServerURL, auth.Scope, nil)
 	case "gitlab":

@@ -26,6 +26,7 @@ type GitHubDriver struct {
 	owner       string // non-empty for repo-level scope
 	repo        string // non-empty for repo-level scope
 	runnerGroup string
+	labels      []string
 	hmacSecret  []byte
 }
 
@@ -38,12 +39,17 @@ func NewGitHubDriver(token, scope string, hmacSecret []byte) (*GitHubDriver, err
 
 // NewGitHubDriverWithGroup preserves the named runner-group contract for PATs.
 func NewGitHubDriverWithGroup(token, scope, runnerGroup string, hmacSecret []byte) (*GitHubDriver, error) {
+	return NewGitHubDriverWithGroupAndLabels(token, scope, runnerGroup, nil, hmacSecret)
+}
+
+// NewGitHubDriverWithGroupAndLabels applies pool labels to GitHub JIT registrations.
+func NewGitHubDriverWithGroupAndLabels(token, scope, runnerGroup string, labels []string, hmacSecret []byte) (*GitHubDriver, error) {
 	if token == "" {
 		return nil, &AuthResolutionError{Reason: "named credential key token is missing"}
 	}
 	ts := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	client := github.NewClient(oauth2.NewClient(context.Background(), ts))
-	return newGitHubDriverWithClient(client, scope, runnerGroup, hmacSecret)
+	return newGitHubDriverWithClient(client, scope, runnerGroup, labels, hmacSecret)
 }
 
 // NewForgejoDriver creates a driver for a Forgejo instance.
@@ -60,7 +66,7 @@ func NewForgejoDriver(token, serverURL, scope string, hmacSecret []byte) (*GitHu
 	if err != nil {
 		return nil, fmt.Errorf("forgejo client: %w", err)
 	}
-	return newGitHubDriverWithClient(client, scope, "", hmacSecret)
+	return newGitHubDriverWithClient(client, scope, "", nil, hmacSecret)
 }
 
 // NewGitHubAppDriver creates a driver for github.com authenticated as a
@@ -73,7 +79,7 @@ func NewGitHubAppDriver(config GitHubConfig, hmacSecret []byte) (*GitHubDriver, 
 		return nil, err
 	}
 	client := github.NewClient(&http.Client{Transport: src})
-	return newGitHubDriverWithClient(client, config.Scope, config.RunnerGroup, hmacSecret)
+	return newGitHubDriverWithClient(client, config.Scope, config.RunnerGroup, config.Labels, hmacSecret)
 }
 
 // RoundTrip implements http.RoundTripper: it supplies a valid installation
@@ -106,8 +112,8 @@ func (s *githubAppSource) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
-func newGitHubDriverWithClient(client *github.Client, scope, runnerGroup string, hmacSecret []byte) (*GitHubDriver, error) {
-	d := &GitHubDriver{client: client, runnerGroup: runnerGroup, hmacSecret: hmacSecret}
+func newGitHubDriverWithClient(client *github.Client, scope, runnerGroup string, labels []string, hmacSecret []byte) (*GitHubDriver, error) {
+	d := &GitHubDriver{client: client, runnerGroup: runnerGroup, labels: runnerLabels(labels), hmacSecret: hmacSecret}
 	switch {
 	case strings.HasPrefix(scope, "org:"):
 		d.org = strings.TrimPrefix(scope, "org:")
@@ -131,7 +137,7 @@ func (d *GitHubDriver) GetJITConfig(ctx context.Context) (*JITConfig, error) {
 	req := &github.GenerateJITConfigRequest{
 		Name:          fmt.Sprintf("imp-runner-%d", time.Now().UnixNano()),
 		RunnerGroupID: groupID,
-		Labels:        []string{"self-hosted"},
+		Labels:        d.labels,
 	}
 	var cfg *github.JITRunnerConfig
 	if d.org != "" {
@@ -149,6 +155,19 @@ func (d *GitHubDriver) GetJITConfig(ctx context.Context) (*JITConfig, error) {
 		EncodedConfig: cfg.GetEncodedJITConfig(),
 		RunnerName:    cfg.Runner.GetName(),
 	}, nil
+}
+
+func runnerLabels(labels []string) []string {
+	result := []string{"self-hosted"}
+	seen := map[string]bool{"self-hosted": true}
+	for _, label := range labels {
+		label = strings.TrimSpace(label)
+		if label != "" && !seen[label] {
+			result = append(result, label)
+			seen[label] = true
+		}
+	}
+	return result
 }
 
 func (d *GitHubDriver) runnerGroupID(ctx context.Context) (int64, error) {

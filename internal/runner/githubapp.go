@@ -38,6 +38,7 @@ type GitHubConfig struct {
 	Authentication GitHubAppCredentials
 	Scope          string
 	RunnerGroup    string
+	Labels         []string
 }
 
 // githubAppSource mints installation tokens on demand. It mirrors the
