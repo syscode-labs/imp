@@ -92,6 +92,30 @@ var _ = Describe("ImpVM Agent: runner JIT handoff", func() {
 		}).Should(Succeed())
 	})
 
+	It("marks the VM Succeeded when the one-time runner exits successfully", func() {
+		vm := &impdevv1alpha1.ImpVM{
+			ObjectMeta: metav1.ObjectMeta{Name: "tc-runner-handoff-success", Namespace: "default"},
+			Spec:       impdevv1alpha1.ImpVMSpec{NodeName: testNode, RunnerConfigSecret: "jitconfig"},
+		}
+		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
+		DeferCleanup(func() { _ = k8sClient.Delete(ctx, vm) })
+		base := vm.DeepCopy()
+		vm.Status.Phase = impdevv1alpha1.VMPhaseRunning
+		Expect(k8sClient.Status().Patch(ctx, vm, client.MergeFrom(base))).To(Succeed())
+
+		r := newReconciler(&vsockStubDriver{StubDriver: NewStubDriver()})
+		r.runnerLaunch = func(context.Context, *impdevv1alpha1.ImpVM) runnerlaunch.Result {
+			return runnerlaunch.Result{HandoffDone: true, ExitCode: 0}
+		}
+		r.maybeLaunchRunner(ctx, vm)
+
+		updated := &impdevv1alpha1.ImpVM{}
+		Eventually(func(g Gomega) {
+			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(vm), updated)).To(Succeed())
+			g.Expect(updated.Status.Phase).To(Equal(impdevv1alpha1.VMPhaseSucceeded))
+		}).Should(Succeed())
+	})
+
 	It("does not overwrite a terminal status with a late handoff failure", func() {
 		vm := &impdevv1alpha1.ImpVM{
 			ObjectMeta: metav1.ObjectMeta{Name: "tc-runner-handoff-late-failure", Namespace: "default"},

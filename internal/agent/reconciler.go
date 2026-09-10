@@ -278,8 +278,40 @@ func (r *ImpVMReconciler) maybeLaunchRunner(ctx context.Context, vm *impdevv1alp
 			if r.Recorder != nil {
 				r.Recorder.Event(vm, corev1.EventTypeWarning, "RunnerLaunchFailed", res.Err.Error())
 			}
+			return
+		}
+		if res.HandoffDone && res.ExitCode == 0 {
+			if _, err := r.finishRunnerLaunchSucceeded(context.Background(), vm); err != nil {
+				log.Error(err, "failed to mark VM after runner exit", "vm", vm.Name)
+			}
 		}
 	}()
+}
+
+// finishRunnerLaunchSucceeded makes a completed one-time runner terminal so the
+// pool controller can delete it and restore idle capacity. The handoff runs
+// asynchronously, so fetch a fresh object rather than patching a stale copy.
+func (r *ImpVMReconciler) finishRunnerLaunchSucceeded(ctx context.Context, vm *impdevv1alpha1.ImpVM) (ctrl.Result, error) {
+	key := client.ObjectKeyFromObject(vm)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &impdevv1alpha1.ImpVM{}
+		if err := r.Get(ctx, key, latest); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		switch latest.Status.Phase {
+		case impdevv1alpha1.VMPhaseFailed,
+			impdevv1alpha1.VMPhaseSucceeded,
+			impdevv1alpha1.VMPhaseTerminating:
+			return nil
+		}
+		base := latest.DeepCopy()
+		latest.Status.Phase = impdevv1alpha1.VMPhaseSucceeded
+		latest.Status.StartedAt = nil
+		latest.Status.IP = ""
+		latest.Status.RuntimePID = 0
+		return r.Status().Patch(ctx, latest, client.MergeFrom(base))
+	})
+	return ctrl.Result{}, err
 }
 
 // finishRunnerLaunchFailed makes a failed guest handoff terminal. A JIT runner
