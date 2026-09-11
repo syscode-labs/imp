@@ -31,9 +31,15 @@ GitHub (`platform.type=github-actions`) is supported for this explicit scaling m
 
 ## Prerequisites
 
-- Secret `default/gh-runner-token` exists
+- Secret `default/github-imp-runners` exists with the GitHub App fields
+  `github-app-id`, `github-app-installation-id`, and `github-app-private-key`
 - Secret `default/gh-webhook-secret` exists
-- set `platform.scope.repo` to your repository
+- set `platform.scope.org` to your organization; a named GitHub runner group
+  requires organization scope
+
+Do not put a JIT registration value in the manifest or the base image. Imp mints
+one registration configuration per runner VM and passes it to the guest only at
+launch time.
 
 ## Apply
 

@@ -10,8 +10,12 @@ spec:
   platform:
     type: github-actions
     scope:
-      repo: your-org/your-repo
-    credentialsSecret: gh-runner-token
+      org: your-org
+    runnerGroup: omni-runner
+    credentialsSecret: github-imp-runners
+    tokenSource: github_app
+  labels:
+    - imp
   scaling:
     mode: webhook
     minIdle: 0

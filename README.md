@@ -222,7 +222,41 @@ See [examples/runner-pool-expiration](examples/runner-pool-expiration/README.md)
 When using `ImpVMRunnerPool` with GitHub Actions, GitHub does not read pool objects directly.
 It only sees registered self-hosted runner instances.
 
-Read: [github-capacity-signaling.md](https://github.com/syscode-labs/syscode-ai-internal-plans/blob/main/projects/imp/docs/runner-pool/github-capacity-signaling.md)
+For GitHub App authentication, configure the runner pool with the App credentials
+Secret, the organization or repository scope, and the GitHub runner group. The
+operator mints a one-use registration configuration for each VM and hands it to
+the guest runner without putting it in the VM spec, root filesystem, or logs.
+
+```yaml
+apiVersion: imp.dev/v1alpha1
+kind: ImpVMRunnerPool
+metadata:
+  name: ci-runner-pool
+  namespace: default
+spec:
+  templateName: ci-runner-template
+  labels: [imp]
+  platform:
+    type: github-actions
+    scope:
+      org: your-org
+    runnerGroup: omni-runner
+    credentialsSecret: github-imp-runners
+    tokenSource: github_app
+  scaling:
+    mode: polling
+    minIdle: 1
+    maxConcurrent: 1
+    scaleUpStep: 1
+    cooldownSeconds: 30
+    polling:
+      enabled: true
+      intervalSeconds: 30
+```
+
+The referenced Secret contains `github-app-id`, `github-app-installation-id`,
+and `github-app-private-key`. Use an external Secret provider in production;
+never commit these values.
 
 ## Runner Scaling Mode (GitHub-First)
 
