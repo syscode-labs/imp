@@ -566,10 +566,6 @@ var _ = Describe("ImpVM handleDeletion with nodeName", func() {
 	})
 
 	It("force-removes finalizer after termination timeout", func() {
-		origTimeout := terminationTimeout
-		terminationTimeout = 0 // trigger immediately
-		DeferCleanup(func() { terminationTimeout = origTimeout })
-
 		vm := &impdevv1alpha1.ImpVM{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:       "del-timeout",
@@ -581,7 +577,11 @@ var _ = Describe("ImpVM handleDeletion with nodeName", func() {
 		Expect(k8sClient.Create(ctx, vm)).To(Succeed())
 		Expect(k8sClient.Delete(ctx, vm)).To(Succeed())
 
-		_, err := newReconciler().Reconcile(ctx, reconcile.Request{
+		deleting := &impdevv1alpha1.ImpVM{}
+		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: "del-timeout", Namespace: "default"}, deleting)).To(Succeed())
+		r := newReconciler()
+		r.Now = func() time.Time { return deleting.DeletionTimestamp.Add(terminationTimeout).Add(time.Nanosecond) }
+		_, err := r.Reconcile(ctx, reconcile.Request{
 			NamespacedName: types.NamespacedName{Name: "del-timeout", Namespace: "default"},
 		})
 		Expect(err).NotTo(HaveOccurred())

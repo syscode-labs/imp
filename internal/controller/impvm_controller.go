@@ -52,6 +52,15 @@ type ImpVMReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
+	// Now is an optional clock for deadline evaluation. Production uses time.Now.
+	Now func() time.Time
+}
+
+func (r *ImpVMReconciler) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
 }
 
 // +kubebuilder:rbac:groups=imp.dev,resources=impvms,verbs=get;list;watch;create;update;patch;delete
@@ -368,7 +377,7 @@ func (r *ImpVMReconciler) handleDeletion(ctx context.Context, vm *impdevv1alpha1
 
 	// Check for termination timeout.
 	deadline := vm.DeletionTimestamp.Add(terminationTimeout)
-	if time.Now().After(deadline) {
+	if r.now().After(deadline) {
 		r.Recorder.Event(vm, corev1.EventTypeWarning, EventReasonTerminationTimeout,
 			"Finalizer force-removed after 2min termination timeout")
 		patch := client.MergeFrom(vm.DeepCopy())
