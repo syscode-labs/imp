@@ -402,21 +402,14 @@ Imp exposes operator and agent metrics so you can monitor VM lifecycle and platf
 ## Reconcile Sequence
 
 ```mermaid
-sequenceDiagram
-  participant U as User
-  participant APIS as K8s API
-  participant OP as Imp Operator
-  participant AG as Imp Agent (Node)
-  participant FC as Firecracker
-
-  U->>APIS: Create ImpVM + ImpNetwork
-  APIS->>OP: Watch event
-  OP->>OP: Resolve class/template + schedule node
-  OP->>AG: Desired VM runtime spec
-  AG->>FC: Create machine + start microVM
-  FC-->>AG: Runtime state, PID, network info
-  AG-->>APIS: Status updates
-  OP-->>APIS: Conditions / phase transitions
+flowchart LR
+  U[User] --> API[Kubernetes API]
+  API --> OP[Imp Operator]
+  OP --> AG[Imp Agent on selected node]
+  AG --> FC[Firecracker microVM]
+  FC --> AG
+  AG --> STATUS[ImpVM status]
+  OP --> STATUS
 ```
 
 ## Troubleshooting
