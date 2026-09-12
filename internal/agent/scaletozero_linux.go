@@ -7,11 +7,12 @@ import (
 	"net"
 	"time"
 
-	"github.com/syscode-labs/imp/internal/runtimeapi"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/syscode-labs/imp/internal/runtimeapi"
 )
 
 // resetIdle forgets any idle sample for key (called on suspend/resume so the VM
