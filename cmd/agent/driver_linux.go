@@ -15,9 +15,13 @@ import (
 // Reads FC_BIN, FC_SOCK_DIR, FC_KERNEL, FC_KERNEL_ARGS, and IMP_IMAGE_CACHE.
 // Returns the driver, the shared NetManager, and any error.
 func newProductionDriver(_ ctrlclient.Client, _ *agent.VMMetricsCollector, _ string) (agent.VMDriver, network.NetManager, error) {
-	endpoint := os.Getenv("IMP_RUNTIME_SOCKET")
-	if endpoint == "" {
-		endpoint = "/run/imp/runtime.sock"
-	}
+	endpoint := runtimeSocketEndpoint()
 	return agent.NewRuntimeDriver(endpoint), agent.NewRuntimeNetManager(endpoint), nil
+}
+
+func runtimeSocketEndpoint() string {
+	if endpoint := os.Getenv("IMP_RUNTIME_SOCKET"); endpoint != "" {
+		return endpoint
+	}
+	return "/run/imp/runtime.sock"
 }

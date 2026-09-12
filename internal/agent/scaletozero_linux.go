@@ -11,6 +11,8 @@ import (
 	"golang.org/x/sys/unix"
 	"k8s.io/apimachinery/pkg/types"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/syscode-labs/imp/internal/runtimeapi"
 )
 
 // resetIdle forgets any idle sample for key (called on suspend/resume so the VM
@@ -130,4 +132,12 @@ func (afpacketSource) Run(ctx context.Context, onDstIP func(string)) error {
 // NewLinuxScaleToZero wires the real host implementations into the neutral core.
 func NewLinuxScaleToZero(bufSize int, interval time.Duration) *ScaleToZero {
 	return newScaleToZero(netlinkLinkStats, afpacketSource{}, interval, bufSize)
+}
+
+// NewLinuxScaleToZeroWithRuntime wires TAP statistics through the node runtime,
+// which owns the TAP network namespace, while retaining the packet capture hook.
+func NewLinuxScaleToZeroWithRuntime(client *runtimeapi.Client, bufSize int, interval time.Duration) *ScaleToZero {
+	return newScaleToZero(func(iface string) (uint64, error) {
+		return client.LinkStats(context.Background(), iface)
+	}, afpacketSource{}, interval, bufSize)
 }

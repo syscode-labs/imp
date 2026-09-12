@@ -2,6 +2,7 @@ package runtimeapi_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -75,5 +76,58 @@ func TestClientEnsureNetworkForwardsHostNetworkRequest(t *testing.T) {
 		}
 	default:
 		t.Fatal("EnsureNetwork() did not reach runtime")
+	}
+}
+
+func TestClientLinkStatsForwardsRuntimeOwnedTAPStats(t *testing.T) {
+	t.Parallel()
+	server := runtimeapi.NewServer(runtimeapi.BackendFuncs{
+		LinkStatsFunc: func(_ context.Context, tapName string) (uint64, error) {
+			if tapName != "imptap-test" {
+				t.Fatalf("tapName = %q, want imptap-test", tapName)
+			}
+			return 1234, nil
+		},
+	})
+	dir, err := os.MkdirTemp("/tmp", "imp-runtime-")
+	if err != nil {
+		t.Fatalf("MkdirTemp() error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	endpoint := filepath.Join(dir, "runtime.sock")
+	if err := server.Start(endpoint); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+
+	got, err := runtimeapi.NewClient(endpoint).LinkStats(context.Background(), "imptap-test")
+	if err != nil {
+		t.Fatalf("LinkStats() error = %v", err)
+	}
+	if got != 1234 {
+		t.Fatalf("LinkStats() = %d, want 1234", got)
+	}
+}
+
+func TestClientLinkStatsReturnsRuntimeError(t *testing.T) {
+	t.Parallel()
+	server := runtimeapi.NewServer(runtimeapi.BackendFuncs{
+		LinkStatsFunc: func(context.Context, string) (uint64, error) {
+			return 0, errors.New("link missing")
+		},
+	})
+	dir, err := os.MkdirTemp("/tmp", "imp-runtime-")
+	if err != nil {
+		t.Fatalf("MkdirTemp() error = %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	endpoint := filepath.Join(dir, "runtime.sock")
+	if err := server.Start(endpoint); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	t.Cleanup(func() { _ = server.Close() })
+
+	if _, err := runtimeapi.NewClient(endpoint).LinkStats(context.Background(), "missing"); err == nil || err.Error() != "link missing" {
+		t.Fatalf("LinkStats() error = %v, want link missing", err)
 	}
 }

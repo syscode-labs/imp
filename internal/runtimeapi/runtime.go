@@ -48,6 +48,7 @@ type Backend interface {
 	RemoveEgressDeny(context.Context, string) error
 	EnsureVXLAN(context.Context, uint32, string, string, string) error
 	SyncFDB(context.Context, string, []network.FDBEntry) error
+	LinkStats(context.Context, string) (uint64, error)
 }
 
 // BackendFuncs makes protocol behavior testable without Firecracker.
@@ -68,6 +69,7 @@ type BackendFuncs struct {
 	RemoveEgressDenyFunc func(context.Context, string) error
 	EnsureVXLANFunc      func(context.Context, uint32, string, string, string) error
 	SyncFDBFunc          func(context.Context, string, []network.FDBEntry) error
+	LinkStatsFunc        func(context.Context, string) (uint64, error)
 }
 
 func (f BackendFuncs) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM) (int64, error) {
@@ -170,6 +172,12 @@ func (f BackendFuncs) SyncFDB(ctx context.Context, ifaceName string, entries []n
 	}
 	return f.SyncFDBFunc(ctx, ifaceName, entries)
 }
+func (f BackendFuncs) LinkStats(ctx context.Context, tapName string) (uint64, error) {
+	if f.LinkStatsFunc == nil {
+		return 0, errors.New("link stats is not supported")
+	}
+	return f.LinkStatsFunc(ctx, tapName)
+}
 
 // Server serves one runtime backend over a node-local Unix socket.
 type Server struct {
@@ -243,6 +251,7 @@ type StartReply struct{ PID int64 }
 type StateReply struct{ State VMState }
 type SnapshotReply struct{ Result SnapshotResult }
 type AliveReply struct{ Alive bool }
+type LinkStatsReply struct{ Bytes uint64 }
 type VSockReply struct {
 	Path  string
 	Found bool
@@ -342,6 +351,11 @@ func (s *rpcService) EnsureVXLAN(args VXLANArgs, _ *Empty) error {
 }
 func (s *rpcService) SyncFDB(args FDBArgs, _ *Empty) error {
 	return s.backend.SyncFDB(context.Background(), args.InterfaceName, args.Entries)
+}
+func (s *rpcService) LinkStats(args TAPArgs, reply *LinkStatsReply) error {
+	stats, err := s.backend.LinkStats(context.Background(), args.TAPName)
+	reply.Bytes = stats
+	return err
 }
 
 // Client invokes a node runtime through its Unix socket.
@@ -443,4 +457,13 @@ func (c *Client) EnsureVXLAN(ctx context.Context, vni uint32, ifaceName, nodeIP,
 }
 func (c *Client) SyncFDB(ctx context.Context, ifaceName string, entries []network.FDBEntry) error {
 	return c.call(ctx, "SyncFDB", FDBArgs{InterfaceName: ifaceName, Entries: entries}, &Empty{})
+}
+
+// LinkStats returns cumulative receive and transmit bytes for a runtime-owned TAP.
+func (c *Client) LinkStats(ctx context.Context, tapName string) (uint64, error) {
+	var reply LinkStatsReply
+	if err := c.call(ctx, "LinkStats", TAPArgs{TAPName: tapName}, &reply); err != nil {
+		return 0, err
+	}
+	return reply.Bytes, nil
 }
