@@ -1,0 +1,60 @@
+name: Imp Runner Firecracker Smoke
+
+on:
+  pull_request:
+    paths:
+      - 'hack/imp-runner-firecracker-smoke.sh'
+      - '.github/workflows/imp-runner-firecracker-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  firecracker-smoke:
+    # This path intentionally needs a Linux x86_64 runner with /dev/kvm,
+    # CAP_NET_ADMIN, Docker, mke2fs, ip, and iptables.
+    runs-on:
+      group: omni-runner
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout runner OCI layer sources
+        uses: actions/checkout@v4
+        with:
+          repository: syscode-labs/imp-runner-images
+          path: imp-runner-images
+          ref: main
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the exact base and runner OCI inputs
+        env:
+          RUNNER_VERSION: 2.337.0
+          RUNNER_ARCH: x64
+          BASE_IMAGE: imp-runner-base:ci-${{ github.sha }}
+          RUNNER_IMAGE: imp-runner-layer:ci-${{ github.sha }}
+        run: |
+          ./imp-runner-images/build-runner-layer.sh
+          docker buildx build --platform linux/amd64 --load --tag "$BASE_IMAGE" imp-runner-images/base
+          docker buildx build --platform linux/amd64 --load --tag "$RUNNER_IMAGE" imp-runner-images/runner-layer
+          echo "BASE_IMAGE=$BASE_IMAGE" >> "$GITHUB_ENV"
+          echo "RUNNER_IMAGE=$RUNNER_IMAGE" >> "$GITHUB_ENV"
+
+      - name: Download the pinned Firecracker CI kernel and runtime
+        env:
+          FIRECRACKER_VERSION: v1.15.0
+        run: |
+          curl --fail --silent --show-error --location \
+            "https://github.com/firecracker-microvm/firecracker/releases/download/${FIRECRACKER_VERSION}/firecracker-${FIRECRACKER_VERSION}-x86_64.tgz" \
+            --output /tmp/firecracker.tgz
+          tar -xzf /tmp/firecracker.tgz -C /tmp
+          echo "FIRECRACKER_BIN=/tmp/release-${FIRECRACKER_VERSION}-x86_64/firecracker-${FIRECRACKER_VERSION}-x86_64" >> "$GITHUB_ENV"
+          curl --fail --silent --show-error --location \
+            "https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/x86_64/kernels/vmlinux.bin" \
+            --output /tmp/vmlinux.bin
+          echo "FIRECRACKER_KERNEL=/tmp/vmlinux.bin" >> "$GITHUB_ENV"
+
+      - name: Compose rootfs and boot guest smoke
+        run: hack/imp-runner-firecracker-smoke.sh
