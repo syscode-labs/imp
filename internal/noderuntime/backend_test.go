@@ -152,3 +152,20 @@ func (d *fakeDriver) Snapshot(context.Context, *impdevv1alpha1.ImpVM, string) (a
 	return agent.SnapshotResult{}, nil
 }
 func (d *fakeDriver) GetVSockPath(string) (string, bool) { return "", false }
+
+func TestBackendLinkStatsUsesRuntimeOwnedImplementation(t *testing.T) {
+	backend := &Backend{LinkStatsFunc: func(_ context.Context, tapName string) (uint64, error) {
+		if tapName != "imptap-test" {
+			t.Fatalf("tapName = %q, want imptap-test", tapName)
+		}
+		return 5678, nil
+	}}
+
+	got, err := backend.LinkStats(context.Background(), "imptap-test")
+	if err != nil {
+		t.Fatalf("LinkStats() error = %v", err)
+	}
+	if got != 5678 {
+		t.Fatalf("LinkStats() = %d, want 5678", got)
+	}
+}

@@ -27,6 +27,8 @@ type driver interface {
 type Backend struct {
 	Driver driver
 	Net    network.NetManager
+	// LinkStatsFunc is an optional test seam; production uses runtime-owned netlink.
+	LinkStatsFunc func(context.Context, string) (uint64, error)
 	// StatePath stores VM inventory that survives a runtime process restart.
 	StatePath string
 }
@@ -113,4 +115,11 @@ func (b *Backend) EnsureVXLAN(ctx context.Context, vni uint32, ifaceName, nodeIP
 }
 func (b *Backend) SyncFDB(ctx context.Context, ifaceName string, entries []network.FDBEntry) error {
 	return b.Net.SyncFDB(ctx, ifaceName, entries)
+}
+
+func (b *Backend) LinkStats(ctx context.Context, tapName string) (uint64, error) {
+	if b.LinkStatsFunc != nil {
+		return b.LinkStatsFunc(ctx, tapName)
+	}
+	return runtimeLinkStats(ctx, tapName)
 }

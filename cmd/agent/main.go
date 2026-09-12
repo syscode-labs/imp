@@ -28,6 +28,7 @@ import (
 	"github.com/syscode-labs/imp/internal/agent/api"
 	"github.com/syscode-labs/imp/internal/agent/network"
 	"github.com/syscode-labs/imp/internal/capability"
+	"github.com/syscode-labs/imp/internal/runtimeapi"
 	"github.com/syscode-labs/imp/internal/telemetry"
 )
 
@@ -141,7 +142,7 @@ func main() {
 	// yet hardware-validated — opt in explicitly via IMP_SCALE_TO_ZERO=true.
 	var sz *agent.ScaleToZero
 	if os.Getenv("IMP_SCALE_TO_ZERO") == "true" {
-		sz = agent.NewLinuxScaleToZero(1024, 15*time.Second)
+		sz = agent.NewLinuxScaleToZeroWithRuntime(runtimeapi.NewClient(runtimeSocketEndpoint()), 1024, 15*time.Second)
 		log.Info("scale-to-zero enabled (experimental; wake path not hardware-validated)")
 	}
 
