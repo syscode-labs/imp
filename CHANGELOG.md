@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.1](https://github.com/syscode-labs/imp/compare/v0.10.0...v0.10.1) (2026-09-12)
+
+
+### Bug Fixes
+
+* **ci:** load sandbox images for Cilium E2E ([#95](https://github.com/syscode-labs/imp/issues/95)) ([b97dfff](https://github.com/syscode-labs/imp/commit/b97dfffb858b0a9e60c4d173f931f141eaaa522c))
+* read ScaleToZero TAP stats via runtime RPC ([#99](https://github.com/syscode-labs/imp/issues/99)) ([867ac97](https://github.com/syscode-labs/imp/commit/867ac971ddff691b8a6f2480e33d3b2c05b4c0bb))
+
 ## [0.10.0](https://github.com/syscode-labs/imp/compare/v0.9.0...v0.10.0) (2026-09-10)
 
 
