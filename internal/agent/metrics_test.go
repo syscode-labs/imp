@@ -81,3 +81,20 @@ func TestVMMetrics_guestMetricsAppear(t *testing.T) {
 		}
 	}
 }
+
+func TestVMMetrics_runnerHandoffMetricsAppear(t *testing.T) {
+	mc, h := newTestCollector(t)
+	mc.RecordRunnerHandoffStarted("default/test-vm", "test-node")
+	mc.RecordRunnerHandoffFinished("default/test-vm", "test-node", "success")
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	body := w.Body.String()
+	for _, metric := range []string{"imp_runner_handoffs_active", "imp_runner_handoffs_total"} {
+		if !strings.Contains(body, metric) {
+			t.Errorf("expected %s in output, got:\n%s", metric, body)
+		}
+	}
+}

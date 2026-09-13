@@ -264,6 +264,19 @@ func (r *ImpVMReconciler) maybeLaunchRunner(ctx context.Context, vm *impdevv1alp
 		Reader: r.APIReader,
 		Sock:   sockPath,
 	}
+	if r.Metrics != nil {
+		key := vm.Namespace + "/" + vm.Name
+		launch.OnStarted = func() {
+			r.Metrics.RecordRunnerHandoffStarted(key, r.NodeName)
+		}
+		launch.OnFinished = func(res runnerlaunch.Result) {
+			outcome := "success"
+			if res.Err != nil || res.ExitCode != 0 {
+				outcome = "failed"
+			}
+			r.Metrics.RecordRunnerHandoffFinished(key, r.NodeName, outcome)
+		}
+	}
 	go func() {
 		launchRunner := r.runnerLaunch
 		if launchRunner == nil {
