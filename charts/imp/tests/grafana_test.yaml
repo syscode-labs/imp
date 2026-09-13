@@ -14,6 +14,12 @@ tests:
           value: "1"
       - isNotEmpty:
           path: data["imp-overview.json"]
+      - isNotEmpty:
+          path: data["imp-admin.json"]
+      - isNotEmpty:
+          path: data["imp-workloads.json"]
+      - isNotEmpty:
+          path: data["imp-github-runners.json"]
 
   - it: renders no resources when grafana.enabled=false
     template: templates/grafana/dashboard.yaml

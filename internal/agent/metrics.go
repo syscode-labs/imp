@@ -36,6 +36,8 @@ type VMMetricsCollector struct {
 	vmStates     map[string]vmStateEntry // "ns/name" → {state, node}
 	guestMetrics map[string]*guestData   // "ns/name" → data
 	gatherer     prometheus.Gatherer
+	runnerActive metric.Int64UpDownCounter
+	runnerTotal  metric.Int64Counter
 }
 
 // NewVMMetricsCollector creates a new collector using the provided OTel meter.
@@ -47,6 +49,14 @@ func NewVMMetricsCollector(meter metric.Meter, gatherer prometheus.Gatherer) *VM
 		guestMetrics: make(map[string]*guestData),
 		gatherer:     gatherer,
 	}
+	c.runnerActive, _ = meter.Int64UpDownCounter(
+		"imp_runner_handoffs_active",
+		metric.WithDescription("Runner handoffs currently executing in guest VMs."),
+	)
+	c.runnerTotal, _ = meter.Int64Counter(
+		"imp_runner_handoffs",
+		metric.WithDescription("Completed runner handoffs by outcome."),
+	)
 
 	_, _ = meter.Float64ObservableGauge(
 		"imp_vm_state",
@@ -173,6 +183,33 @@ func (c *VMMetricsCollector) ClearVM(key string) {
 	defer c.mu.Unlock()
 	delete(c.vmStates, key)
 	delete(c.guestMetrics, key)
+}
+
+// RecordRunnerHandoffStarted records a guest runner handoff that has begun.
+func (c *VMMetricsCollector) RecordRunnerHandoffStarted(key, node string) {
+	ns, name := splitKey(key)
+	c.runnerActive.Add(context.Background(), 1, metric.WithAttributes(
+		attribute.String("namespace", ns),
+		attribute.String("impvm", name),
+		attribute.String("node", node),
+	))
+}
+
+// RecordRunnerHandoffFinished records a completed guest runner handoff.
+func (c *VMMetricsCollector) RecordRunnerHandoffFinished(key, node, outcome string) {
+	ns, name := splitKey(key)
+	attrs := metric.WithAttributes(
+		attribute.String("namespace", ns),
+		attribute.String("impvm", name),
+		attribute.String("node", node),
+	)
+	c.runnerActive.Add(context.Background(), -1, attrs)
+	c.runnerTotal.Add(context.Background(), 1, metric.WithAttributes(
+		attribute.String("namespace", ns),
+		attribute.String("impvm", name),
+		attribute.String("node", node),
+		attribute.String("outcome", outcome),
+	))
 }
 
 // NewMetricsHandlerWithCollector returns an HTTP handler for the collector's Prometheus registry.

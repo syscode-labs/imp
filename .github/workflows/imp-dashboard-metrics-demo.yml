@@ -1,0 +1,35 @@
+name: Imp dashboard metrics demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      hold_seconds:
+        description: Seconds to keep the runner handoff active for dashboard inspection
+        required: true
+        default: "120"
+        type: choice
+        options: ["60", "120", "300"]
+
+permissions:
+  contents: read
+
+jobs:
+  dashboard-demo:
+    name: Create observable runner activity
+    runs-on:
+      group: omni-runner
+      labels: [self-hosted, imp]
+    timeout-minutes: 10
+    steps:
+      - name: Report the dashboard correlation fields
+        run: |
+          printf '%s\n' \
+            "github_repository=$GITHUB_REPOSITORY" \
+            "github_run_id=$GITHUB_RUN_ID" \
+            "github_run_attempt=$GITHUB_RUN_ATTEMPT" \
+            "github_job=$GITHUB_JOB" \
+            "runner_name=$RUNNER_NAME"
+      - name: Hold the runner handoff open
+        run: |
+          echo "holding runner activity for ${{ inputs.hold_seconds }} seconds"
+          sleep "${{ inputs.hold_seconds }}"

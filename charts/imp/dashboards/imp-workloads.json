@@ -1,0 +1,197 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Lifecycle observations for workload owners. Running does not prove application readiness.",
+  "editable": true,
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": [
+    "imp",
+    "workload",
+    "microvm"
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Imp workloads",
+  "uid": "imp-workloads-v1",
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "current": {}
+      },
+      {
+        "name": "namespace",
+        "label": "Namespace",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(imp_vm_state, namespace)",
+        "query": {
+          "query": "label_values(imp_vm_state, namespace)",
+          "refId": "NamespaceVariableQuery"
+        },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2,
+        "current": {}
+      },
+      {
+        "name": "vm",
+        "label": "VM",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "definition": "label_values(imp_vm_state{namespace=~\"${namespace:regex}\"}, impvm)",
+        "query": {
+          "query": "label_values(imp_vm_state{namespace=~\"${namespace:regex}\"}, impvm)",
+          "refId": "VMVariableQuery"
+        },
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "refresh": 2,
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Current observed VM inventory",
+      "description": "No matching VM observations can mean filters are wrong or telemetry is missing.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "imp_vm_state{namespace=~\"${namespace:regex}\",impvm=~\"${vm:regex}\"} == 1",
+          "legendFormat": "{{namespace}} \u00b7 {{impvm}} \u00b7 {{node}} \u00b7 {{state}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Selected VMs by state",
+      "description": "No matching VM observations can mean filters are wrong or telemetry is missing.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (state) (imp_vm_state{namespace=~\"${namespace:regex}\",impvm=~\"${vm:regex}\"} == 1)",
+          "legendFormat": "{{state}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Observed lifecycle history",
+      "description": "Gaps are missing samples. The chart does not infer transitions between scrapes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "imp_vm_state{namespace=~\"${namespace:regex}\",impvm=~\"${vm:regex}\"} == 1",
+          "legendFormat": "{{impvm}} \u00b7 {{state}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "showPoints": "never"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    }
+  ]
+}

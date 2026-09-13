@@ -125,12 +125,16 @@ type Launcher struct {
 	Reader client.Reader // uncached reader; avoids a cluster-wide Secret informer
 	Sock   string        // path to the VM's VSOCK unix socket proxy
 	Log    *slog.Logger
+	// OnStarted and OnFinished observe a real, de-duplicated handoff attempt.
+	// They must not read or log the JIT payload.
+	OnStarted  func()
+	OnFinished func(Result)
 }
 
 // Run performs the handoff and blocks until the runner exits (or fails).
 // It is safe to call in a goroutine. Cancel ctx to abandon (the guest keeps
 // running; Firecracker exit handling stays with the reconciler).
-func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
+func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) (result Result) {
 	log := l.Log
 	if log == nil {
 		log = slog.Default()
@@ -144,6 +148,14 @@ func (l *Launcher) Run(ctx context.Context, vm *impv1alpha1.ImpVM) Result {
 		return Result{}
 	}
 	defer launches.Delete(launchKey)
+	if l.OnStarted != nil {
+		l.OnStarted()
+	}
+	defer func() {
+		if l.OnFinished != nil {
+			l.OnFinished(result)
+		}
+	}()
 
 	// The accepted marker is written before Exec because the unary RPC has no
 	// acknowledgement boundary: it returns only when the guest process exits.
