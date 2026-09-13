@@ -392,12 +392,33 @@ slice.
 
 ## Metrics & Observability
 
-Imp exposes operator and agent metrics so you can monitor VM lifecycle and platform health:
+Imp exposes Prometheus-compatible `/metrics` endpoints:
 
-- VM state and phase metrics
-- Scheduling/boot latency metrics
-- Guest resource metrics (CPU, memory, disk)
-- Prometheus-compatible scraping and dashboards
+| Component | Default port | Metric-family examples |
+| --- | --- | --- |
+| Operator | `:8080` | `imp_vm_scheduling_latency_seconds`, `imp_vm_boot_latency_seconds` |
+| Agent | `:9090` | `imp_vm_state`, `imp_vm_guest_cpu_usage_ratio`, `imp_vm_guest_cpu_iowait_ratio`, `imp_vm_guest_memory_used_bytes`, `imp_vm_guest_disk_used_bytes` |
+| Runtime | `:8082` | `imp_runtime_ready`, `go_*`, `process_*` |
+
+Sources: [operator endpoint](cmd/operator/main.go), [controller metrics](internal/controller/metrics.go),
+[agent metrics](internal/agent/metrics.go), and [runtime endpoint](cmd/runtime/main.go).
+
+The [chart defaults](charts/imp/values.yaml) enable an operator
+[ServiceMonitor](charts/imp/templates/operator/servicemonitor.yaml) and
+[agent](charts/imp/templates/agent/podmonitor.yaml)/[runtime](charts/imp/templates/runtime/podmonitor.yaml)
+PodMonitors. This route requires Prometheus Operator and its monitor CRDs, with a
+Prometheus instance configured to select the monitors; creating them alone does
+not prove scraping works.
+
+Unraid uses Grafana Kubernetes Monitoring collector-side discovery instead of
+Prometheus Operator monitor CRDs. For that route, disable
+`metrics.serviceMonitor.enabled` and `metrics.podMonitor.enabled` in the Imp
+chart, and configure the collector to discover and scrape all three endpoints.
+Disabling monitors does not disable the metrics endpoints or configure the collector.
+
+Ephemeral VM names in the `impvm` label create new Prometheus series as VMs churn.
+Monitor series cardinality and retention/storage usage; deleting a VM stops its
+exported samples but does not remove its retained history from Prometheus.
 
 ## Reconcile Sequence
 
