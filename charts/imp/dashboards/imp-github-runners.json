@@ -1,0 +1,26 @@
+{
+  "annotations": {"list": []},
+  "description": "GitHub runner VM view. It uses Imp VM state and naming only; GitHub queue and job-assignment metrics are intentionally not inferred when they are not exported.",
+  "editable": true,
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["imp", "github", "runner", "microvm"],
+  "time": {"from": "now-1h", "to": "now"},
+  "timezone": "browser",
+  "title": "Imp GitHub runners",
+  "uid": "imp-github-runners-v1",
+  "version": 1,
+  "templating": {"list": [
+    {"name": "datasource", "label": "Data source", "type": "datasource", "query": "prometheus", "refresh": 1, "current": {}},
+    {"name": "runner", "label": "Runner VM", "type": "query", "datasource": {"type": "prometheus", "uid": "${datasource}"}, "definition": "label_values(imp_vm_state{impvm=~\".*github-runner.*\"}, impvm)", "query": {"query": "label_values(imp_vm_state{impvm=~\".*github-runner.*\"}, impvm)", "refId": "RunnerVariableQuery"}, "includeAll": true, "allValue": ".*", "multi": false, "refresh": 2, "current": {}}
+  ]},
+  "panels": [
+    {"id": 1, "type": "stat", "title": "Runner VMs", "datasource": {"type": "prometheus", "uid": "${datasource}"}, "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0}, "targets": [{"refId": "A", "expr": "count(imp_vm_state{impvm=~\".*github-runner.*\"} == 1) or vector(0)"}], "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none"}, "fieldConfig": {"defaults": {}, "overrides": []}},
+    {"id": 2, "type": "stat", "title": "Running runner VMs", "datasource": {"type": "prometheus", "uid": "${datasource}"}, "gridPos": {"h": 6, "w": 6, "x": 6, "y": 0}, "targets": [{"refId": "A", "expr": "count(imp_vm_state{impvm=~\".*github-runner.*\",state=\"Running\"} == 1) or vector(0)"}], "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none"}, "fieldConfig": {"defaults": {}, "overrides": []}},
+    {"id": 3, "type": "stat", "title": "Runtime ready", "datasource": {"type": "prometheus", "uid": "${datasource}"}, "gridPos": {"h": 6, "w": 6, "x": 12, "y": 0}, "targets": [{"refId": "A", "expr": "min(imp_runtime_ready) or vector(0)"}], "options": {"reduceOptions": {"calcs": ["lastNotNull"]}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "graphMode": "none"}, "fieldConfig": {"defaults": {"thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []}},
+    {"id": 4, "type": "text", "title": "Scope", "gridPos": {"h": 6, "w": 6, "x": 18, "y": 0}, "options": {"mode": "markdown", "content": "This dashboard updates from Imp VM state. GitHub job queue, registration, and assignment data appear only when Imp exports dedicated metrics; this dashboard does not guess them."}},
+    {"id": 5, "type": "timeseries", "title": "Runner VM state", "datasource": {"type": "prometheus", "uid": "${datasource}"}, "gridPos": {"h": 9, "w": 12, "x": 0, "y": 6}, "targets": [{"refId": "A", "expr": "imp_vm_state{impvm=~\"$runner\"}", "legendFormat": "{{impvm}} · {{state}}"}], "fieldConfig": {"defaults": {"custom": {"lineWidth": 1, "showPoints": "never"}}, "overrides": []}, "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi"}}},
+    {"id": 6, "type": "timeseries", "title": "Runner VMs by state", "datasource": {"type": "prometheus", "uid": "${datasource}"}, "gridPos": {"h": 9, "w": 12, "x": 12, "y": 6}, "targets": [{"refId": "A", "expr": "sum by (state) (imp_vm_state{impvm=~\".*github-runner.*\"})", "legendFormat": "{{state}}"}], "fieldConfig": {"defaults": {"custom": {"lineWidth": 1, "showPoints": "never"}}, "overrides": []}, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}},
+    {"id": 7, "type": "timeseries", "title": "Boot latency p95", "description": "Fleet-wide lifecycle metric; runner-specific latency labels are not exported yet.", "datasource": {"type": "prometheus", "uid": "${datasource}"}, "gridPos": {"h": 8, "w": 24, "x": 0, "y": 15}, "targets": [{"refId": "A", "expr": "histogram_quantile(0.95, sum by (le) (rate(imp_vm_boot_latency_seconds_bucket[5m])))", "legendFormat": "p95"}], "fieldConfig": {"defaults": {"unit": "s", "custom": {"lineWidth": 1, "showPoints": "never"}}, "overrides": []}, "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi"}}}
+  ]
+}

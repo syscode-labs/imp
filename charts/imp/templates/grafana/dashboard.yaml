@@ -10,6 +10,12 @@ metadata:
 data:
   imp-overview.json: |-
 {{ .Files.Get "dashboards/imp-overview.json" | indent 4 }}
+  imp-admin.json: |-
+{{ .Files.Get "dashboards/imp-admin.json" | indent 4 }}
+  imp-workloads.json: |-
+{{ .Files.Get "dashboards/imp-workloads.json" | indent 4 }}
+  imp-github-runners.json: |-
+{{ .Files.Get "dashboards/imp-github-runners.json" | indent 4 }}
   imp-traces.json: |-
 {{ .Files.Get "dashboards/imp-traces.json" | indent 4 }}
 {{- end }}
