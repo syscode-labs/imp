@@ -6,7 +6,7 @@
  ( ●  ● )~~✦ ║║║║╠═╝
   \ ‿  /     ╩╩ ╩╚
   (    )~,
-  /\  /\     v0.1.0 · imp.dev
+  /\  /\     imp.dev
 ```
 
 [![CI](https://github.com/syscode-labs/imp/actions/workflows/ci.yml/badge.svg)](https://github.com/syscode-labs/imp/actions/workflows/ci.yml)
@@ -44,7 +44,7 @@ It provides CRDs for VM lifecycle, VM networking, snapshots, migrations, warm po
 
 ![Imp architecture (Excalidraw)](docs/diagrams/imp-architecture.svg)
 
-Excalidraw source: `docs/diagrams/imp-architecture.excalidraw`
+[Open the editable Excalidraw source](docs/diagrams/imp-architecture.excalidraw)
 
 ## Limitations
 
