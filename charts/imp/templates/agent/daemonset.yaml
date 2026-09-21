@@ -74,6 +74,9 @@ spec:
           mountPath: /run/imp
         - name: image-cache
           mountPath: /var/lib/imp/images
+        # The agent creates/cleans suspend directories; the runtime writes snapshots.
+        - name: suspend-dir
+          mountPath: /var/lib/imp/suspend
       volumes:
       - name: dev-kvm
         hostPath:
@@ -101,4 +104,8 @@ spec:
         {{- else }}
         emptyDir: {}
         {{- end }}
+      - name: suspend-dir
+        hostPath:
+          path: /var/lib/imp/suspend
+          type: DirectoryOrCreate
       terminationGracePeriodSeconds: 10
