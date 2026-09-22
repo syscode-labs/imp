@@ -1,0 +1,38 @@
+suite: shared suspend snapshot storage
+templates:
+  - templates/agent/daemonset.yaml
+  - templates/runtime/daemonset.yaml
+set:
+  agent.env.kernelPath: /var/lib/imp/vmlinux
+tests:
+  - it: mounts node-local suspend storage into the agent
+    template: templates/agent/daemonset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: suspend-dir
+            mountPath: /var/lib/imp/suspend
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: suspend-dir
+            hostPath:
+              path: /var/lib/imp/suspend
+              type: DirectoryOrCreate
+
+  - it: mounts the same node-local suspend storage into the runtime
+    template: templates/runtime/daemonset.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: suspend-dir
+            mountPath: /var/lib/imp/suspend
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: suspend-dir
+            hostPath:
+              path: /var/lib/imp/suspend
+              type: DirectoryOrCreate
