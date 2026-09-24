@@ -29,6 +29,12 @@ type Backend struct {
 	Net    network.NetManager
 	// LinkStatsFunc is an optional test seam; production uses runtime-owned netlink.
 	LinkStatsFunc func(context.Context, string) (uint64, error)
+	// WakeHitsFunc is an optional test seam; production uses a host-netns
+	// AF_PACKET capture started lazily on first poll.
+	WakeHitsFunc func(context.Context) ([]string, error)
+	// wakeHitsState holds platform-specific capture state (linux only; nil
+	// elsewhere). Managed entirely by the platform WakeHits implementation.
+	wakeHitsState any
 	// StatePath stores VM inventory that survives a runtime process restart.
 	StatePath string
 }
