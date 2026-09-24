@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.11.0](https://github.com/syscode-labs/imp/compare/v0.10.1...v0.11.0) (2026-09-24)
+
+
+### Features
+
+* **helm:** add portable Imp dashboards ([b75413e](https://github.com/syscode-labs/imp/commit/b75413e458854c5de0d706bcb3449a8605b757a6))
+* **helm:** ship portable Imp dashboards ([d12a837](https://github.com/syscode-labs/imp/commit/d12a8372e918182318fa5ef0e61804e21a6e82ae))
+* **runners:** expose handoff activity metrics ([1ee3872](https://github.com/syscode-labs/imp/commit/1ee3872a6def5fd68e8943c2d5b2a9fb92702f09))
+
+
+### Bug Fixes
+
+* **agent:** capture ScaleToZero wake frames in the runtime host netns ([f5e1087](https://github.com/syscode-labs/imp/commit/f5e1087fde93fe0a2ef1f90ef78c1331c1f756eb))
+* **agent:** capture ScaleToZero wake frames in the runtime host netns ([61501fc](https://github.com/syscode-labs/imp/commit/61501fc22e31248a66a3ced4f594b5581f329933))
+* **agent:** restore shared suspend snapshot storage ([d7d7ca0](https://github.com/syscode-labs/imp/commit/d7d7ca0d3f0f08c1f57fdf43e06a07204218c5d2))
+* **agent:** restore shared suspend snapshot storage ([2d4fcaa](https://github.com/syscode-labs/imp/commit/2d4fcaa8131a7add5196c631f117f06ebb987943))
+* **dashboards:** preserve telemetry uncertainty ([09d2c27](https://github.com/syscode-labs/imp/commit/09d2c27e804fe08ba9ce19a108035dbd0c5b3d25))
+
 ## [0.10.1](https://github.com/syscode-labs/imp/compare/v0.10.0...v0.10.1) (2026-09-12)
 
 
