@@ -134,10 +134,54 @@ func NewLinuxScaleToZero(bufSize int, interval time.Duration) *ScaleToZero {
 	return newScaleToZero(netlinkLinkStats, afpacketSource{}, interval, bufSize)
 }
 
-// NewLinuxScaleToZeroWithRuntime wires TAP statistics through the node runtime,
-// which owns the TAP network namespace, while retaining the packet capture hook.
+// NewLinuxScaleToZeroWithRuntime wires TAP statistics AND wake-on-traffic
+// packet capture through the node runtime, which owns the host network
+// namespace where the impbr-* bridges and VM TAPs live. The agent's own
+// namespace cannot observe bridged overlay traffic: an AF_PACKET socket opened
+// inside the agent pod only ever sees pod-side frames (loopback, pod veths,
+// Service IPs), never the overlay frames a suspended VM needs to be woken by
+// (validated by the nightly datapath E2E failure streak starting 2026-08-29,
+// where framesSeen incremented but lastDstIP was always pod traffic). The
+// activator polls the runtime at interval/2 so a wake frame registers well
+// inside a 2-minute resume window.
 func NewLinuxScaleToZeroWithRuntime(client *runtimeapi.Client, bufSize int, interval time.Duration) *ScaleToZero {
+	poll := interval / 2
+	if poll <= 0 {
+		poll = time.Second
+	}
 	return newScaleToZero(func(iface string) (uint64, error) {
 		return client.LinkStats(context.Background(), iface)
-	}, afpacketSource{}, interval, bufSize)
+	}, runtimeWakeSource{client: client, poll: poll}, interval, bufSize)
+}
+
+// runtimeWakeSource polls the node runtime for destination IPs observed on the
+// host since the previous poll and feeds each to the wake registry.
+type runtimeWakeSource struct {
+	client *runtimeapi.Client
+	poll   time.Duration
+}
+
+func (r runtimeWakeSource) Run(ctx context.Context, onDstIP func(string)) error {
+	logf.Log.Info("runtime wake source: polling host wake hits via runtime RPC",
+		"pollInterval", r.poll.String())
+	ticker := time.NewTicker(r.poll)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+		ips, err := r.client.WakeHits(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			logf.Log.Error(err, "runtime wake source: poll failed; retrying next interval")
+			continue
+		}
+		for _, ip := range ips {
+			onDstIP(ip)
+		}
+	}
 }

@@ -49,6 +49,7 @@ type Backend interface {
 	EnsureVXLAN(context.Context, uint32, string, string, string) error
 	SyncFDB(context.Context, string, []network.FDBEntry) error
 	LinkStats(context.Context, string) (uint64, error)
+	WakeHits(context.Context) ([]string, error)
 }
 
 // BackendFuncs makes protocol behavior testable without Firecracker.
@@ -70,6 +71,7 @@ type BackendFuncs struct {
 	EnsureVXLANFunc      func(context.Context, uint32, string, string, string) error
 	SyncFDBFunc          func(context.Context, string, []network.FDBEntry) error
 	LinkStatsFunc        func(context.Context, string) (uint64, error)
+	WakeHitsFunc         func(context.Context) ([]string, error)
 }
 
 func (f BackendFuncs) Start(ctx context.Context, vm *impdevv1alpha1.ImpVM) (int64, error) {
@@ -179,6 +181,13 @@ func (f BackendFuncs) LinkStats(ctx context.Context, tapName string) (uint64, er
 	return f.LinkStatsFunc(ctx, tapName)
 }
 
+func (f BackendFuncs) WakeHits(ctx context.Context) ([]string, error) {
+	if f.WakeHitsFunc == nil {
+		return nil, errors.New("wake hits is not supported")
+	}
+	return f.WakeHitsFunc(ctx)
+}
+
 // Server serves one runtime backend over a node-local Unix socket.
 type Server struct {
 	backend  Backend
@@ -252,6 +261,7 @@ type StateReply struct{ State VMState }
 type SnapshotReply struct{ Result SnapshotResult }
 type AliveReply struct{ Alive bool }
 type LinkStatsReply struct{ Bytes uint64 }
+type WakeHitsReply struct{ IPs []string }
 type VSockReply struct {
 	Path  string
 	Found bool
@@ -355,6 +365,12 @@ func (s *rpcService) SyncFDB(args FDBArgs, _ *Empty) error {
 func (s *rpcService) LinkStats(args TAPArgs, reply *LinkStatsReply) error {
 	stats, err := s.backend.LinkStats(context.Background(), args.TAPName)
 	reply.Bytes = stats
+	return err
+}
+
+func (s *rpcService) WakeHits(_ Empty, reply *WakeHitsReply) error {
+	ips, err := s.backend.WakeHits(context.Background())
+	reply.IPs = ips
 	return err
 }
 
@@ -466,4 +482,14 @@ func (c *Client) LinkStats(ctx context.Context, tapName string) (uint64, error) 
 		return 0, err
 	}
 	return reply.Bytes, nil
+}
+
+// WakeHits drains the destination IPs of inbound IPv4 frames observed in the
+// runtime's host network namespace since the previous call.
+func (c *Client) WakeHits(ctx context.Context) ([]string, error) {
+	var reply WakeHitsReply
+	if err := c.call(ctx, "WakeHits", Empty{}, &reply); err != nil {
+		return nil, err
+	}
+	return reply.IPs, nil
 }
